@@ -6,11 +6,14 @@ from pathlib import Path
 
 from team.agents.base import AgentHandler
 from team.agents.claude import ClaudeHandler
+from team.agents.codex import CodexHandler
+from team.agents.gemini import GeminiHandler
 from team.state import AGENTS_DIR
 
 _HANDLERS: dict[str, AgentHandler] = {
     "claude": ClaudeHandler(),
-    # codex, gemini wired in Phase 2
+    "codex": CodexHandler(),
+    "gemini": GeminiHandler(),
 }
 
 
