@@ -104,8 +104,98 @@ class CodexHandler:
         return matches[0] if matches else None
 
     def parse_session_file(self, path: Path) -> list[Turn]:
-        """Stub for Phase 2; full parser in Phase 3."""
-        return []
+        """Read Codex rollout jsonl and yield user/assistant/tool turns.
+
+        Codex line shape: {timestamp, type, payload}. Relevant types:
+        - response_item with payload.type == "message"  → user/assistant text
+        - response_item with payload.type == "function_call" → tool_call
+        - response_item with payload.type == "function_call_output" → tool_result
+        - event_msg with payload.type == "task_complete" → carries the
+          last_agent_message (already produced by some 'message' item)
+
+        Reasoning items are ignored by default — they're verbose and the
+        coach reads them only when actively debugging.
+        """
+        from datetime import datetime
+
+        turns: list[Turn] = []
+        if not path.exists():
+            return turns
+        with path.open("r", encoding="utf-8") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    obj = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") != "response_item":
+                    continue
+                payload = obj.get("payload") or {}
+                ptype = payload.get("type")
+
+                ts = None
+                ts_raw = obj.get("timestamp")
+                if isinstance(ts_raw, str):
+                    try:
+                        ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                    except ValueError:
+                        pass
+
+                if ptype == "message":
+                    role = payload.get("role") or "user"
+                    if role == "developer":
+                        # System scaffolding from Codex (skills/permissions); skip.
+                        continue
+                    content_blocks = payload.get("content") or []
+                    texts: list[str] = []
+                    for block in content_blocks:
+                        if not isinstance(block, dict):
+                            continue
+                        text = block.get("text") or ""
+                        if text:
+                            texts.append(text)
+                    turns.append(
+                        Turn(
+                            role=role,
+                            content="\n".join(texts),
+                            timestamp=ts,
+                        )
+                    )
+                elif ptype == "function_call":
+                    turns.append(
+                        Turn(
+                            role="assistant",
+                            content="",
+                            tool_calls=[
+                                {
+                                    "id": payload.get("call_id") or payload.get("id"),
+                                    "name": payload.get("name"),
+                                    "input": payload.get("arguments"),
+                                }
+                            ],
+                            timestamp=ts,
+                        )
+                    )
+                elif ptype == "function_call_output":
+                    output = payload.get("output")
+                    turns.append(
+                        Turn(
+                            role="tool",
+                            content="",
+                            tool_results=[
+                                {
+                                    "tool_use_id": payload.get("call_id"),
+                                    "content": output
+                                    if isinstance(output, str)
+                                    else json.dumps(output) if output else "",
+                                }
+                            ],
+                            timestamp=ts,
+                        )
+                    )
+        return turns
 
     @staticmethod
     def _parse_thread_id(stdout: str) -> str | None:

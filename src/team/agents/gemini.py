@@ -109,8 +109,86 @@ class GeminiHandler:
         return matches[0]
 
     def parse_session_file(self, path: Path) -> list[Turn]:
-        """Stub for Phase 2; full parser in Phase 3."""
-        return []
+        """Read Gemini session file and yield turns.
+
+        Two file formats coexist:
+        - .json   single object {sessionId, ..., messages: [...]}
+        - .jsonl  one event per line: {kind: 'main', ...} metadata
+                  and {id, timestamp, type: user|gemini, content}
+
+        For both, message content is either a list[{text}] (user) or
+        a string (gemini), or sometimes empty (token-only chunk).
+        """
+        from datetime import datetime
+
+        turns: list[Turn] = []
+        if not path.exists():
+            return turns
+
+        if path.suffix == ".json":
+            try:
+                with path.open("r", encoding="utf-8") as fh:
+                    obj = json.load(fh)
+            except (OSError, json.JSONDecodeError):
+                return turns
+            for msg in obj.get("messages", []):
+                turn = self._gemini_msg_to_turn(msg)
+                if turn is not None:
+                    turns.append(turn)
+            return turns
+
+        # .jsonl
+        with path.open("r", encoding="utf-8") as fh:
+            for raw in fh:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    obj = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("kind") == "main" and "type" not in obj:
+                    continue  # session metadata
+                turn = self._gemini_msg_to_turn(obj)
+                if turn is not None:
+                    turns.append(turn)
+        return turns
+
+    @staticmethod
+    def _gemini_msg_to_turn(msg: dict) -> Turn | None:
+        from datetime import datetime
+
+        mtype = msg.get("type")
+        if mtype not in ("user", "gemini", "model"):
+            return None
+
+        ts = None
+        ts_raw = msg.get("timestamp")
+        if isinstance(ts_raw, str):
+            try:
+                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
+        content_raw = msg.get("content")
+        text = ""
+        if isinstance(content_raw, str):
+            text = content_raw
+        elif isinstance(content_raw, list):
+            chunks = []
+            for block in content_raw:
+                if isinstance(block, dict):
+                    chunks.append(block.get("text") or "")
+                elif isinstance(block, str):
+                    chunks.append(block)
+            text = "\n".join(c for c in chunks if c)
+
+        if not text and not msg.get("thoughts"):
+            # Streaming placeholder; ignore.
+            return None
+
+        role = "user" if mtype == "user" else "assistant"
+        return Turn(role=role, content=text, timestamp=ts)
 
     @staticmethod
     def _build_prompt(prompt: str, files: list[Path]) -> str:

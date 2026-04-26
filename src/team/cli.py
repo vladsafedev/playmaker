@@ -193,6 +193,128 @@ def get(
         typer.echo(output)
 
 
+DEFAULT_THREAD_BYTES = 50_000
+
+
+@app.command()
+def thread(
+    session_id: str = typer.Argument(..., help="session id or unique prefix"),
+    last: int = typer.Option(5, "--last", help="show last N turns (ignored with --all)"),
+    role: Optional[str] = typer.Option(
+        None, "--role", help="filter to user|assistant|tool"
+    ),
+    all_: bool = typer.Option(False, "--all", help="emit the entire thread"),
+    include_tools: bool = typer.Option(
+        False, "--include-tools", help="include tool_calls and tool_results in output"
+    ),
+    max_bytes: int = typer.Option(
+        DEFAULT_THREAD_BYTES,
+        "--max-bytes",
+        help="hard cap on output bytes; 0 disables. Truncates with explicit warning.",
+    ),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Read a normalized slice of an agent's session file."""
+    state.init_db()
+    row = state.get_session(session_id)
+    if row is None or not row.get("session_file_path"):
+        err_console.print(f"[red]session {session_id!r} has no resolvable session_file[/red]")
+        raise typer.Exit(1)
+    handler = get_handler(row["agent"])
+    turns = handler.parse_session_file(Path(row["session_file_path"]))
+    if role:
+        turns = [t for t in turns if t.role == role]
+    if not all_:
+        turns = turns[-last:] if last > 0 else turns
+
+    if json_out:
+        payload = [
+            {
+                "role": t.role,
+                "content": t.content,
+                "tool_calls": t.tool_calls if include_tools else [],
+                "tool_results": t.tool_results if include_tools else [],
+                "timestamp": t.timestamp.isoformat() if t.timestamp else None,
+            }
+            for t in turns
+        ]
+        text = json.dumps(payload, indent=2, ensure_ascii=False)
+        text = _maybe_truncate(text, max_bytes)
+        typer.echo(text)
+        return
+
+    rendered = _render_turns(turns, include_tools=include_tools)
+    rendered = _maybe_truncate(rendered, max_bytes)
+    typer.echo(rendered)
+
+
+@app.command()
+def summary(
+    session_id: str = typer.Argument(..., help="session id or unique prefix"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show last 2 assistant messages — sugar for `thread --last 2 --role assistant`."""
+    state.init_db()
+    row = state.get_session(session_id)
+    if row is None or not row.get("session_file_path"):
+        # fall back to stored output if session_file is missing
+        if row and row.get("output_path") and Path(row["output_path"]).exists():
+            txt = Path(row["output_path"]).read_text(encoding="utf-8")
+            typer.echo(txt if not json_out else json.dumps({"output": txt}))
+            return
+        err_console.print(f"[red]session {session_id!r} has no thread to summarize[/red]")
+        raise typer.Exit(1)
+    handler = get_handler(row["agent"])
+    turns = [
+        t for t in handler.parse_session_file(Path(row["session_file_path"]))
+        if t.role == "assistant"
+    ][-2:]
+    if json_out:
+        typer.echo(
+            json.dumps(
+                [{"role": t.role, "content": t.content} for t in turns],
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
+    typer.echo(_render_turns(turns, include_tools=False))
+
+
+def _render_turns(turns: list, *, include_tools: bool) -> str:
+    out: list[str] = []
+    for t in turns:
+        ts = t.timestamp.strftime("%H:%M:%S") if t.timestamp else "  -  "
+        header = f"--- {t.role} @ {ts} ---"
+        out.append(header)
+        if t.content:
+            out.append(t.content)
+        if include_tools:
+            for tc in t.tool_calls:
+                out.append(f"[tool_call] {tc.get('name')}({tc.get('input')})")
+            for tr in t.tool_results:
+                content = tr.get("content", "")
+                if len(content) > 400:
+                    content = content[:400] + "...[truncated]"
+                out.append(f"[tool_result {tr.get('tool_use_id', '')}] {content}")
+        out.append("")
+    return "\n".join(out).rstrip()
+
+
+def _maybe_truncate(text: str, max_bytes: int) -> str:
+    if max_bytes <= 0:
+        return text
+    raw = text.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return text
+    truncated = raw[:max_bytes].decode("utf-8", errors="ignore")
+    return (
+        truncated
+        + f"\n\n[!] truncated at {max_bytes} bytes (full size: {len(raw)}). "
+        "Use --all or higher --max-bytes to see more."
+    )
+
+
 def _status_icon(status: str) -> str:
     return {
         "pending": "[yellow]pending[/yellow]",
