@@ -431,6 +431,76 @@ def watch() -> None:
     watcher.run()
 
 
+@app.command()
+def quotas(
+    refresh: bool = typer.Option(False, "--refresh", help="re-run probes before printing"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show ~/.team/quotas.json. With --refresh, run probes first."""
+    state.init_db()
+    if refresh or not state.QUOTAS_PATH.exists():
+        from team import quotas as quotas_mod
+
+        try:
+            quotas_mod.refresh_all(state.QUOTAS_PATH)
+        except Exception as exc:
+            err_console.print(f"[red]quota refresh failed at the top level:[/red] {exc}")
+    if not state.QUOTAS_PATH.exists():
+        err_console.print("[yellow]no quotas data yet — try `team quotas --refresh`[/yellow]")
+        raise typer.Exit(1)
+
+    text = state.QUOTAS_PATH.read_text(encoding="utf-8")
+    if json_out:
+        typer.echo(text)
+        return
+
+    data = json.loads(text)
+    fetched = data.get("fetched_at", "?")
+    console.print(f"[dim]fetched: {fetched}[/dim]\n")
+    for name, info in (data.get("providers") or {}).items():
+        status = info.get("status")
+        if status == "ok":
+            session = info.get("session_left")
+            week = info.get("weekly_all_left")
+            sonnet = info.get("weekly_sonnet_left")
+            line = f"[green]{name}[/green]"
+            if session is not None:
+                line += f"  session left: {session}%"
+            if week is not None:
+                line += f"  weekly: {week}%"
+            if sonnet is not None and sonnet != week:
+                line += f"  sonnet: {sonnet}%"
+            console.print(line)
+            for key in ("session_resets", "weekly_resets"):
+                if info.get(key):
+                    console.print(f"  [dim]{key}: {info[key]}[/dim]")
+        elif status == "unsupported":
+            console.print(f"[yellow]{name}[/yellow]  unsupported: {info.get('reason', '')}")
+        else:
+            console.print(f"[red]{name}[/red]  error: {info.get('error', '')}")
+            if info.get("last_success"):
+                console.print(f"  [dim]last success: {info['last_success']}[/dim]")
+
+
+@app.command()
+def agents() -> None:
+    """List registered agents — name, availability, profile path."""
+    from team.registry import all_handlers, find_profile
+
+    state.init_db()
+    cwd = Path.cwd()
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("name", style="cyan")
+    table.add_column("available")
+    table.add_column("profile")
+    for name, handler in all_handlers().items():
+        avail = "[green]yes[/green]" if handler.is_available() else "[red]no[/red]"
+        profile = find_profile(name, cwd)
+        profile_str = str(profile) if profile else "[dim]none[/dim]"
+        table.add_row(name, avail, profile_str)
+    console.print(table)
+
+
 def _status_icon(status: str) -> str:
     return {
         "pending": "[yellow]pending[/yellow]",
