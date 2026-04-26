@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
+import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +15,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from team import state
+from team import notify, state, watcher
 from team.registry import get_handler
 
 app = typer.Typer(
@@ -51,7 +55,7 @@ def dispatch(
         None, "--files", "-f", help="files to attach to prompt"
     ),
     detach: bool = typer.Option(
-        False, "--detach", help="run in background, return session id immediately (Phase 4)"
+        False, "--detach", help="run in background, return session id immediately"
     ),
     parent: Optional[str] = typer.Option(
         None, "--parent", help="parent session id (for delegation tree)"
@@ -59,10 +63,6 @@ def dispatch(
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Run an agent non-interactively. Sync mode prints the final assistant text."""
-    if detach:
-        err_console.print("[yellow]--detach not implemented yet (Phase 4)[/yellow]")
-        raise typer.Exit(2)
-
     state.init_db()
     handler = get_handler(agent)
     if not handler.is_available():
@@ -77,13 +77,48 @@ def dispatch(
         files=[str(f) for f in (files or [])],
         parent_id=parent,
     )
-    state.update_session(sid, status="running")
+
+    if detach:
+        log_path = state.LOGS_DIR / f"{sid}.log"
+        log_fh = open(log_path, "wb")
+        cmd = [sys.executable, "-m", "team", "_run-detached", sid]
+        proc = subprocess.Popen(
+            cmd,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+        # Parent doesn't need to keep its handle on the child's stdout.
+        log_fh.close()
+        state.update_session(sid, status="running", pid=proc.pid)
+        if json_out:
+            typer.echo(json.dumps({"session_id": sid, "pid": proc.pid, "status": "running"}))
+        else:
+            console.print(f"[dim]session: {sid}  pid: {proc.pid}  (detached)[/dim]")
+        return
+
+    state.update_session(sid, status="running", pid=os.getpid())
+    _run_dispatch(sid)
+
+
+def _run_dispatch(sid: str) -> None:
+    """Execute the dispatch for a pending session and update its row."""
+    row = state.get_session(sid)
+    if row is None:
+        err_console.print(f"[red]session {sid!r} vanished[/red]")
+        raise typer.Exit(1)
+    handler = get_handler(row["agent"])
+    cwd = Path(row["cwd"])
+    files = [Path(p) for p in json.loads(row["files"] or "[]")]
 
     try:
-        result = handler.dispatch(prompt, cwd_resolved, files or [])
+        result = handler.dispatch(row["prompt"], cwd, files)
     except Exception as exc:
         state.update_session(sid, status="failed", finished_at=state.now_iso(), exit_code=1)
         err_console.print(f"[red]dispatch failed:[/red] {exc}")
+        notify.notify("team — dispatch failed", f"{row['agent']}: {exc}", sound=True)
         raise typer.Exit(1) from exc
 
     output_path = state.OUTPUTS_DIR / f"{sid}.txt"
@@ -101,22 +136,21 @@ def dispatch(
         exit_code=result.exit_code,
     )
 
-    if json_out:
-        typer.echo(
-            json.dumps(
-                {
-                    "session_id": sid,
-                    "agent_session_id": result.agent_session_id,
-                    "session_file": str(result.session_file) if result.session_file else None,
-                    "output": result.initial_output,
-                    "cost_usd": result.cost_usd,
-                    "duration_seconds": result.duration_seconds,
-                }
-            )
-        )
-    else:
-        console.print(f"[dim]session: {sid}  agent_session: {result.agent_session_id}[/dim]")
-        typer.echo(result.initial_output)
+    notify.notify(
+        "team — done",
+        f"{row['agent']}: {result.initial_output[:80]}",
+        sound=True,
+    )
+
+    console.print(f"[dim]session: {sid}  agent_session: {result.agent_session_id}[/dim]")
+    typer.echo(result.initial_output)
+
+
+@app.command("_run-detached", hidden=True)
+def _run_detached(session_id: str) -> None:
+    """Internal: run a pre-inserted session in the background."""
+    state.init_db()
+    _run_dispatch(session_id)
 
 
 @app.command("list")
@@ -158,17 +192,24 @@ def list_cmd(
 @app.command()
 def get(
     session_id: str = typer.Argument(..., help="session id or unique prefix"),
-    wait: bool = typer.Option(False, "--wait", help="block until done (Phase 4)"),
+    wait: bool = typer.Option(False, "--wait", help="block until session reaches a terminal state"),
+    poll_seconds: float = typer.Option(1.0, "--poll", help="polling interval for --wait"),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     """Show session metadata + final output."""
     state.init_db()
-    if wait:
-        err_console.print("[yellow]--wait not implemented yet (Phase 4)[/yellow]")
     row = state.get_session(session_id)
     if row is None:
         err_console.print(f"[red]session {session_id!r} not found[/red]")
         raise typer.Exit(1)
+    if wait:
+        terminal = {"done", "failed", "killed"}
+        while row["status"] not in terminal:
+            time.sleep(poll_seconds)
+            row = state.get_session(session_id)
+            if row is None:
+                err_console.print(f"[red]session {session_id!r} vanished while waiting[/red]")
+                raise typer.Exit(1)
 
     output = ""
     if row.get("output_path") and Path(row["output_path"]).exists():
@@ -313,6 +354,81 @@ def _maybe_truncate(text: str, max_bytes: int) -> str:
         + f"\n\n[!] truncated at {max_bytes} bytes (full size: {len(raw)}). "
         "Use --all or higher --max-bytes to see more."
     )
+
+
+@app.command()
+def logs(
+    session_id: str = typer.Argument(..., help="session id or unique prefix"),
+    follow: bool = typer.Option(False, "--follow", "-f", help="tail -f the log file"),
+) -> None:
+    """Show subprocess stdout/stderr for a detached session."""
+    state.init_db()
+    row = state.get_session(session_id)
+    if row is None:
+        err_console.print(f"[red]session {session_id!r} not found[/red]")
+        raise typer.Exit(1)
+    log_path = state.LOGS_DIR / f"{row['id']}.log"
+    if not log_path.exists():
+        err_console.print(f"[yellow]no log for {row['id']} (was it run with --detach?)[/yellow]")
+        raise typer.Exit(1)
+
+    if not follow:
+        typer.echo(log_path.read_text(encoding="utf-8", errors="replace"))
+        return
+
+    with log_path.open("r", encoding="utf-8", errors="replace") as fh:
+        # Print existing content first.
+        typer.echo(fh.read(), nl=False)
+        terminal = {"done", "failed", "killed"}
+        while True:
+            chunk = fh.read()
+            if chunk:
+                typer.echo(chunk, nl=False)
+            row = state.get_session(row["id"])
+            if row is None or row["status"] in terminal:
+                # one final flush
+                tail = fh.read()
+                if tail:
+                    typer.echo(tail, nl=False)
+                return
+            time.sleep(0.5)
+
+
+@app.command()
+def kill(
+    session_id: str = typer.Argument(..., help="session id or unique prefix"),
+) -> None:
+    """SIGTERM a running detached session."""
+    state.init_db()
+    row = state.get_session(session_id)
+    if row is None:
+        err_console.print(f"[red]session {session_id!r} not found[/red]")
+        raise typer.Exit(1)
+    if row["status"] not in ("running", "pending"):
+        err_console.print(f"[yellow]session is {row['status']}; nothing to kill[/yellow]")
+        raise typer.Exit(0)
+    pid = row.get("pid")
+    if not pid:
+        err_console.print(f"[red]no pid recorded for {row['id']}[/red]")
+        raise typer.Exit(1)
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except ProcessLookupError:
+        # Process already gone; just mark killed.
+        pass
+    except PermissionError as exc:
+        err_console.print(f"[red]cannot kill pid {pid}: {exc}[/red]")
+        raise typer.Exit(1)
+    state.update_session(
+        row["id"], status="killed", finished_at=state.now_iso(), exit_code=143
+    )
+    console.print(f"[magenta]killed[/magenta] {row['id']} (pid {pid})")
+
+
+@app.command()
+def watch() -> None:
+    """Live TUI of recent and active sessions. Ctrl-C to exit."""
+    watcher.run()
 
 
 def _status_icon(status: str) -> str:
