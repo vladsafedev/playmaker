@@ -456,30 +456,67 @@ def quotas(
 
     data = json.loads(text)
     fetched = data.get("fetched_at", "?")
-    console.print(f"[dim]fetched: {fetched}[/dim]\n")
+    console.print(f"[dim]fetched: {fetched}[/dim]")
     for name, info in (data.get("providers") or {}).items():
-        status = info.get("status")
-        if status == "ok":
-            session = info.get("session_left")
-            week = info.get("weekly_all_left")
-            sonnet = info.get("weekly_sonnet_left")
-            line = f"[green]{name}[/green]"
-            if session is not None:
-                line += f"  session left: {session}%"
-            if week is not None:
-                line += f"  weekly: {week}%"
-            if sonnet is not None and sonnet != week:
-                line += f"  sonnet: {sonnet}%"
-            console.print(line)
-            for key in ("session_resets", "weekly_resets"):
-                if info.get(key):
-                    console.print(f"  [dim]{key}: {info[key]}[/dim]")
-        elif status == "unsupported":
-            console.print(f"[yellow]{name}[/yellow]  unsupported: {info.get('reason', '')}")
-        else:
-            console.print(f"[red]{name}[/red]  error: {info.get('error', '')}")
-            if info.get("last_success"):
-                console.print(f"  [dim]last success: {info['last_success']}[/dim]")
+        console.print()
+        _render_provider(name, info)
+
+
+def _render_provider(name: str, info: dict) -> None:
+    status = info.get("status")
+    label_color = {"codex": "blue", "claude": "magenta", "gemini": "cyan"}.get(name, "white")
+    title = f"[bold {label_color}]{name.capitalize()}[/bold {label_color}]"
+    suffix_parts: list[str] = []
+    if info.get("account_email"):
+        suffix_parts.append(info["account_email"])
+    if info.get("tier"):
+        suffix_parts.append(info["tier"])
+    suffix = "  ·  ".join(suffix_parts)
+    if suffix:
+        console.print(f"{title}  [dim]{suffix}[/dim]")
+    else:
+        console.print(title)
+
+    if status == "error":
+        console.print(f"  [red]error[/red]: {info.get('error', '')}")
+        if info.get("last_success"):
+            console.print(f"  [dim]last success: {info['last_success']}[/dim]")
+        return
+    if status == "unsupported":
+        console.print(f"  [yellow]unsupported[/yellow]: {info.get('reason', '')}")
+        return
+
+    windows = info.get("windows") or []
+    if not windows:
+        console.print("  [dim]no quota windows reported[/dim]")
+        return
+
+    for w in windows:
+        pct = w.get("pct_left")
+        bar = _bar(pct) if isinstance(pct, int) else " " * 20
+        line = f"  [bold]{w['name']:<11}[/bold] {bar} {pct}% left"
+        right_parts = []
+        if w.get("reset_relative"):
+            right_parts.append(f"resets in {w['reset_relative']}")
+        if w.get("forecast"):
+            right_parts.append(w["forecast"])
+        if w.get("reserve_pct") is not None:
+            right_parts.append(f"{w['reserve_pct']}% in reserve")
+        if right_parts:
+            line += f"   [dim]{'  ·  '.join(right_parts)}[/dim]"
+        console.print(line)
+
+
+def _bar(pct: int, width: int = 20) -> str:
+    pct = max(0, min(100, pct))
+    filled = round((pct / 100) * width)
+    if pct >= 50:
+        color = "green"
+    elif pct >= 20:
+        color = "yellow"
+    else:
+        color = "red"
+    return f"[{color}]{'█' * filled}[/{color}]{'░' * (width - filled)}"
 
 
 @app.command()
