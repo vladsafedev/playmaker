@@ -15,7 +15,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from team import notify, state, watcher
+from team import notify, state, watcher, zed
 from team.registry import get_handler
 
 app = typer.Typer(
@@ -62,6 +62,11 @@ def dispatch(
     parent: Optional[str] = typer.Option(
         None, "--parent", help="parent session id (for delegation tree)"
     ),
+    register_zed: bool = typer.Option(
+        True,
+        "--register-zed/--no-register-zed",
+        help="upsert into Zed's sidebar_threads on completion (default on; non-interactive runs are filtered out by Zed's native Import)",
+    ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Run an agent non-interactively. Detached by default — prints session id
@@ -83,12 +88,15 @@ def dispatch(
 
     if sync:
         state.update_session(sid, status="running", pid=os.getpid())
-        _run_dispatch(sid)
+        _run_dispatch(sid, register_zed=register_zed)
         return
 
     log_path = state.LOGS_DIR / f"{sid}.log"
     log_fh = open(log_path, "wb")
     cmd = [sys.executable, "-m", "team", "_run-detached", sid]
+    env = os.environ.copy()
+    if not register_zed:
+        env["TEAM_NO_REGISTER_ZED"] = "1"
     proc = subprocess.Popen(
         cmd,
         stdout=log_fh,
@@ -96,6 +104,7 @@ def dispatch(
         stdin=subprocess.DEVNULL,
         start_new_session=True,
         close_fds=True,
+        env=env,
     )
     log_fh.close()
     state.update_session(sid, status="running", pid=proc.pid)
@@ -105,7 +114,7 @@ def dispatch(
         console.print(f"[dim]session: {sid}  pid: {proc.pid}  (detached)[/dim]")
 
 
-def _run_dispatch(sid: str) -> None:
+def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
     """Execute the dispatch for a pending session and update its row."""
     row = state.get_session(sid)
     if row is None:
@@ -138,6 +147,21 @@ def _run_dispatch(sid: str) -> None:
         exit_code=result.exit_code,
     )
 
+    if register_zed:
+        try:
+            zed.register(
+                agent=row["agent"],
+                agent_session_id=result.agent_session_id,
+                prompt=row["prompt"],
+                cwd=row["cwd"],
+                started_at_iso=row["started_at"],
+            )
+        except Exception as exc:
+            # Best-effort: registration failure shouldn't fail the dispatch.
+            err_console.print(f"[yellow]zed register skipped:[/yellow] {exc}")
+        # register() returns None when Zed already has the row (e.g. Claude
+        # auto-imported by Zed); that's fine, no message needed.
+
     notify.notify(
         "team — done",
         f"{row['agent']}: {result.initial_output[:80]}",
@@ -152,7 +176,8 @@ def _run_dispatch(sid: str) -> None:
 def _run_detached(session_id: str) -> None:
     """Internal: run a pre-inserted session in the background."""
     state.init_db()
-    _run_dispatch(session_id)
+    register = os.environ.get("TEAM_NO_REGISTER_ZED") != "1"
+    _run_dispatch(session_id, register_zed=register)
 
 
 @app.command("list")
@@ -519,6 +544,49 @@ def _bar(pct: int, width: int = 20) -> str:
     else:
         color = "red"
     return f"[{color}]{'█' * filled}[/{color}]{'░' * (width - filled)}"
+
+
+@app.command("register-zed")
+def register_zed_cmd(
+    session_id: str = typer.Argument(..., help="session id or unique prefix"),
+) -> None:
+    """Backfill an existing session into Zed's sidebar_threads.
+
+    Useful for sessions that were dispatched with --no-register-zed, or those
+    spawned before the register-zed default was introduced. Restart Zed to see
+    the entry.
+    """
+    state.init_db()
+    row = state.get_session(session_id)
+    if row is None:
+        err_console.print(f"[red]session {session_id!r} not found[/red]")
+        raise typer.Exit(1)
+    if not row.get("agent_session_id"):
+        err_console.print(
+            f"[red]session has no agent_session_id yet (status={row['status']})[/red]"
+        )
+        raise typer.Exit(1)
+    try:
+        thread_id = zed.register(
+            agent=row["agent"],
+            agent_session_id=row["agent_session_id"],
+            prompt=row["prompt"],
+            cwd=row["cwd"],
+            started_at_iso=row["started_at"],
+        )
+    except Exception as exc:
+        err_console.print(f"[red]register failed:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    if thread_id is None:
+        console.print(
+            f"[dim]{row['id'][:8]}  already in Zed (Zed Import handled it); skipping[/dim]"
+        )
+    else:
+        console.print(
+            f"[green]registered[/green] {row['id'][:8]}  "
+            f"thread_id={thread_id.hex()[:8]}  "
+            f"[dim](restart Zed to see)[/dim]"
+        )
 
 
 @app.command()
