@@ -54,15 +54,18 @@ def dispatch(
     files: Optional[list[Path]] = typer.Option(
         None, "--files", "-f", help="files to attach to prompt"
     ),
-    detach: bool = typer.Option(
-        False, "--detach", help="run in background, return session id immediately"
+    sync: bool = typer.Option(
+        False,
+        "--sync",
+        help="block until the agent finishes and print final output (default is detached)",
     ),
     parent: Optional[str] = typer.Option(
         None, "--parent", help="parent session id (for delegation tree)"
     ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
-    """Run an agent non-interactively. Sync mode prints the final assistant text."""
+    """Run an agent non-interactively. Detached by default — prints session id
+    and returns immediately. Use --sync to block and print the final answer."""
     state.init_db()
     handler = get_handler(agent)
     if not handler.is_available():
@@ -78,29 +81,28 @@ def dispatch(
         parent_id=parent,
     )
 
-    if detach:
-        log_path = state.LOGS_DIR / f"{sid}.log"
-        log_fh = open(log_path, "wb")
-        cmd = [sys.executable, "-m", "team", "_run-detached", sid]
-        proc = subprocess.Popen(
-            cmd,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-            close_fds=True,
-        )
-        # Parent doesn't need to keep its handle on the child's stdout.
-        log_fh.close()
-        state.update_session(sid, status="running", pid=proc.pid)
-        if json_out:
-            typer.echo(json.dumps({"session_id": sid, "pid": proc.pid, "status": "running"}))
-        else:
-            console.print(f"[dim]session: {sid}  pid: {proc.pid}  (detached)[/dim]")
+    if sync:
+        state.update_session(sid, status="running", pid=os.getpid())
+        _run_dispatch(sid)
         return
 
-    state.update_session(sid, status="running", pid=os.getpid())
-    _run_dispatch(sid)
+    log_path = state.LOGS_DIR / f"{sid}.log"
+    log_fh = open(log_path, "wb")
+    cmd = [sys.executable, "-m", "team", "_run-detached", sid]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=log_fh,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+    log_fh.close()
+    state.update_session(sid, status="running", pid=proc.pid)
+    if json_out:
+        typer.echo(json.dumps({"session_id": sid, "pid": proc.pid, "status": "running"}))
+    else:
+        console.print(f"[dim]session: {sid}  pid: {proc.pid}  (detached)[/dim]")
 
 
 def _run_dispatch(sid: str) -> None:

@@ -29,7 +29,7 @@ team quotas [--refresh]                    # capacity per provider
 team dispatch <agent> --prompt "..."
                   [--cwd <dir>]
                   [--files PATH...]
-                  [--detach]
+                  [--sync]                # block until done; default is detached
                   [--parent <id>]
 team list [--status running|done|failed] [--agent NAME] [--json]
 team get <id> [--wait] [--json]
