@@ -121,13 +121,45 @@ support it, we'll error at runtime. Mitigation in MVP: shape mirrors
 claude-acp@0.31.3 (the only child wrapped in Phase 2). Phase 3 multi-agent
 revisits via per-mode caps.
 
+## §4.5 Live attach (Phase 2.5 — implemented)
+
+If the dispatched sub-agent is still running when the user clicks the
+sidebar row, replay alone gives a snapshot, not live progress. Phase 2.5
+adds a poll-based file watcher that streams deltas until the dispatch
+finishes.
+
+**Mechanism (proxy.py):**
+
+- After initial replay in `_handle_zed_session_load`, re-read the
+  state.db row. If `status == "running"`, register a `_Watcher` in
+  `ProxyState.watchers[sessionId]` with `emitted_count = len(initial_turns)`
+  and spawn `_watch_session_file` as an asyncio task.
+- Watcher polls every `WATCHER_POLL_INTERVAL = 0.5s`:
+  re-runs `handler.parse_session_file(...)`, compares `len(turns)` vs
+  `emitted_count`, emits `session/update` notifications for the delta.
+- Read-only access to the session-file. The dispatch process is the sole
+  writer. `parse_session_file` already tolerates partial-last-line writes
+  via try/except json.JSONDecodeError.
+- Termination: when `status` flips to `done`/`failed`/`killed`, the watcher
+  does one final flush (waits `WATCHER_TERMINAL_FLUSH_DELAY = 0.5s` to
+  catch tail writes), emits remaining delta, exits. The `finally` block
+  removes the entry from `state.watchers`.
+
+**Follow-up blocking (MVP simplicity):**
+
+While `sid in state.watchers`, `_handle_zed_session_prompt` returns a
+JSON-RPC error explaining that the dispatch is still running and offering
+`playmaker kill <id>` as the abort path. This avoids a race where a fresh
+resume-after-load child writes to the same session-file as the still-alive
+dispatch process.
+
+**Shutdown:**
+
+`run_proxy`'s `finally` cancels every active watcher task before draining
+children.
+
 ## §5 What is NOT in Phase 2
 
-- **Live attach for `status=running` threads.** If the user clicks a row
-  while the dispatched sub-agent is still running, replay shows what's in
-  the file at that instant. New turns arriving later are NOT streamed.
-  Workaround: reload Zed. Future fix: file watcher (FSEvents/inotify) tail
-  feeding session/update — ~+80 LOC. Deferred to "Phase 2.5 if it bites".
 - **Multi-agent routing.** Phase 3 — only if AI Designer integration
   surfaces a need.
 - **mcpServers augmentation.** Phase 3 RAG-as-MCP. Hook is reserved as
@@ -144,8 +176,9 @@ revisits via per-mode caps.
 | `tests/test_acp_replay.py` (9 cases) | Turn → session/update mapping; canonical capture order; no synthesized completion; thinking-vs-text split |
 | `tests/test_acp_smoke.py` (1 case) | Phase 1 regression: Plus-menu session/new with fake child, sid mint, sid rewrite, cancel forward, clean shutdown |
 | `tests/test_acp_session_load.py` (2 cases) | End-to-end: temp state.db + fake jsonl + drive proxy via subprocess pipes; assert replay order + load-result shape + available_commands_update; assert error on unknown sid |
+| `tests/test_acp_watcher.py` (2 cases) | Phase 2.5: background thread simulates dispatch writing jsonl + flipping status; assert watcher emits delta + terminates on terminal status; assert follow-up blocked with "still running" while watcher active and unblocks after termination |
 
-All 12 tests run as part of CI (`.github/workflows/ci.yml` `Run unit tests` step).
+All 14 tests run as part of CI (`.github/workflows/ci.yml` `Run unit tests` step).
 
 ## §7 Open questions / TODO
 
@@ -163,7 +196,6 @@ All 12 tests run as part of CI (`.github/workflows/ci.yml` `Run unit tests` step
 
 ### Planned (to be done)
 
-- **Live attach for status=running** (Phase 2.5).
 - **Phase 3 multi-agent** when AI Designer integration starts.
 
 ## §8 File structure

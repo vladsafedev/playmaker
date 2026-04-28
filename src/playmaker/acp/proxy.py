@@ -49,6 +49,10 @@ MAX_CHILDREN = 3
 IDLE_TIMEOUT_SECONDS = 300.0  # 5 minutes
 IDLE_SWEEP_INTERVAL = 60.0
 
+# Phase 2.5 — file watcher for running dispatched threads.
+WATCHER_POLL_INTERVAL = 0.5    # how often to re-parse the session-file
+WATCHER_TERMINAL_FLUSH_DELAY = 0.5  # extra read after status flips to terminal
+
 
 MsgKind = Literal["request", "response", "notification", "error"]
 
@@ -75,6 +79,11 @@ class ProxyState:
     # Pending session-creating requests to a child, keyed by child-side jsonrpc id.
     pending_session_create: dict[int, _PendingSessionCreate] = field(default_factory=dict)
     pending_session_close: dict[int, _PendingSessionClose] = field(default_factory=dict)
+    # Phase 2.5: live file watchers for running dispatched threads, keyed by
+    # the agent's native sid (== sidebar_threads.session_id == what Zed sends
+    # in session/load). While a watcher is active for sid X, follow-up
+    # session/prompt for X is BLOCKED — the user is told to wait or kill.
+    watchers: dict[str, _Watcher] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -89,6 +98,28 @@ class _PendingSessionCreate:
 class _PendingSessionClose:
     zed_id: int
     zed_sid: str
+
+
+@dataclass
+class _Watcher:
+    """Per-sid file watcher state.
+
+    `task` is the asyncio.Task running `_watch_session_file`. We track it
+    so shutdown can cancel pending watchers cleanly.
+
+    `emitted_count` is the number of Turns we've already pushed to Zed.
+    The watcher polls `parse_session_file` and emits anything past this
+    counter — guaranteeing no duplicates with the initial session/load
+    replay (which sets emitted_count = len(initial_turns)).
+
+    Read-only access to the session-file. Dispatch process is the only
+    writer; we never touch it. No race needed beyond what each handler's
+    parse_session_file already tolerates (graceful JSON decode of partial
+    last lines).
+    """
+
+    task: asyncio.Task
+    emitted_count: int
 
 
 # ---------- Zed-side I/O helpers ---------------------------------------------
@@ -132,6 +163,75 @@ async def _ensure_pool_capacity(state: ProxyState) -> None:
         await shutdown_child(oldest.handle)
         if zed_sid:
             state.sessions.unregister(zed_sid)
+
+
+async def _watch_session_file(
+    state: ProxyState,
+    sid: str,
+    session_file: Path,
+    agent: str,
+) -> None:
+    """Phase 2.5 — poll the agent's session-file and emit new Turn[]
+    deltas as `session/update` notifications until status flips terminal.
+
+    Read-only. Dispatch process is the sole writer; this coroutine never
+    touches the file. parse_session_file in each handler already tolerates
+    partial-last-line writes via try/except json.JSONDecodeError.
+
+    Termination conditions (any one):
+      - state.db row.status in {"done", "failed", "killed"} → final flush + exit
+      - state.db row vanished (shouldn't happen normally) → exit
+      - asyncio.CancelledError (shutdown) → exit cleanly via finally
+    """
+    handler = get_handler(agent)
+    try:
+        while True:
+            await asyncio.sleep(WATCHER_POLL_INTERVAL)
+
+            row = state_db.get_session_by_agent_session_id(sid)
+            if row is None:
+                logger.warning("watcher: row vanished for sid=%s", sid)
+                return
+
+            await _emit_delta(state, sid, handler, session_file)
+
+            if row["status"] in ("done", "failed", "killed"):
+                # Final flush — dispatch may have written tail turns between
+                # our last poll and the status flip.
+                await asyncio.sleep(WATCHER_TERMINAL_FLUSH_DELAY)
+                await _emit_delta(state, sid, handler, session_file)
+                logger.info("watcher: terminal status=%s for sid=%s", row["status"], sid)
+                return
+    except asyncio.CancelledError:
+        logger.info("watcher: cancelled for sid=%s", sid)
+        raise
+    finally:
+        # Clear from registry so blocked follow-ups can proceed.
+        state.watchers.pop(sid, None)
+
+
+async def _emit_delta(
+    state: ProxyState, sid: str, handler: Any, session_file: Path
+) -> None:
+    """Re-parse the session-file; emit any Turn[] past emitted_count."""
+    watcher = state.watchers.get(sid)
+    if watcher is None:
+        return
+    try:
+        turns = handler.parse_session_file(session_file)
+    except Exception as exc:
+        logger.exception("watcher: parse failed for %s: %s", session_file, exc)
+        return
+    if len(turns) <= watcher.emitted_count:
+        return
+    new_turns = turns[watcher.emitted_count:]
+    for upd in turns_to_updates(new_turns):
+        await _write_zed({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {"sessionId": sid, "update": upd},
+        })
+    watcher.emitted_count = len(turns)
 
 
 async def _idle_sweeper(state: ProxyState) -> None:
@@ -277,6 +377,31 @@ async def _handle_zed_session_load(state: ProxyState, msg: dict[str, Any]) -> No
         },
     })
 
+    # Phase 2.5 — if the dispatch is still running, attach a file watcher
+    # that polls the session-file and pushes deltas to Zed. We re-read row
+    # AFTER the replay to avoid a race where dispatch finished during our
+    # parse: in that case the status is already terminal and no watcher
+    # needed.
+    fresh_row = state_db.get_session_by_agent_session_id(incoming_sid)
+    if fresh_row and fresh_row["status"] == "running":
+        if incoming_sid not in state.watchers:
+            session_file_path = Path(fresh_row["session_file_path"])
+            agent = fresh_row["agent"]
+            # Allocate the registry entry first, then start the task. Order
+            # matters because the task immediately calls _emit_delta which
+            # reads state.watchers[sid].emitted_count.
+            placeholder = _Watcher(task=asyncio.current_task(), emitted_count=len(turns))  # type: ignore[arg-type]
+            state.watchers[incoming_sid] = placeholder
+            task = asyncio.create_task(
+                _watch_session_file(state, incoming_sid, session_file_path, agent),
+                name=f"watcher-{incoming_sid[:8]}",
+            )
+            state.watchers[incoming_sid] = _Watcher(task=task, emitted_count=len(turns))
+            logger.info(
+                "watcher: started for sid=%s file=%s emitted_count=%d",
+                incoming_sid, session_file_path, len(turns),
+            )
+
 
 # ---- session/prompt: existing OR resume-after-load --------------------------
 
@@ -293,6 +418,18 @@ async def _handle_zed_session_prompt(state: ProxyState, msg: dict[str, Any]) -> 
     sid = params.get("sessionId")
     if not sid:
         await _write_zed(_jsonrpc_error(zed_id, "session/prompt missing sessionId"))
+        return
+
+    # Phase 2.5 block: if a file-watcher is active (dispatch still running),
+    # follow-ups would race the running process for the same session-file.
+    # Tell the user explicitly instead of silently spawning a parallel child.
+    if sid in state.watchers:
+        await _write_zed(_jsonrpc_error(
+            zed_id,
+            f"sub-agent for session {sid[:8]} is still running. Wait for "
+            f"completion (the thread will become live as the agent writes), "
+            f"or run `playmaker kill {sid[:8]}` in a terminal to abort.",
+        ))
         return
 
     session = state.sessions.by_zed(sid)
@@ -760,6 +897,13 @@ async def run_proxy(child_cmd: list[str] | None = None) -> int:
             await sweeper
         except (asyncio.CancelledError, Exception):
             pass
+
+        # Phase 2.5 — cancel all active file watchers.
+        watcher_tasks = [w.task for w in state.watchers.values() if not w.task.done()]
+        for t in watcher_tasks:
+            t.cancel()
+        if watcher_tasks:
+            await asyncio.gather(*watcher_tasks, return_exceptions=True)
 
         all_handles: list[ChildHandle] = []
         for s in state.sessions.all_sessions():
