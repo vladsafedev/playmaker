@@ -25,10 +25,17 @@ ZED_DB = Path("~/Library/Application Support/Zed/db/0-stable/db.sqlite").expandu
 _NAMESPACE = uuid.UUID("0e6e7d4a-3a3c-4f6a-9c4e-1f7e2c1ab842")
 
 # How `agent` (our internal name) maps to Zed's agent_id column.
+#
+# Phase 2: all three route through "playmaker" so Zed spawns OUR proxy on
+# sidebar click. The proxy looks up state.db by agent_session_id, parses
+# the right session-file via the agent-specific handler, and replays + live-
+# attaches uniformly. Without this, Zed would spawn the native *-acp binary
+# and we'd lose Phase 2 / Phase 2.5 behaviour for any agent whose native
+# binary doesn't implement loadSession over its own session-file.
 _AGENT_ID = {
-    "claude": "claude-acp",
-    "codex": "codex-acp",
-    "gemini": "gemini",
+    "claude": "playmaker",
+    "codex": "playmaker",
+    "gemini": "playmaker",
 }
 
 
