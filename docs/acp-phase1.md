@@ -360,3 +360,11 @@ parsing edge cases. Those defer to Phase 2 fuzz tests.
   `error: unknown session` rather than silently forward to a random
   child.
 - **Bookkeeping child** — see corr-17. Decision deferred.
+- **Multi-session deadlock from a sync stdin/stdout driver.** During Phase 1
+  development a sync-driver smoke test (subprocess.PIPE write + readline)
+  hung on the *second* `session/new`. Real Zed (asyncio client) handled
+  4+ concurrent threads through the proxy without issue, so the freeze
+  is most likely driver-side pipe buffering, not a proxy bug. Reproducer
+  and minimal asyncio driver to confirm — Phase 2 task; if the freeze
+  reproduces with an asyncio driver, the proxy has a real second-session
+  bug that doesn't manifest under Zed's I/O pattern.
