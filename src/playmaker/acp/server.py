@@ -9,7 +9,7 @@ from typing import Optional
 
 import typer
 
-from playmaker.acp.proxy import run_proxy
+from playmaker.acp.proxy import CHILD_CMD_BY_AGENT, run_proxy
 
 
 acp_app = typer.Typer(
@@ -22,12 +22,22 @@ acp_app = typer.Typer(
 
 @acp_app.callback(invoke_without_command=True)
 def acp(
+    agent: Optional[str] = typer.Option(
+        None,
+        "--agent",
+        help=(
+            "Which sub-agent this proxy instance fronts. One of "
+            "claude/codex/gemini. Selects the child command Zed-side "
+            "spawns on session/new (Plus-menu path). Defaults to claude. "
+            "Ignored when --child is given."
+        ),
+    ),
     child_cmd: Optional[str] = typer.Option(
         None,
         "--child",
         help=(
-            "Override the child agent command (space-separated). "
-            "Defaults to claude-agent-acp via npm exec."
+            "Explicit child agent command (space-separated). Overrides "
+            "--agent. Use this for testing against a custom binary."
         ),
     ),
     log_level: str = typer.Option(
@@ -40,7 +50,21 @@ def acp(
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
         stream=sys.stderr,
     )
-    cmd = child_cmd.split() if child_cmd else None
+
+    if child_cmd:
+        cmd: Optional[list[str]] = child_cmd.split()
+    elif agent:
+        if agent not in CHILD_CMD_BY_AGENT:
+            typer.echo(
+                f"unknown --agent {agent!r}; expected one of "
+                f"{', '.join(sorted(CHILD_CMD_BY_AGENT))}",
+                err=True,
+            )
+            raise typer.Exit(2)
+        cmd = list(CHILD_CMD_BY_AGENT[agent])
+    else:
+        cmd = None  # falls back to module-level DEFAULT_CHILD_CMD (claude)
+
     try:
         rc = asyncio.run(run_proxy(child_cmd=cmd))
     except SystemExit as exc:

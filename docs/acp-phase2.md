@@ -121,6 +121,61 @@ support it, we'll error at runtime. Mitigation in MVP: shape mirrors
 claude-acp@0.31.3 (the only child wrapped in Phase 2). Phase 3 multi-agent
 revisits via per-mode caps.
 
+## §4.4 Routing strategy — preserve native agent icons
+
+When the user clicks a sidebar thread, Zed picks the icon (✦ Claude,
+⊕ Codex, ✷ Gemini) by matching the row's `agent_id` against a small
+hardcoded set of native agent names in Zed itself. We have two ways to
+get our proxy into the loop without losing those icons.
+
+**Option A (what we use).** Keep native `agent_id` values
+(`claude-acp` / `codex-acp` / `gemini`) in `sidebar_threads`, but in
+`~/.config/zed/settings.json`, replace each agent's `type: "registry"`
+entry with a `type: "custom"` registration pointing at
+`playmaker acp --agent <name>`. Zed spawns OUR binary when the user
+clicks; the icon stays correct because the `agent_id` is unchanged.
+
+```json
+{
+  "agent_servers": {
+    "claude-acp": {
+      "type": "custom",
+      "command": "/Users/shulyugin/Sites/team/.venv/bin/playmaker",
+      "args": ["acp", "--agent", "claude"],
+      "env": {}
+    },
+    "codex-acp": {
+      "type": "custom",
+      "command": "/Users/shulyugin/Sites/team/.venv/bin/playmaker",
+      "args": ["acp", "--agent", "codex"],
+      "env": {}
+    },
+    "gemini": {
+      "type": "custom",
+      "command": "/Users/shulyugin/Sites/team/.venv/bin/playmaker",
+      "args": ["acp", "--agent", "gemini"],
+      "env": {}
+    }
+  }
+}
+```
+
+The `--agent` flag tells `playmaker acp` which child binary to spawn on
+session/new (Plus-menu path) — it picks from `proxy.CHILD_CMD_BY_AGENT`.
+For sidebar-load path the agent is read from playmaker's state.db row
+and `--agent` is irrelevant.
+
+Trade-off: native registry binaries become unreachable via Plus-menu
+(every Plus → claude-acp/codex-acp/gemini now goes through playmaker).
+That's fine — playmaker spawns the same native binary internally, just
+with our proxy in front.
+
+**Option B (rejected).** Use a single `agent_id="playmaker"` for every
+dispatched thread. We tried this in commit `4dafc5b` and reverted: it
+worked functionally but Zed UI rendered all three with a generic
+terminal icon (►) and the user couldn't tell which thread belonged to
+which agent.
+
 ## §4.5 Live attach (Phase 2.5 — implemented)
 
 If the dispatched sub-agent is still running when the user clicks the

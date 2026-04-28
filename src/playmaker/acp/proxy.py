@@ -37,12 +37,36 @@ from playmaker.registry import get_handler
 logger = logging.getLogger("playmaker.acp.proxy")
 
 
-# Phase 1 child for Plus-menu threads (session/new path) — Claude only in MVP.
-DEFAULT_CHILD_CMD: list[str] = [
-    "/Users/shulyugin/.nvm/versions/node/v24.1.0/bin/npm",
-    "exec",
-    "@agentclientprotocol/claude-agent-acp@0.31.3",
-]
+# Per-agent child commands. Selected via `playmaker acp --agent <name>`,
+# which lets the user register THREE agent_servers in Zed settings (one per
+# agent name) all pointing at the same playmaker bin with a different
+# --agent arg. That preserves Zed's native icon resolution: Zed picks ✦
+# for agent_id="claude-acp", ⊕ for "codex-acp", ✷ for "gemini".
+#
+# Hardcoded paths are MVP — they reflect Vlad's local install and will need
+# environment-aware discovery before the package is published. Codex path
+# is the version pinned by Zed's external_agents registry; bump as needed.
+CHILD_CMD_BY_AGENT: dict[str, list[str]] = {
+    "claude": [
+        "/Users/shulyugin/.nvm/versions/node/v24.1.0/bin/npm",
+        "exec",
+        "@agentclientprotocol/claude-agent-acp@0.31.3",
+    ],
+    "codex": [
+        "/Users/shulyugin/Library/Application Support/Zed/external_agents/registry/"
+        "codex-acp/v_0.12.0_db7237057c06cdee_60c68834590edb71/codex-acp",
+    ],
+    "gemini": [
+        "/Users/shulyugin/.nvm/versions/node/v24.1.0/bin/npm",
+        "exec",
+        "@google/gemini-cli@0.39.1",
+        "--",
+        "--acp",
+    ],
+}
+
+# Filled at startup by run_proxy(child_cmd=...) or by `playmaker acp --agent`.
+DEFAULT_CHILD_CMD: list[str] = list(CHILD_CMD_BY_AGENT["claude"])
 
 # LRU pool / idle-timeout policy.
 MAX_CHILDREN = 3

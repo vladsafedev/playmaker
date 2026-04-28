@@ -26,16 +26,17 @@ _NAMESPACE = uuid.UUID("0e6e7d4a-3a3c-4f6a-9c4e-1f7e2c1ab842")
 
 # How `agent` (our internal name) maps to Zed's agent_id column.
 #
-# Phase 2: all three route through "playmaker" so Zed spawns OUR proxy on
-# sidebar click. The proxy looks up state.db by agent_session_id, parses
-# the right session-file via the agent-specific handler, and replays + live-
-# attaches uniformly. Without this, Zed would spawn the native *-acp binary
-# and we'd lose Phase 2 / Phase 2.5 behaviour for any agent whose native
-# binary doesn't implement loadSession over its own session-file.
+# Phase 2 (strategic): we keep the NATIVE agent_id values so Zed UI shows
+# the proper branded icon (Claude ✦, Codex ⊕, Gemini ✷) for each
+# dispatched thread. Routing of sidebar clicks to playmaker (vs native
+# binary) is done via `agent_servers` settings — the user replaces the
+# native registry registration with a custom one pointing at
+# `playmaker acp --agent <name>`. See docs/acp-phase2.md §9 for the
+# settings.json snippet.
 _AGENT_ID = {
-    "claude": "playmaker",
-    "codex": "playmaker",
-    "gemini": "playmaker",
+    "claude": "claude-acp",
+    "codex": "codex-acp",
+    "gemini": "gemini",
 }
 
 
