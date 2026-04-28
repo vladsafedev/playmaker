@@ -41,7 +41,7 @@ def acp(
         ),
     ),
     log_level: str = typer.Option(
-        "WARNING", "--log-level", help="Logger level (DEBUG/INFO/WARNING/ERROR)"
+        "INFO", "--log-level", help="Logger level (DEBUG/INFO/WARNING/ERROR)"
     ),
 ) -> None:
     """Run as ACP server on stdio."""

@@ -206,28 +206,56 @@ async def _watch_session_file(
       - state.db row.status in {"done", "failed", "killed"} → final flush + exit
       - state.db row vanished (shouldn't happen normally) → exit
       - asyncio.CancelledError (shutdown) → exit cleanly via finally
+
+    Logs one INFO line per poll so Zed.log surfaces whether the file is
+    actually growing during dispatch. If turns count never increases until
+    status flips terminal, the agent is buffering writes and watcher
+    granularity is fundamentally limited by flush behaviour.
     """
     handler = get_handler(agent)
+    poll_count = 0
+    last_size = -1
     try:
         while True:
             await asyncio.sleep(WATCHER_POLL_INTERVAL)
+            poll_count += 1
 
             row = state_db.get_session_by_agent_session_id(sid)
             if row is None:
                 logger.warning("watcher: row vanished for sid=%s", sid)
                 return
 
+            try:
+                size_now = session_file.stat().st_size
+            except OSError:
+                size_now = -1
+
+            emitted_before = state.watchers[sid].emitted_count if sid in state.watchers else -1
             await _emit_delta(state, sid, handler, session_file)
+            emitted_after = state.watchers[sid].emitted_count if sid in state.watchers else emitted_before
+
+            if size_now != last_size or emitted_after != emitted_before:
+                logger.info(
+                    "watcher poll #%d agent=%s sid=%s status=%s file_size=%d emitted=%d -> %d",
+                    poll_count, agent, sid[:8], row["status"], size_now,
+                    emitted_before, emitted_after,
+                )
+                last_size = size_now
 
             if row["status"] in ("done", "failed", "killed"):
                 # Final flush — dispatch may have written tail turns between
-                # our last poll and the status flip.
+                # our last poll and the status flip. Use a longer delay than
+                # the regular interval to give buffered writers (e.g. Codex)
+                # a chance to flush their last batch on close.
                 await asyncio.sleep(WATCHER_TERMINAL_FLUSH_DELAY)
                 await _emit_delta(state, sid, handler, session_file)
-                logger.info("watcher: terminal status=%s for sid=%s", row["status"], sid)
+                logger.info(
+                    "watcher: terminal status=%s for sid=%s after %d polls",
+                    row["status"], sid[:8], poll_count,
+                )
                 return
     except asyncio.CancelledError:
-        logger.info("watcher: cancelled for sid=%s", sid)
+        logger.info("watcher: cancelled for sid=%s", sid[:8])
         raise
     finally:
         # Clear from registry so blocked follow-ups can proceed.
