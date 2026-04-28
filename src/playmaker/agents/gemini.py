@@ -39,50 +39,84 @@ class GeminiHandler:
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
     ) -> DispatchResult:
+        """Streaming dispatch via `gemini -p ... -o stream-json` so that
+        `on_session_started` fires within the first event instead of at
+        the very end. The first JSONL line carries `session_id` (or
+        `sessionId`); we callback on it so dispatch's state.db +
+        sidebar_threads write happens early — Zed sidebar shows the row
+        almost immediately after CLI invocation.
+        """
         full_prompt = self._build_prompt(prompt, files or [])
         cmd = [
             "gemini",
             "-p",
             full_prompt,
             "-o",
-            "json",
+            "stream-json",
             "--yolo",
         ]
         t0 = time.monotonic()
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=str(cwd),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
+            bufsize=1,
         )
+
+        agent_session_id: str | None = None
+        last_response = ""
+        first_lines: list[str] = []
+
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            if len(first_lines) < 3:
+                first_lines.append(raw)
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if agent_session_id is None:
+                sid = obj.get("session_id") or obj.get("sessionId")
+                if sid:
+                    agent_session_id = sid
+                    if on_session_started is not None:
+                        try:
+                            on_session_started(agent_session_id)
+                        except Exception:
+                            pass
+
+            # Capture latest "response" field (gemini emits incremental
+            # updates that overwrite each other; the last value wins).
+            if obj.get("response"):
+                last_response = obj["response"]
+
+        stderr_buf = proc.stderr.read() if proc.stderr else ""
+        proc.wait()
         duration = time.monotonic() - t0
 
         if proc.returncode != 0:
             raise RuntimeError(
                 f"gemini failed (exit {proc.returncode}): "
-                f"{proc.stderr.strip() or proc.stdout.strip()}"
+                f"{stderr_buf.strip() or ''.join(first_lines)[:500]}"
             )
 
-        try:
-            data = json.loads(proc.stdout)
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"gemini returned non-JSON output: {proc.stdout[:500]}") from e
-
-        agent_session_id = data.get("session_id") or data.get("sessionId") or ""
         if not agent_session_id:
-            raise RuntimeError(f"gemini json missing session_id: {list(data.keys())}")
+            raise RuntimeError(
+                f"gemini stream-json missing session_id; first lines:\n"
+                f"{''.join(first_lines)[:500]}"
+            )
 
-        # gemini -p emits its session_id only in the final JSON; no early signal.
-        if on_session_started is not None:
-            try:
-                on_session_started(agent_session_id)
-            except Exception:
-                pass
         return DispatchResult(
             agent_session_id=agent_session_id,
             cwd=str(cwd),
             session_file=self.find_session_file(agent_session_id, cwd),
-            initial_output=data.get("response", ""),
+            initial_output=last_response,
             cost_usd=None,  # Gemini json reports tokens, not USD
             duration_seconds=duration,
             exit_code=proc.returncode,

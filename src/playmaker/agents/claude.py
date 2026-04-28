@@ -32,45 +32,104 @@ class ClaudeHandler:
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
     ) -> DispatchResult:
+        """Streaming dispatch — emits on_session_started early.
+
+        `claude -p --output-format stream-json --verbose` produces JSONL
+        on stdout where the first line is a `system/init` event carrying
+        `session_id`. We catch that within the first poll, fire the
+        callback, and let `playmaker dispatch` write to state.db +
+        sidebar_threads BEFORE the agent finishes — so the user sees the
+        thread row in Zed's sidebar within ~1s of dispatch instead of
+        having to wait for the full run.
+        """
         full_prompt = self._build_prompt(prompt, files or [])
+        # `--verbose` is required by claude-cli when stream-json is used
+        # without partial-messages; without it we get a parse-time refusal.
         cmd = [
             "claude",
             "-p",
             "--output-format",
-            "json",
+            "stream-json",
+            "--verbose",
             full_prompt,
         ]
-        proc = subprocess.run(
+        import time as _time
+        t0 = _time.monotonic()
+        proc = subprocess.Popen(
             cmd,
             cwd=str(cwd),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
+            bufsize=1,  # line-buffered
         )
+
+        agent_session_id: str | None = None
+        last_text = ""
+        cost_usd: float | None = None
+        duration_seconds: float | None = None
+        first_lines: list[str] = []  # for diagnostics if no session_id
+
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            if len(first_lines) < 3:
+                first_lines.append(raw)
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            # Early callback on first event carrying session_id (init).
+            if agent_session_id is None and obj.get("session_id"):
+                agent_session_id = obj["session_id"]
+                if on_session_started is not None:
+                    try:
+                        on_session_started(agent_session_id)
+                    except Exception:
+                        pass
+
+            # Capture last assistant text + cost for the result.
+            etype = obj.get("type")
+            if etype == "assistant":
+                content = (obj.get("message") or {}).get("content") or []
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        last_text = block.get("text", "") or last_text
+            elif etype == "result":
+                last_text = obj.get("result", last_text)
+                if obj.get("total_cost_usd") is not None:
+                    cost_usd = obj["total_cost_usd"]
+                if obj.get("duration_ms") is not None:
+                    duration_seconds = obj["duration_ms"] / 1000.0
+
+        stderr_buf = proc.stderr.read() if proc.stderr else ""
+        proc.wait()
+
         if proc.returncode != 0:
             raise RuntimeError(
-                f"claude failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"
+                f"claude failed (exit {proc.returncode}): "
+                f"{stderr_buf.strip() or ''.join(first_lines)[:500]}"
             )
 
-        try:
-            data = json.loads(proc.stdout)
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"claude returned non-JSON output: {proc.stdout[:500]}") from e
+        if agent_session_id is None:
+            raise RuntimeError(
+                f"claude stream-json missing session_id in first events:\n"
+                f"{''.join(first_lines)[:500]}"
+            )
 
-        agent_session_id = data["session_id"]
-        # claude -p has no early streaming signal; call back here so callers
-        # see a uniform "session started" event regardless of agent.
-        if on_session_started is not None:
-            try:
-                on_session_started(agent_session_id)
-            except Exception:
-                pass
+        if duration_seconds is None:
+            duration_seconds = _time.monotonic() - t0
+
         return DispatchResult(
             agent_session_id=agent_session_id,
             cwd=str(cwd),
             session_file=self.find_session_file(agent_session_id, cwd),
-            initial_output=data.get("result", ""),
-            cost_usd=data.get("total_cost_usd"),
-            duration_seconds=data.get("duration_ms", 0) / 1000.0,
+            initial_output=last_text,
+            cost_usd=cost_usd,
+            duration_seconds=duration_seconds,
             exit_code=proc.returncode,
         )
 
