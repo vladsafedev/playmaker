@@ -14,6 +14,7 @@ Visible after the user restarts Zed (or opens a new workspace).
 from __future__ import annotations
 
 import sqlite3
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -154,11 +155,18 @@ def finalize(*, agent: str, agent_session_id: str) -> bool:
     Called by `_run_dispatch` once the sub-agent transitions to a terminal
     state (done / failed / killed). Returns True if a row was updated.
     Idempotent: no-op if the prefix is already absent.
+
+    Prints a diagnostic to stderr (visible in ~/.playmaker/logs/<sid>.log
+    for detached dispatches) — this is intentional, since silent failure
+    has bitten us once already (the marker stayed visible until a manual
+    UPDATE was run).
     """
     if not is_available():
+        sys.stderr.write(f"[zed.finalize] Zed DB unavailable at {ZED_DB}\n")
         return False
     agent_id = _AGENT_ID.get(agent)
     if agent_id is None:
+        sys.stderr.write(f"[zed.finalize] unknown agent={agent!r}\n")
         return False
     thread_id = thread_id_for(agent, agent_session_id)
     conn = sqlite3.connect(str(ZED_DB), timeout=10.0)
@@ -170,6 +178,17 @@ def finalize(*, agent: str, agent_session_id: str) -> bool:
             (len(RUNNING_PREFIX) + 1, thread_id, len(RUNNING_PREFIX), RUNNING_PREFIX),
         )
         conn.commit()
-        return cur.rowcount > 0
+        rowcount = cur.rowcount
+        sys.stderr.write(
+            f"[zed.finalize] agent={agent} sid={agent_session_id[:8]} "
+            f"thread_id={thread_id.hex()[:8]} rows_updated={rowcount}\n"
+        )
+        return rowcount > 0
+    except Exception as exc:
+        sys.stderr.write(
+            f"[zed.finalize] agent={agent} sid={agent_session_id[:8]} "
+            f"FAILED: {type(exc).__name__}: {exc}\n"
+        )
+        raise
     finally:
         conn.close()
