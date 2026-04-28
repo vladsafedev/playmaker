@@ -1,15 +1,18 @@
-"""Rich Live TUI for `team watch`."""
+"""Rich Live TUI for `playmaker watch`."""
 
 from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
-from team import state
+from playmaker import state
+from playmaker.registry import get_handler
 
 
 _ICONS = {
@@ -38,7 +41,7 @@ def _build_table() -> Table:
                 keep.append(r)
 
     table = Table(
-        title=f"team — live sessions ({len(keep)})",
+        title=f"playmaker — live sessions ({len(keep)})",
         show_header=True,
         header_style="bold",
     )
@@ -46,6 +49,7 @@ def _build_table() -> Table:
     table.add_column("agent", no_wrap=True)
     table.add_column("status", no_wrap=True)
     table.add_column("age", no_wrap=True)
+    table.add_column("activity")
     table.add_column("prompt")
 
     for r in keep:
@@ -59,8 +63,65 @@ def _build_table() -> Table:
         prompt = (r["prompt"] or "").replace("\n", " ")
         if len(prompt) > 60:
             prompt = prompt[:57] + "..."
-        table.add_row(r["id"][:8], r["agent"], f"{icon} {r['status']}", age_str, prompt)
+        activity = _get_activity(r)
+        table.add_row(
+            r["id"][:8],
+            r["agent"],
+            f"{icon} {r['status']}",
+            age_str,
+            activity,
+            prompt,
+        )
     return table
+
+
+def _get_activity(row: dict[str, Any]) -> str:
+    status = row["status"]
+    if status == "running":
+        path_str = row.get("session_file_path")
+        if not path_str:
+            return "starting..."
+        path = Path(path_str)
+        if not path.exists():
+            return "starting..."
+        try:
+            handler = get_handler(row["agent"])
+            turns = handler.parse_session_file(path)
+            if not turns:
+                return "starting..."
+            last = turns[-1]
+            if last.tool_calls:
+                # show "tool: <name>" of the LAST tool_call's 'name' field
+                name = last.tool_calls[-1].get("name", "")
+                text = f"tool: {name}"
+            elif last.content:
+                text = last.content
+            else:
+                return "starting..."
+
+            text = text.replace("\n", " ")
+            if len(text) > 60:
+                text = text[:57] + "..."
+            return text
+        except Exception:
+            return "-"
+
+    if status == "done":
+        out_path_str = row.get("output_path")
+        if not out_path_str:
+            return "-"
+        path = Path(out_path_str)
+        if not path.exists():
+            return "-"
+        try:
+            text = path.read_text().replace("\n", " ")
+            if len(text) > 60:
+                text = text[:57] + "..."
+            return text
+        except Exception:
+            return "-"
+
+    return "-"
 
 
 def _format_age(seconds: float) -> str:

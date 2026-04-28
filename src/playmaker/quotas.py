@@ -28,7 +28,7 @@ _GEMINI_OAUTH_CLIENT_SECRET = "REDACTED-public-value-see-current-quotas.py"
 _CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 _CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
-_USER_AGENT = "team-cli/0.1"
+_USER_AGENT = "playmaker-cli/0.1"
 
 
 # ---- HTTP helpers -----------------------------------------------------------

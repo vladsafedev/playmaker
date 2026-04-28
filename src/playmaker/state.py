@@ -1,4 +1,4 @@
-"""SQLite-backed run state for `team`."""
+"""SQLite-backed run state for `playmaker`."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-TEAM_HOME = Path("~/.team").expanduser()
-DB_PATH = TEAM_HOME / "state.db"
-LOGS_DIR = TEAM_HOME / "logs"
-OUTPUTS_DIR = TEAM_HOME / "outputs"
-AGENTS_DIR = TEAM_HOME / "agents"
-CONFIG_PATH = TEAM_HOME / "config.toml"
-QUOTAS_PATH = TEAM_HOME / "quotas.json"
+PLAYMAKER_HOME = Path("~/.playmaker").expanduser()
+DB_PATH = PLAYMAKER_HOME / "state.db"
+LOGS_DIR = PLAYMAKER_HOME / "logs"
+OUTPUTS_DIR = PLAYMAKER_HOME / "outputs"
+AGENTS_DIR = PLAYMAKER_HOME / "agents"
+CONFIG_PATH = PLAYMAKER_HOME / "config.toml"
+QUOTAS_PATH = PLAYMAKER_HOME / "quotas.json"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -62,7 +62,7 @@ def connect():
 
 
 def ensure_dirs() -> None:
-    for d in (TEAM_HOME, LOGS_DIR, OUTPUTS_DIR, AGENTS_DIR):
+    for d in (PLAYMAKER_HOME, LOGS_DIR, OUTPUTS_DIR, AGENTS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 

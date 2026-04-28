@@ -14,12 +14,13 @@ Empirically:
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import time
 from pathlib import Path
 
-from team.agents.base import DispatchResult, Turn
+from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
 
 
 GEMINI_CHATS_ROOT = Path("~/.gemini/tmp").expanduser()
@@ -36,6 +37,7 @@ class GeminiHandler:
         prompt: str,
         cwd: Path,
         files: list[Path] | None = None,
+        on_session_started: SessionStartedCallback | None = None,
     ) -> DispatchResult:
         full_prompt = self._build_prompt(prompt, files or [])
         cmd = [
@@ -70,6 +72,12 @@ class GeminiHandler:
         if not agent_session_id:
             raise RuntimeError(f"gemini json missing session_id: {list(data.keys())}")
 
+        # gemini -p emits its session_id only in the final JSON; no early signal.
+        if on_session_started is not None:
+            try:
+                on_session_started(agent_session_id)
+            except Exception:
+                pass
         return DispatchResult(
             agent_session_id=agent_session_id,
             cwd=str(cwd),
@@ -79,6 +87,91 @@ class GeminiHandler:
             duration_seconds=duration,
             exit_code=proc.returncode,
         )
+
+    def resume(
+        self,
+        prompt: str,
+        cwd: Path,
+        agent_session_id: str,
+        files: list[Path] | None = None,
+        on_session_started: SessionStartedCallback | None = None,
+    ) -> DispatchResult:
+        # Gemini's --resume takes an INDEX (or "latest"), not a UUID — resolve
+        # it from `gemini --list-sessions` run in the same cwd, since the list
+        # is per-project.
+        index = self._resolve_session_index(agent_session_id, cwd)
+        if index is None:
+            raise RuntimeError(
+                f"gemini --list-sessions has no entry matching {agent_session_id!r} in {cwd}"
+            )
+
+        full_prompt = self._build_prompt(prompt, files or [])
+        cmd = [
+            "gemini",
+            "--resume",
+            str(index),
+            "-p",
+            full_prompt,
+            "-o",
+            "json",
+            "--yolo",
+        ]
+        t0 = time.monotonic()
+        proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+        duration = time.monotonic() - t0
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"gemini resume failed (exit {proc.returncode}): "
+                f"{proc.stderr.strip() or proc.stdout.strip()}"
+            )
+
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"gemini resume returned non-JSON output: {proc.stdout[:500]}"
+            ) from e
+
+        # Gemini keeps the same session_id on resume.
+        new_session_id = data.get("session_id") or data.get("sessionId") or agent_session_id
+        if on_session_started is not None:
+            try:
+                on_session_started(new_session_id)
+            except Exception:
+                pass
+        return DispatchResult(
+            agent_session_id=new_session_id,
+            cwd=str(cwd),
+            session_file=self.find_session_file(new_session_id, cwd),
+            initial_output=data.get("response", ""),
+            cost_usd=None,
+            duration_seconds=duration,
+            exit_code=proc.returncode,
+        )
+
+    @staticmethod
+    def _resolve_session_index(uuid: str, cwd: Path) -> int | None:
+        """Run `gemini --list-sessions` in cwd and find the index whose UUID matches.
+
+        Output format (one session per line):
+            "  <N>. <title> (<age>) [<uuid>]"
+        """
+        proc = subprocess.run(
+            ["gemini", "--list-sessions"],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            return None
+        # Capture leading index AND trailing bracketed uuid; lazy middle.
+        pattern = re.compile(r"^\s*(\d+)\..*\[([0-9a-f-]+)\]\s*$")
+        for line in proc.stdout.splitlines():
+            m = pattern.match(line)
+            if m and m.group(2) == uuid:
+                return int(m.group(1))
+        return None
 
     def find_session_file(self, agent_session_id: str, cwd: Path) -> Path | None:
         chats_dir = GEMINI_CHATS_ROOT / cwd.name / "chats"

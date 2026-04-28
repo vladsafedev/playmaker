@@ -1,0 +1,33 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # for PyPI Trusted Publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.13
+      - name: Build distributions
+        run: uv build
+      - name: Verify version matches tag
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          version=$(grep -E '^version' pyproject.toml | head -1 | cut -d'"' -f2)
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag ($tag) != pyproject version ($version)"
+            exit 1
+          fi
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

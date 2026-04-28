@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from team.agents.base import AgentHandler
-from team.agents.claude import ClaudeHandler
-from team.agents.codex import CodexHandler
-from team.agents.gemini import GeminiHandler
-from team.state import AGENTS_DIR
+from playmaker.agents.base import AgentHandler
+from playmaker.agents.claude import ClaudeHandler
+from playmaker.agents.codex import CodexHandler
+from playmaker.agents.gemini import GeminiHandler
+from playmaker.state import AGENTS_DIR
 
 _HANDLERS: dict[str, AgentHandler] = {
     "claude": ClaudeHandler(),
@@ -31,7 +31,7 @@ def find_profile(agent_name: str, project_cwd: Path | None = None) -> Path | Non
     """Project-local profile takes precedence over global."""
     candidates: list[Path] = []
     if project_cwd is not None:
-        candidates.append(project_cwd / ".team" / "agents" / f"{agent_name}.md")
+        candidates.append(project_cwd / ".playmaker" / "agents" / f"{agent_name}.md")
     candidates.append(AGENTS_DIR / f"{agent_name}.md")
     for path in candidates:
         if path.exists():

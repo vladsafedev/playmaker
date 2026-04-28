@@ -16,7 +16,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from team.agents.base import DispatchResult, Turn
+from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
 
 
 class ClaudeHandler:
@@ -30,6 +30,7 @@ class ClaudeHandler:
         prompt: str,
         cwd: Path,
         files: list[Path] | None = None,
+        on_session_started: SessionStartedCallback | None = None,
     ) -> DispatchResult:
         full_prompt = self._build_prompt(prompt, files or [])
         cmd = [
@@ -56,10 +57,64 @@ class ClaudeHandler:
             raise RuntimeError(f"claude returned non-JSON output: {proc.stdout[:500]}") from e
 
         agent_session_id = data["session_id"]
+        # claude -p has no early streaming signal; call back here so callers
+        # see a uniform "session started" event regardless of agent.
+        if on_session_started is not None:
+            try:
+                on_session_started(agent_session_id)
+            except Exception:
+                pass
         return DispatchResult(
             agent_session_id=agent_session_id,
             cwd=str(cwd),
             session_file=self.find_session_file(agent_session_id, cwd),
+            initial_output=data.get("result", ""),
+            cost_usd=data.get("total_cost_usd"),
+            duration_seconds=data.get("duration_ms", 0) / 1000.0,
+            exit_code=proc.returncode,
+        )
+
+    def resume(
+        self,
+        prompt: str,
+        cwd: Path,
+        agent_session_id: str,
+        files: list[Path] | None = None,
+        on_session_started: SessionStartedCallback | None = None,
+    ) -> DispatchResult:
+        full_prompt = self._build_prompt(prompt, files or [])
+        cmd = [
+            "claude",
+            "-p",
+            "--resume",
+            agent_session_id,
+            "--output-format",
+            "json",
+            full_prompt,
+        ]
+        proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"claude resume failed (exit {proc.returncode}): "
+                f"{proc.stderr.strip() or proc.stdout.strip()}"
+            )
+        try:
+            data = json.loads(proc.stdout)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"claude resume returned non-JSON output: {proc.stdout[:500]}"
+            ) from e
+        # Claude keeps the same session_id on --resume.
+        new_session_id = data.get("session_id", agent_session_id)
+        if on_session_started is not None:
+            try:
+                on_session_started(new_session_id)
+            except Exception:
+                pass
+        return DispatchResult(
+            agent_session_id=new_session_id,
+            cwd=str(cwd),
+            session_file=self.find_session_file(new_session_id, cwd),
             initial_output=data.get("result", ""),
             cost_usd=data.get("total_cost_usd"),
             duration_seconds=data.get("duration_ms", 0) / 1000.0,

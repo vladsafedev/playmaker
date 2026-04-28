@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
+
+
+# Called by a handler the moment it learns the agent's session id, before the
+# dispatch finishes. Codex emits it from a `thread.started` stdout event ~1s in;
+# Claude/Gemini have no early signal in non-interactive mode and call it at the
+# end. Failures inside the callback must not abort dispatch.
+SessionStartedCallback = Callable[[str], None]
 
 
 @dataclass
@@ -46,8 +53,33 @@ class AgentHandler(Protocol):
         prompt: str,
         cwd: Path,
         files: list[Path] | None = None,
+        on_session_started: SessionStartedCallback | None = None,
     ) -> DispatchResult:
-        """Run agent non-interactively, await first turn, return metadata."""
+        """Run agent non-interactively, await first turn, return metadata.
+
+        Implementations MUST call `on_session_started(agent_session_id)` exactly
+        once as soon as the id is known — early if the agent's protocol exposes
+        it mid-stream, otherwise just before returning.
+        """
+        ...
+
+    def resume(
+        self,
+        prompt: str,
+        cwd: Path,
+        agent_session_id: str,
+        files: list[Path] | None = None,
+        on_session_started: SessionStartedCallback | None = None,
+    ) -> DispatchResult:
+        """Continue a previously-started agent session with a new prompt.
+
+        The returned `DispatchResult.agent_session_id` may equal the input id
+        (most agents keep the same thread on resume) or may differ if the
+        agent's protocol mints a new continuation id — callers should rely on
+        whatever the result reports.
+
+        Like `dispatch`, MUST call `on_session_started` exactly once.
+        """
         ...
 
     def find_session_file(self, agent_session_id: str, cwd: Path) -> Path | None:

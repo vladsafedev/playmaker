@@ -1,4 +1,4 @@
-"""Insert team-spawned sessions into Zed's sidebar_threads.
+"""Insert playmaker-spawned sessions into Zed's sidebar_threads.
 
 Why this exists: Zed's "Import External Agent Threads" filters out
 non-interactive runs (`codex exec` is dropped because originator is

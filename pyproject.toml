@@ -1,22 +1,55 @@
 [project]
-name = "team"
+name = "playmaker-cli"
 version = "0.1.0"
-description = "Multi-agent orchestration CLI: facade for Claude Code to dispatch and observe Codex/Gemini subtasks"
+description = "Playing-coach CLI for orchestrating Claude/Codex/Gemini sub-agents in parallel."
+readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Vladislav Shulyugin", email = "vladislav.shulyugin@gmail.com" },
+]
+keywords = ["ai", "claude", "codex", "gemini", "agents", "orchestration", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer>=0.12",
     "rich>=13.7",
 ]
 
+[project.urls]
+Homepage = "https://github.com/shulyugin/playmaker"
+Repository = "https://github.com/shulyugin/playmaker"
+Issues = "https://github.com/shulyugin/playmaker/issues"
+
 [project.scripts]
-team = "team.cli:app"
+playmaker = "playmaker.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/team"]
+packages = ["src/playmaker"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/playmaker",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
 
 [tool.ruff]
 line-length = 100

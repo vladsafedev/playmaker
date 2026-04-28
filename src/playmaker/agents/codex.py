@@ -22,7 +22,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from team.agents.base import DispatchResult, Turn
+from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
 
 
 CODEX_SESSIONS_ROOT = Path("~/.codex/sessions").expanduser()
@@ -39,6 +39,7 @@ class CodexHandler:
         prompt: str,
         cwd: Path,
         files: list[Path] | None = None,
+        on_session_started: SessionStartedCallback | None = None,
     ) -> DispatchResult:
         full_prompt = self._build_prompt(prompt, files or [])
 
@@ -59,7 +60,18 @@ class CodexHandler:
             full_prompt,
         ]
         t0 = time.monotonic()
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # line-buffered
+        )
+        thread_id, last_message_streamed, stdout_buf = self._consume_stream(
+            proc, on_session_started
+        )
+        stderr_buf = proc.stderr.read() if proc.stderr else ""
+        proc.wait()
         duration = time.monotonic() - t0
 
         # Codex emits a non-fatal "failed to record rollout items" warning to stderr
@@ -67,22 +79,20 @@ class CodexHandler:
         if proc.returncode != 0 and not last_msg_path.exists():
             raise RuntimeError(
                 f"codex failed (exit {proc.returncode}): "
-                f"{proc.stderr.strip() or proc.stdout.strip()}"
+                f"{stderr_buf.strip() or stdout_buf[:500]}"
             )
 
-        thread_id = self._parse_thread_id(proc.stdout)
         if thread_id is None:
             raise RuntimeError(
-                f"codex stdout missing thread.started event:\n{proc.stdout[:500]}"
+                f"codex stdout missing thread.started event:\n{stdout_buf[:500]}"
             )
 
         last_message = ""
         if last_msg_path.exists():
             last_message = last_msg_path.read_text(encoding="utf-8").strip()
             last_msg_path.unlink(missing_ok=True)
-        # Fallback: scrape stdout if --output-last-message didn't produce.
         if not last_message:
-            last_message = self._parse_last_agent_message(proc.stdout)
+            last_message = last_message_streamed
 
         return DispatchResult(
             agent_session_id=thread_id,
@@ -90,6 +100,120 @@ class CodexHandler:
             session_file=self.find_session_file(thread_id, cwd),
             initial_output=last_message,
             cost_usd=None,  # Codex JSON does not expose USD cost
+            duration_seconds=duration,
+            exit_code=proc.returncode,
+        )
+
+    @staticmethod
+    def _consume_stream(
+        proc: subprocess.Popen,
+        on_session_started: SessionStartedCallback | None,
+    ) -> tuple[str | None, str, str]:
+        """Read stdout line-by-line, fire callback on thread.started, capture
+        the latest agent_message item. Returns (thread_id, last_message, raw_stdout).
+        """
+        thread_id: str | None = None
+        last_message = ""
+        buf_parts: list[str] = []
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            buf_parts.append(raw)
+            line = raw.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            etype = obj.get("type")
+            if thread_id is None and etype == "thread.started":
+                tid = obj.get("thread_id")
+                if isinstance(tid, str) and tid:
+                    thread_id = tid
+                    if on_session_started is not None:
+                        try:
+                            on_session_started(tid)
+                        except Exception:
+                            # callback failures must not break dispatch
+                            pass
+            elif etype == "item.completed":
+                item = obj.get("item") or {}
+                if item.get("type") == "agent_message" and item.get("text"):
+                    last_message = item["text"]
+        return thread_id, last_message, "".join(buf_parts)
+
+    def resume(
+        self,
+        prompt: str,
+        cwd: Path,
+        agent_session_id: str,
+        files: list[Path] | None = None,
+        on_session_started: SessionStartedCallback | None = None,
+    ) -> DispatchResult:
+        full_prompt = self._build_prompt(prompt, files or [])
+
+        with tempfile.NamedTemporaryFile(
+            "w+", suffix=".txt", delete=False, prefix="codex-last-"
+        ) as tmp:
+            last_msg_path = Path(tmp.name)
+
+        # `codex exec resume` has no --cd; cwd flows through subprocess.
+        cmd = [
+            "codex",
+            "exec",
+            "resume",
+            "--json",
+            "--skip-git-repo-check",
+            "-o",
+            str(last_msg_path),
+            agent_session_id,
+            full_prompt,
+        ]
+        t0 = time.monotonic()
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        thread_id, last_message_streamed, stdout_buf = self._consume_stream(
+            proc, on_session_started
+        )
+        stderr_buf = proc.stderr.read() if proc.stderr else ""
+        proc.wait()
+        duration = time.monotonic() - t0
+
+        if proc.returncode != 0 and not last_msg_path.exists():
+            raise RuntimeError(
+                f"codex resume failed (exit {proc.returncode}): "
+                f"{stderr_buf.strip() or stdout_buf[:500]}"
+            )
+
+        # On resume, codex re-emits thread.started with the SAME thread_id.
+        # If the event was missed (older codex builds, transport hiccup), fall
+        # back to the input id and fire the callback so the contract holds.
+        effective_id = thread_id or agent_session_id
+        if thread_id is None and on_session_started is not None:
+            try:
+                on_session_started(effective_id)
+            except Exception:
+                pass
+
+        last_message = ""
+        if last_msg_path.exists():
+            last_message = last_msg_path.read_text(encoding="utf-8").strip()
+            last_msg_path.unlink(missing_ok=True)
+        if not last_message:
+            last_message = last_message_streamed
+
+        return DispatchResult(
+            agent_session_id=effective_id,
+            cwd=str(cwd),
+            session_file=self.find_session_file(effective_id, cwd),
+            initial_output=last_message,
+            cost_usd=None,
             duration_seconds=duration,
             exit_code=proc.returncode,
         )
@@ -196,37 +320,6 @@ class CodexHandler:
                         )
                     )
         return turns
-
-    @staticmethod
-    def _parse_thread_id(stdout: str) -> str | None:
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if obj.get("type") == "thread.started" and "thread_id" in obj:
-                return obj["thread_id"]
-        return None
-
-    @staticmethod
-    def _parse_last_agent_message(stdout: str) -> str:
-        last = ""
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if obj.get("type") == "item.completed":
-                item = obj.get("item") or {}
-                if item.get("type") == "agent_message" and item.get("text"):
-                    last = item["text"]
-        return last
 
     @staticmethod
     def _build_prompt(prompt: str, files: list[Path]) -> str:

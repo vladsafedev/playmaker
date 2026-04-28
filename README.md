@@ -1,51 +1,84 @@
-# team
+# playmaker
 
-Multi-agent orchestration CLI — a thin facade for a Claude Code "playing coach" that dispatches sub-tasks to Codex and Gemini in parallel, monitors them, reads their threads, and reviews their diffs.
+[![PyPI](https://img.shields.io/pypi/v/playmaker-cli.svg)](https://pypi.org/project/playmaker-cli/)
+[![Python](https://img.shields.io/pypi/pyversions/playmaker-cli.svg)](https://pypi.org/project/playmaker-cli/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-The CLI itself is a runner. The intelligence lives in the `team-coach` skill at `~/.claude/skills/team-coach/SKILL.md`.
+A **playing-coach** CLI for orchestrating Claude Code, Codex, and Gemini sub-agents in parallel.
+
+The coach (you, in your active Claude Code session) keeps doing your part of the work — and dispatches the rest as detached subprocesses to other AI CLIs. `playmaker` is the runner: it spawns them, tracks state, parses their session files, surfaces threads, and notifies on completion.
+
+The intelligence — *when* to delegate, *which* agent gets *which* slice, how to review their output — lives in the `playmaker-coach` skill (Claude Code) that you install separately.
+
+## Why
+
+Claude Max + Codex + Gemini together = three independent quotas. A single Claude session that does everything serially burns weekly tokens. Decomposing into 3-5 parallel work-streams across providers is often 2-4× faster wall-clock and cheaper.
+
+The catch: doing it manually (terminal tabs, jumping between tools, copy-pasting context) is friction. `playmaker` removes the friction; the skill provides the discipline.
 
 ## Install
 
-```bash
-cd ~/Sites/team
-uv venv --python 3.13
-uv pip install -e .
-```
-
-The `team` binary lands in `.venv/bin/team`.
+### macOS (Homebrew)
 
 ```bash
-team init
+brew tap shulyugin/playmaker
+brew install playmaker
 ```
 
-This creates `~/.team/` with state.db, logs/, outputs/, and a default config.
+### Cross-platform (Python)
 
-## Commands
+```bash
+# uv (recommended)
+uv tool install playmaker-cli
 
+# or pipx
+pipx install playmaker-cli
 ```
-team agents                                # who's installed
-team quotas [--refresh]                    # capacity per provider
 
-team dispatch <agent> --prompt "..."
+The `playmaker` binary lands in your PATH.
+
+```bash
+playmaker init
+```
+
+This creates `~/.playmaker/` with state.db, logs/, outputs/, agents/, and a default config.
+
+## Prerequisites
+
+`playmaker` orchestrates external CLIs — install whichever you have access to:
+
+- **Claude Code** — `npm i -g @anthropic-ai/claude-code` (or download from claude.com/code)
+- **Codex CLI** — `npm i -g @openai/codex`
+- **Gemini CLI** — `npm i -g @google/gemini-cli`
+
+`playmaker agents` will tell you which are reachable.
+
+## Usage
+
+```bash
+playmaker agents                              # who's installed
+playmaker quotas [--refresh]                  # capacity per provider
+
+playmaker dispatch <agent> --prompt "..."
                   [--cwd <dir>]
                   [--files PATH...]
-                  [--sync]                # block until done; default is detached
+                  [--sync]                    # block until done; default is detached
                   [--parent <id>]
-team list [--status running|done|failed] [--agent NAME] [--json]
-team get <id> [--wait] [--json]
-team summary <id>                          # last 2 assistant messages
-team thread <id> [--last N] [--all] [--role assistant|user|tool]
-                 [--include-tools] [--max-bytes N] [--json]
-team logs <id> [--follow]
-team kill <id>
-team watch                                 # Rich live TUI
+playmaker list [--status running|done|failed] [--agent NAME] [--json]
+playmaker get <id> [--wait] [--json]
+playmaker summary <id>                        # last 2 assistant messages
+playmaker thread <id> [--last N] [--all] [--role assistant|user|tool]
+                     [--include-tools] [--max-bytes N] [--json]
+playmaker logs <id> [--follow]
+playmaker kill <id>
+playmaker watch                               # live TUI of sessions
 ```
 
-## Layout
+## How it works
 
 ```
-~/.team/
-├── state.db          SQLite — sessions, status, pids, paths
+~/.playmaker/
+├── state.db          SQLite — sessions, status, pids, output paths
 ├── config.toml
 ├── agents/           agent profile markdown (claude.md, codex.md, gemini.md)
 ├── outputs/          final assistant text per session
@@ -53,15 +86,55 @@ team watch                                 # Rich live TUI
 └── quotas.json       latest capacity snapshot
 ```
 
-Per-project profile overrides live in `./.team/agents/<name>.md` next to your repo.
+Per-project profile overrides go in `./.playmaker/agents/<name>.md` next to your repo.
 
-## Empirical notes
+`dispatch` runs the agent's CLI non-interactively, parses its native JSON output, and locates the session file each tool writes locally. Empirically:
 
-- Claude session files: `~/.claude/projects/<cwd-with-slashes-as-dashes>/<id>.jsonl`
-- Codex session files: `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<thread_id>.jsonl`
-- Gemini session files: `~/.gemini/tmp/<cwd-basename>/chats/session-<ts>-<short_id>.{json,jsonl}`
-  (`.json` for non-interactive, `.jsonl` for interactive)
+- Claude: `~/.claude/projects/<cwd-with-slashes-as-dashes>/<id>.jsonl`
+- Codex: `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<thread_id>.jsonl`
+- Gemini: `~/.gemini/tmp/<cwd-basename>/chats/session-<ts>-<short_id>.{json,jsonl}`
 
-ClaudeProbe parses `claude /usage` output via PTY. Gemini and Codex quota probes are stubbed in v1 — their data lives behind undocumented APIs (Gemini) or web-scraping (Codex).
+`thread`/`summary` parse those into a uniform turn list so you can read all three in the same shape.
 
-We rely on Zed's native "Import External Agent Threads" — `team` does not insert anything into Zed's database.
+## Zed integration
+
+If you use [Zed](https://zed.dev), `playmaker` upserts dispatched sessions into Zed's `sidebar_threads` so they show up under "Thread History" alongside your interactive ones. Zed's native "Import External Agent Threads" filters out non-interactive runs (`codex exec`, `gemini -p`) — `playmaker` registers them explicitly. Restart Zed to see new entries.
+
+Disable per-call with `--no-register-zed`.
+
+## The coach skill
+
+`playmaker` is a runner. The decision-making lives in [`playmaker-coach`](https://github.com/shulyugin/playmaker-coach) — a Claude Code skill that knows when delegation is worth the overhead, how to decompose tasks, and how to review sub-agent diffs.
+
+Install:
+
+```bash
+# in your Claude Code skills directory
+git clone https://github.com/shulyugin/playmaker-coach ~/.claude/skills/playmaker-coach
+```
+
+Then in any Claude Code session, give a multi-component task and the skill activates.
+
+## Quotas
+
+Token-based capacity probes. Status as of v0.1:
+
+- **Claude** — full support via `claude /usage` (PTY parse).
+- **Codex** — stub. Their quota lives behind an undocumented API; web-scraping fragile.
+- **Gemini** — stub. Same issue.
+
+Codex/Gemini availability is treated as "unknown" until you hit a rate-limit error. Contributions for proper probes welcome.
+
+## Limitations
+
+- macOS-only path conventions in a few places (Zed DB, Keychain). Linux works for everything except Zed/Claude-quota probing.
+- `playmaker` does not resume sub-agent sessions — each `dispatch` is a fresh agent session. Coach feeds context through the prompt instead.
+- No remote agents. Everything runs locally on your machine.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+<!-- ping -->
+<!-- ping -->
+<!-- ping -->
+<!-- ping -->

@@ -1,4 +1,4 @@
-"""Typer CLI app — entry point for `team`."""
+"""Typer CLI app — entry point for `playmaker`."""
 
 from __future__ import annotations
 
@@ -15,15 +15,17 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from team import notify, state, watcher, zed
-from team.registry import get_handler
+from playmaker import notify, state, watcher, zed
+from playmaker.acp.server import acp_app
+from playmaker.registry import get_handler
 
 app = typer.Typer(
-    name="team",
+    name="playmaker",
     help="Multi-agent orchestration CLI. Dispatch subtasks to Claude/Codex/Gemini and observe.",
     no_args_is_help=True,
     add_completion=False,
 )
+app.add_typer(acp_app, name="acp")
 
 console = Console()
 err_console = Console(stderr=True)
@@ -31,11 +33,11 @@ err_console = Console(stderr=True)
 
 @app.command()
 def init() -> None:
-    """Bootstrap ~/.team/ structure (config, state.db, dirs)."""
+    """Bootstrap ~/.playmaker/ structure (config, state.db, dirs)."""
     state.init_db()
     if not state.CONFIG_PATH.exists():
         state.CONFIG_PATH.write_text(_DEFAULT_CONFIG, encoding="utf-8")
-    console.print(f"[green]initialized[/green] {state.TEAM_HOME}")
+    console.print(f"[green]initialized[/green] {state.PLAYMAKER_HOME}")
     console.print(f"  db:     {state.DB_PATH}")
     console.print(f"  logs:   {state.LOGS_DIR}")
     console.print(f"  out:    {state.OUTPUTS_DIR}")
@@ -93,10 +95,10 @@ def dispatch(
 
     log_path = state.LOGS_DIR / f"{sid}.log"
     log_fh = open(log_path, "wb")
-    cmd = [sys.executable, "-m", "team", "_run-detached", sid]
+    cmd = [sys.executable, "-m", "playmaker", "_run-detached", sid]
     env = os.environ.copy()
     if not register_zed:
-        env["TEAM_NO_REGISTER_ZED"] = "1"
+        env["PLAYMAKER_NO_REGISTER_ZED"] = "1"
     proc = subprocess.Popen(
         cmd,
         stdout=log_fh,
@@ -124,12 +126,43 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
     cwd = Path(row["cwd"])
     files = [Path(p) for p in json.loads(row["files"] or "[]")]
 
+    def _on_session_started(agent_session_id: str) -> None:
+        # Persist the id immediately so other commands (`get`, `thread`) can
+        # locate the session before the agent finishes.
+        state.update_session(sid, agent_session_id=agent_session_id)
+        if not register_zed:
+            return
+        try:
+            zed.register(
+                agent=row["agent"],
+                agent_session_id=agent_session_id,
+                prompt=row["prompt"],
+                cwd=row["cwd"],
+                started_at_iso=row["started_at"],
+            )
+        except Exception as exc:
+            err_console.print(f"[yellow]zed register skipped:[/yellow] {exc}")
+
+    # Pre-populated agent_session_id is the marker that this row is a resume
+    # of an existing agent thread (set by `continue` before spawning).
+    resume_target = row.get("agent_session_id")
     try:
-        result = handler.dispatch(row["prompt"], cwd, files)
+        if resume_target:
+            result = handler.resume(
+                row["prompt"],
+                cwd,
+                resume_target,
+                files,
+                on_session_started=_on_session_started,
+            )
+        else:
+            result = handler.dispatch(
+                row["prompt"], cwd, files, on_session_started=_on_session_started
+            )
     except Exception as exc:
         state.update_session(sid, status="failed", finished_at=state.now_iso(), exit_code=1)
         err_console.print(f"[red]dispatch failed:[/red] {exc}")
-        notify.notify("team — dispatch failed", f"{row['agent']}: {exc}", sound=True)
+        notify.notify("playmaker — dispatch failed", f"{row['agent']}: {exc}", sound=True)
         raise typer.Exit(1) from exc
 
     output_path = state.OUTPUTS_DIR / f"{sid}.txt"
@@ -147,23 +180,8 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
         exit_code=result.exit_code,
     )
 
-    if register_zed:
-        try:
-            zed.register(
-                agent=row["agent"],
-                agent_session_id=result.agent_session_id,
-                prompt=row["prompt"],
-                cwd=row["cwd"],
-                started_at_iso=row["started_at"],
-            )
-        except Exception as exc:
-            # Best-effort: registration failure shouldn't fail the dispatch.
-            err_console.print(f"[yellow]zed register skipped:[/yellow] {exc}")
-        # register() returns None when Zed already has the row (e.g. Claude
-        # auto-imported by Zed); that's fine, no message needed.
-
     notify.notify(
-        "team — done",
+        "playmaker — done",
         f"{row['agent']}: {result.initial_output[:80]}",
         sound=True,
     )
@@ -176,8 +194,105 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
 def _run_detached(session_id: str) -> None:
     """Internal: run a pre-inserted session in the background."""
     state.init_db()
-    register = os.environ.get("TEAM_NO_REGISTER_ZED") != "1"
+    register = os.environ.get("PLAYMAKER_NO_REGISTER_ZED") != "1"
     _run_dispatch(session_id, register_zed=register)
+
+
+@app.command("continue")
+def continue_(
+    session_id: str = typer.Argument(..., help="existing session id (or unique prefix) to resume"),
+    prompt: str = typer.Option(..., "--prompt", "-p", help="follow-up prompt"),
+    cwd: Optional[Path] = typer.Option(
+        None,
+        "--cwd",
+        help="override working directory (defaults to the parent session's cwd)",
+    ),
+    files: Optional[list[Path]] = typer.Option(
+        None, "--files", "-f", help="files to attach to prompt"
+    ),
+    sync: bool = typer.Option(
+        False, "--sync", help="block until done and print final output (default is detached)"
+    ),
+    register_zed: bool = typer.Option(
+        True,
+        "--register-zed/--no-register-zed",
+        help="upsert into Zed's sidebar_threads on session start (default on)",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
+) -> None:
+    """Resume a previous agent session with a follow-up prompt — preserves the
+    sub-agent's prior reasoning and tool history. Use this for incremental
+    feedback; only fall back to a fresh `dispatch` if context is stale."""
+    state.init_db()
+    parent = state.get_session(session_id)
+    if parent is None:
+        err_console.print(f"[red]session {session_id!r} not found[/red]")
+        raise typer.Exit(1)
+    parent_agent_session_id = parent.get("agent_session_id")
+    if not parent_agent_session_id:
+        err_console.print(
+            f"[red]parent session {parent['id'][:8]} has no agent_session_id yet "
+            f"(status={parent['status']}); cannot resume[/red]"
+        )
+        raise typer.Exit(1)
+
+    handler = get_handler(parent["agent"])
+    if not handler.is_available():
+        err_console.print(f"[red]agent {parent['agent']!r} binary not found on PATH[/red]")
+        raise typer.Exit(1)
+
+    cwd_resolved = (cwd or Path(parent["cwd"])).expanduser().resolve()
+
+    # New playmaker session that targets the parent's live agent thread.
+    sid = state.insert_session(
+        agent=parent["agent"],
+        prompt=prompt,
+        cwd=str(cwd_resolved),
+        files=[str(f) for f in (files or [])],
+        parent_id=parent["id"],
+    )
+    # Pre-populating agent_session_id flips _run_dispatch into resume mode.
+    state.update_session(sid, agent_session_id=parent_agent_session_id)
+
+    if sync:
+        state.update_session(sid, status="running", pid=os.getpid())
+        _run_dispatch(sid, register_zed=register_zed)
+        return
+
+    log_path = state.LOGS_DIR / f"{sid}.log"
+    log_fh = open(log_path, "wb")
+    cmd = [sys.executable, "-m", "playmaker", "_run-detached", sid]
+    env = os.environ.copy()
+    if not register_zed:
+        env["PLAYMAKER_NO_REGISTER_ZED"] = "1"
+    proc = subprocess.Popen(
+        cmd,
+        stdout=log_fh,
+        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+        env=env,
+    )
+    log_fh.close()
+    state.update_session(sid, status="running", pid=proc.pid)
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "session_id": sid,
+                    "pid": proc.pid,
+                    "status": "running",
+                    "resumes": parent_agent_session_id,
+                    "parent_id": parent["id"],
+                }
+            )
+        )
+    else:
+        console.print(
+            f"[dim]session: {sid}  pid: {proc.pid}  "
+            f"resumes {parent['agent']} thread {parent_agent_session_id[:8]}  (detached)[/dim]"
+        )
 
 
 @app.command("list")
@@ -281,39 +396,93 @@ def thread(
         help="hard cap on output bytes; 0 disables. Truncates with explicit warning.",
     ),
     json_out: bool = typer.Option(False, "--json"),
+    follow: bool = typer.Option(False, "--follow", help="poll and print new turns until done"),
 ) -> None:
     """Read a normalized slice of an agent's session file."""
     state.init_db()
     row = state.get_session(session_id)
-    if row is None or not row.get("session_file_path"):
+    if row is None:
         err_console.print(f"[red]session {session_id!r} has no resolvable session_file[/red]")
         raise typer.Exit(1)
     handler = get_handler(row["agent"])
-    turns = handler.parse_session_file(Path(row["session_file_path"]))
-    if role:
-        turns = [t for t in turns if t.role == role]
-    if not all_:
-        turns = turns[-last:] if last > 0 else turns
 
-    if json_out:
-        payload = [
-            {
-                "role": t.role,
-                "content": t.content,
-                "tool_calls": t.tool_calls if include_tools else [],
-                "tool_results": t.tool_results if include_tools else [],
-                "timestamp": t.timestamp.isoformat() if t.timestamp else None,
-            }
-            for t in turns
-        ]
-        text = json.dumps(payload, indent=2, ensure_ascii=False)
-        text = _maybe_truncate(text, max_bytes)
+    def _parse_turns(current_row: dict, *, require_existing_file: bool) -> list | None:
+        session_file_path = current_row.get("session_file_path")
+        if not session_file_path:
+            return None
+        path = Path(session_file_path)
+        if require_existing_file and not path.exists():
+            return None
+        parsed = handler.parse_session_file(path)
+        if role:
+            parsed = [t for t in parsed if t.role == role]
+        return parsed
+
+    def _emit_turns(batch: list, *, limit_bytes: int | None = None) -> None:
+        if json_out:
+            payload = [
+                {
+                    "role": t.role,
+                    "content": t.content,
+                    "tool_calls": t.tool_calls if include_tools else [],
+                    "tool_results": t.tool_results if include_tools else [],
+                    "timestamp": t.timestamp.isoformat() if t.timestamp else None,
+                }
+                for t in batch
+            ]
+            text = json.dumps(payload, indent=2, ensure_ascii=False)
+        else:
+            text = _render_turns(batch, include_tools=include_tools)
+        if limit_bytes is not None:
+            text = _maybe_truncate(text, limit_bytes)
         typer.echo(text)
+
+    def _emit_delta(current_row: dict, printed_count: int) -> int:
+        current_turns = _parse_turns(current_row, require_existing_file=True)
+        if current_turns is None:
+            return printed_count
+        current_count = len(current_turns)
+        if current_count > printed_count:
+            _emit_turns(current_turns[printed_count:])
+        return max(printed_count, current_count)
+
+    turns = _parse_turns(row, require_existing_file=False)
+    if turns is None:
+        if not follow:
+            err_console.print(f"[red]session {session_id!r} has no resolvable session_file[/red]")
+            raise typer.Exit(1)
+        printed_count = 0
+    else:
+        printed_count = len(turns)
+        initial_turns = turns
+        if not all_:
+            initial_turns = initial_turns[-last:] if last > 0 else initial_turns
+        _emit_turns(initial_turns, limit_bytes=max_bytes)
+
+    if not follow:
         return
 
-    rendered = _render_turns(turns, include_tools=include_tools)
-    rendered = _maybe_truncate(rendered, max_bytes)
-    typer.echo(rendered)
+    terminal = {"done", "failed", "killed"}
+    if row["status"] in terminal:
+        return
+
+    try:
+        while True:
+            time.sleep(0.5)
+            row = state.get_session(session_id)
+            if row is None:
+                err_console.print(f"[red]session {session_id!r} vanished while following[/red]")
+                raise typer.Exit(1)
+            printed_count = _emit_delta(row, printed_count)
+            if row["status"] in terminal:
+                time.sleep(0.5)
+                final_row = state.get_session(session_id)
+                if final_row is not None:
+                    _emit_delta(final_row, printed_count)
+                return
+    except KeyboardInterrupt:
+        err_console.print("[dim]follow stopped[/dim]")
+        return
 
 
 @app.command()
@@ -388,7 +557,9 @@ def logs(
     session_id: str = typer.Argument(..., help="session id or unique prefix"),
     follow: bool = typer.Option(False, "--follow", "-f", help="tail -f the log file"),
 ) -> None:
-    """Show subprocess stdout/stderr for a detached session."""
+    """Show subprocess stdout/stderr for a detached session — typically the
+    final dispatch output and any spawn-time errors. For live agent progress
+    (turns, tool calls), use `playmaker thread <id> --follow` instead."""
     state.init_db()
     row = state.get_session(session_id)
     if row is None:
@@ -463,17 +634,17 @@ def quotas(
     refresh: bool = typer.Option(False, "--refresh", help="re-run probes before printing"),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Show ~/.team/quotas.json. With --refresh, run probes first."""
+    """Show ~/.playmaker/quotas.json. With --refresh, run probes first."""
     state.init_db()
     if refresh or not state.QUOTAS_PATH.exists():
-        from team import quotas as quotas_mod
+        from playmaker import quotas as quotas_mod
 
         try:
             quotas_mod.refresh_all(state.QUOTAS_PATH)
         except Exception as exc:
             err_console.print(f"[red]quota refresh failed at the top level:[/red] {exc}")
     if not state.QUOTAS_PATH.exists():
-        err_console.print("[yellow]no quotas data yet — try `team quotas --refresh`[/yellow]")
+        err_console.print("[yellow]no quotas data yet — try `playmaker quotas --refresh`[/yellow]")
         raise typer.Exit(1)
 
     text = state.QUOTAS_PATH.read_text(encoding="utf-8")
@@ -592,7 +763,7 @@ def register_zed_cmd(
 @app.command()
 def agents() -> None:
     """List registered agents — name, availability, profile path."""
-    from team.registry import all_handlers, find_profile
+    from playmaker.registry import all_handlers, find_profile
 
     state.init_db()
     cwd = Path.cwd()
@@ -619,7 +790,7 @@ def _status_icon(status: str) -> str:
 
 
 _DEFAULT_CONFIG = """\
-# team config
+# playmaker config
 [notifications]
 on_complete = true
 on_fail = true

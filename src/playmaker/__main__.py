@@ -1,4 +1,4 @@
-from team.cli import app
+from playmaker.cli import app
 
 if __name__ == "__main__":
     app()
