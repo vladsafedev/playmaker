@@ -1,12 +1,13 @@
-"""ACP proxy event loop and forwarding rules (§4, §6).
+"""ACP server event loop — Phase 2 (replay-driven, sidebar-aware).
 
-Single asyncio process. One stdio pair to Zed (stdin/stdout). One child
-subprocess per session. Shared state in `ProxyState`, touched only from
-event-loop callbacks.
+Phase 1 was a transparent single-thread proxy where the user opened threads
+through the Plus-menu. Phase 2 pivot: playmaker is a proper agent that owns
+session lifecycle, serves `session/load` from playmaker's `state.db` (filled
+by `playmaker dispatch`), and on follow-up `session/prompt` reopens the
+right child via `handler.resume()`.
 
-This module implements the forwarding-rules table from
-docs/acp-phase1.md §4. Inline comments tag the relevant invariants
-(corr-N) so changes can cross-reference the design doc.
+See docs/acp-phase2.md for design details and the canonical reference
+captures in ~/acp-logs/claude-20260428-224329.{in,out}.jsonl.
 """
 
 from __future__ import annotations
@@ -15,13 +16,13 @@ import asyncio
 import json
 import logging
 import sys
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
-from playmaker.acp.caps import (
-    init_error_response,
-    rewrite_init_response,
-)
+from playmaker import state as state_db
+from playmaker.acp.caps import initialize_response
 from playmaker.acp.child import (
     ChildHandle,
     ChildSpawnError,
@@ -29,28 +30,32 @@ from playmaker.acp.child import (
     spawn_child,
     stderr_tail_text,
 )
+from playmaker.acp.replay import turns_to_updates
 from playmaker.acp.session_map import ChildSession, SessionMap
+from playmaker.registry import get_handler
 
 logger = logging.getLogger("playmaker.acp.proxy")
 
 
-# Default child command for Phase 1. Override via `playmaker acp --child <cmd>`.
+# Phase 1 child for Plus-menu threads (session/new path) — Claude only in MVP.
 DEFAULT_CHILD_CMD: list[str] = [
     "/Users/shulyugin/.nvm/versions/node/v24.1.0/bin/npm",
     "exec",
     "@agentclientprotocol/claude-agent-acp@0.31.3",
 ]
 
+# LRU pool / idle-timeout policy.
+MAX_CHILDREN = 3
+IDLE_TIMEOUT_SECONDS = 300.0  # 5 minutes
+IDLE_SWEEP_INTERVAL = 60.0
+
 
 MsgKind = Literal["request", "response", "notification", "error"]
 
 
 def classify(msg: dict[str, Any]) -> MsgKind:
-    """Discriminated union over JSON-RPC message types (corr-4).
-
-    Pending tables MUST only be touched in {request, response, error}
-    branches. Notifications have no `id` and never index into pending.
-    """
+    """JSON-RPC discriminated union (corr-4). Pending tables touched only on
+    request/response/error; notifications never index pending."""
     if "method" in msg:
         return "request" if "id" in msg else "notification"
     if "result" in msg:
@@ -62,26 +67,13 @@ def classify(msg: dict[str, Any]) -> MsgKind:
 
 @dataclass
 class ProxyState:
-    """Shared state for the proxy event loop.
-
-    Single-threaded asyncio — no locks, but every mutation must happen
-    inside an event-loop callback (no .run_in_executor work touches
-    these fields).
-    """
-
     sessions: SessionMap = field(default_factory=SessionMap)
-    # The very first child, spawned during Zed's `initialize`. Reused for
-    # the first session/new (corr-17). After that, this slot is None.
-    primed_child: ChildHandle | None = None
-    # Zed's recorded `initialize` request payload — replayed verbatim
-    # when we spawn the next (cold) child for session #2+.
+    # Recorded Zed `initialize` request — replayed verbatim when we spawn a
+    # child via session/new or via resume-after-load (so the child sees Zed's
+    # actual clientCapabilities).
     zed_initialize_request: dict[str, Any] | None = None
-    # Pending session-creating requests from Zed (session/new, fork, resume)
-    # — keyed by the rewritten child-side jsonrpc id. Maps to the original
-    # zed_id and the ChildSession we're about to register.
+    # Pending session-creating requests to a child, keyed by child-side jsonrpc id.
     pending_session_create: dict[int, _PendingSessionCreate] = field(default_factory=dict)
-    # Pending session/close — keyed by rewritten child id; maps to
-    # (zed_id, zed_sid) so we drop the mapping on response.
     pending_session_close: dict[int, _PendingSessionClose] = field(default_factory=dict)
 
 
@@ -89,7 +81,7 @@ class ProxyState:
 class _PendingSessionCreate:
     zed_id: int
     method: str  # "session/new" | "session/fork" | "session/resume"
-    request_session_id: str | None  # for resume: the input sid (compare on response)
+    request_session_id: str | None
     child_session: ChildSession
 
 
@@ -103,7 +95,6 @@ class _PendingSessionClose:
 
 
 async def _write_zed(msg: dict[str, Any]) -> None:
-    """Write one JSON-RPC frame to our stdout (Zed reads it)."""
     line = json.dumps(msg, ensure_ascii=False) + "\n"
     sys.stdout.write(line)
     sys.stdout.flush()
@@ -117,16 +108,56 @@ async def _read_zed_line(reader: asyncio.StreamReader) -> dict[str, Any] | None:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
         logger.error("malformed JSON from Zed: %s; line=%r", exc, raw[:200])
-        return {"_malformed": True, "raw": raw.decode("utf-8", errors="replace")}
+        return {"_malformed": True}
 
 
-# ---------- Forwarding: Zed → child ------------------------------------------
+def _jsonrpc_error(zed_id: int, message: str, code: int = -32000) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": zed_id, "error": {"code": code, "message": message}}
+
+
+# ---------- LRU pool ---------------------------------------------------------
+
+
+async def _ensure_pool_capacity(state: ProxyState) -> None:
+    """Evict oldest children if we already have MAX_CHILDREN before spawning more."""
+    sessions = sorted(state.sessions.all_sessions(), key=lambda s: s.last_activity)
+    while len(sessions) >= MAX_CHILDREN:
+        oldest = sessions.pop(0)
+        zed_pair = state.sessions.by_child(oldest.child_sid)
+        zed_sid = zed_pair[0] if zed_pair else None
+        logger.info(
+            "LRU evict: zed_sid=%s child_sid=%s idle_for=%.1fs",
+            zed_sid, oldest.child_sid, time.monotonic() - oldest.last_activity,
+        )
+        await shutdown_child(oldest.handle)
+        if zed_sid:
+            state.sessions.unregister(zed_sid)
+
+
+async def _idle_sweeper(state: ProxyState) -> None:
+    """Background task that evicts children idle longer than IDLE_TIMEOUT_SECONDS."""
+    while True:
+        await asyncio.sleep(IDLE_SWEEP_INTERVAL)
+        now = time.monotonic()
+        for session in list(state.sessions.all_sessions()):
+            if now - session.last_activity > IDLE_TIMEOUT_SECONDS:
+                zed_pair = state.sessions.by_child(session.child_sid)
+                zed_sid = zed_pair[0] if zed_pair else None
+                logger.info(
+                    "idle evict: zed_sid=%s child_sid=%s idle_for=%.1fs",
+                    zed_sid, session.child_sid, now - session.last_activity,
+                )
+                await shutdown_child(session.handle)
+                if zed_sid:
+                    state.sessions.unregister(zed_sid)
+
+
+# ---------- Zed → us ---------------------------------------------------------
 
 
 async def _handle_zed_message(state: ProxyState, msg: dict[str, Any]) -> None:
-    """Top-level dispatch for messages from Zed."""
     if msg.get("_malformed"):
-        return  # already logged
+        return
 
     kind = classify(msg)
     method = msg.get("method")
@@ -135,235 +166,340 @@ async def _handle_zed_message(state: ProxyState, msg: dict[str, Any]) -> None:
         if method == "initialize":
             await _handle_zed_initialize(state, msg)
             return
+        if method == "session/load":
+            await _handle_zed_session_load(state, msg)
+            return
         if method == "session/new":
             await _handle_zed_session_new(state, msg)
-            return
-        if method in ("session/fork", "session/resume"):
-            await _handle_zed_session_fork_or_resume(state, msg)
             return
         if method == "session/close":
             await _handle_zed_session_close(state, msg)
             return
-        # Generic request that targets an existing session (prompt, load,
-        # list, set_mode, etc.). All follow the same pattern: rewrite
-        # sessionId via by_zed, allocate child-side id, record in
-        # out_to_child, forward.
+        if method == "session/prompt":
+            await _handle_zed_session_prompt(state, msg)
+            return
+        # Other session-targeted requests (e.g. session/set_mode if we ever
+        # advertise modes) — generic forward to the existing child.
         await _forward_request_to_child(state, msg)
         return
 
     if kind == "notification":
-        # session/cancel and friends — corr-1, corr-4: never touch pending.
         await _forward_notification_to_child(state, msg)
         return
 
-    if kind == "response":
-        # Zed answered a request that originated from child (fs/*,
-        # session/request_permission, etc.). Look up out_to_zed.
-        await _forward_response_to_child(state, msg)
-        return
-
-    if kind == "error":
-        # Zed errored on a child-originated request. Same path as response.
-        await _forward_response_to_child(state, msg)
-        return
+    # Zed answered a child-originated request (fs/*, request_permission).
+    await _forward_response_to_child(state, msg)
 
 
 async def _handle_zed_initialize(state: ProxyState, msg: dict[str, Any]) -> None:
-    """Eager spawn (corr-6, corr-16, corr-17): spawn FIRST child, forward
-    Zed's initialize verbatim, take child's response, rewrite agentInfo.
+    """Static caps. No child spawn — phase-2 initialize is fast and
+    does not require a live agent.
+    """
+    state.zed_initialize_request = msg
+    await _write_zed(initialize_response(msg["id"]))
 
-    On failure, send a JSON-RPC error reply to Zed (corr-16) and exit.
+
+# ---- session/load: serve from state.db --------------------------------------
+
+
+async def _handle_zed_session_load(state: ProxyState, msg: dict[str, Any]) -> None:
+    """Path B: lookup the session in playmaker's state.db, replay history
+    via `session/update` notifications, return rich load response.
+
+    No child spawn here — replay is a pure read of the agent's session-file.
+    A follow-up `session/prompt` (if the user types something) will trigger
+    `_handle_zed_session_prompt` which spawns a child via `handler.resume()`.
     """
     zed_id = msg["id"]
-    state.zed_initialize_request = msg
+    params = msg.get("params") or {}
+    incoming_sid = params.get("sessionId")
+    if not incoming_sid:
+        await _write_zed(_jsonrpc_error(zed_id, "session/load missing sessionId"))
+        return
+
+    # Try state.db lookup. The sid Zed sends is the AGENT's native sid (claude
+    # UUID, codex thread_id, gemini sessionId) — that's what playmaker's
+    # zed.register() writes into sidebar_threads.session_id.
+    row = state_db.get_session_by_agent_session_id(incoming_sid)
+    if row is None:
+        await _write_zed(_jsonrpc_error(
+            zed_id, f"session/load unknown sessionId: {incoming_sid}"
+        ))
+        return
+
+    session_file = row.get("session_file_path")
+    if not session_file or not Path(session_file).exists():
+        await _write_zed(_jsonrpc_error(
+            zed_id, f"session/load: session_file missing for {incoming_sid}"
+        ))
+        return
+
+    # Parse turns through the agent-specific handler (Phase 1 work).
+    handler = get_handler(row["agent"])
+    try:
+        turns = handler.parse_session_file(Path(session_file))
+    except Exception as exc:
+        logger.exception("parse_session_file failed for %s", session_file)
+        await _write_zed(_jsonrpc_error(
+            zed_id, f"session/load: failed to parse history: {exc}"
+        ))
+        return
+
+    # Honest replay — no synthesized completions. If the last turn shows the
+    # agent died mid-prompt, replay shows that. Zed's "Proceed" UI in that
+    # case is a feature, not a bug — it lets us resume via session/prompt.
+    for update in turns_to_updates(turns):
+        await _write_zed({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {"sessionId": incoming_sid, "update": update},
+        })
+
+    # Reply to load with minimal but Claude-shape-compatible result.
+    await _write_zed({
+        "jsonrpc": "2.0",
+        "id": zed_id,
+        "result": {
+            "sessionId": incoming_sid,
+            "modes": None,
+            "models": None,
+        },
+    })
+
+    # Zed expects this signal at end of load (canonical capture confirms).
+    # Empty list = no agent-side slash commands; fine for playmaker.
+    await _write_zed({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+            "sessionId": incoming_sid,
+            "update": {"sessionUpdate": "available_commands_update", "availableCommands": []},
+        },
+    })
+
+
+# ---- session/prompt: existing OR resume-after-load --------------------------
+
+
+async def _handle_zed_session_prompt(state: ProxyState, msg: dict[str, Any]) -> None:
+    """Two paths:
+      1) sid is in SessionMap (Plus-menu thread or already-resumed thread):
+         forward the prompt to the live child.
+      2) sid is NOT in SessionMap but exists in state.db (resume-after-load):
+         spawn a child via handler.resume(), register mapping, forward prompt.
+    """
+    zed_id = msg["id"]
+    params = msg.get("params") or {}
+    sid = params.get("sessionId")
+    if not sid:
+        await _write_zed(_jsonrpc_error(zed_id, "session/prompt missing sessionId"))
+        return
+
+    session = state.sessions.by_zed(sid)
+    if session is not None:
+        # Path 1: existing live child.
+        session.touch()
+        await _forward_prompt_to_child(state, session, msg)
+        return
+
+    # Path 2: resume-after-load. Look up state.db.
+    row = state_db.get_session_by_agent_session_id(sid)
+    if row is None:
+        await _write_zed(_jsonrpc_error(zed_id, f"session/prompt unknown sessionId: {sid}"))
+        return
+
+    # Spawn child for this agent and resume.
+    await _ensure_pool_capacity(state)
+    try:
+        handle = await spawn_child(DEFAULT_CHILD_CMD)
+    except ChildSpawnError as exc:
+        await _write_zed(_jsonrpc_error(zed_id, f"resume: child spawn failed: {exc}"))
+        return
+
+    # Replay Zed's initialize so child sees clientCapabilities.
+    if state.zed_initialize_request is not None:
+        try:
+            await handle.send(state.zed_initialize_request)
+            init_resp = await handle.recv()
+        except Exception as exc:
+            logger.exception("resume: child init failed")
+            await _write_zed(_jsonrpc_error(zed_id, f"resume: child init failed: {exc}"))
+            await shutdown_child(handle)
+            return
+        if init_resp is None:
+            tail = stderr_tail_text(handle)
+            await _write_zed(_jsonrpc_error(zed_id, f"resume: child died at init; stderr: {tail}"))
+            await shutdown_child(handle)
+            return
+
+    # Send a `session/load` to the child first — this is how claude-acp
+    # restores its in-memory state for the resumed thread. (Each ACP child
+    # reads its own native session-file based on this.)
+    load_req_id = handle.alloc_request_id()
+    await handle.send({
+        "jsonrpc": "2.0",
+        "id": load_req_id,
+        "method": "session/load",
+        "params": {
+            "sessionId": sid,
+            "cwd": row["cwd"],
+            "mcpServers": params.get("mcpServers") or [],
+        },
+    })
+    # Drain child's load reply (may be preceded by replay updates we ignore —
+    # Zed already saw our own replay). We loop until we see the response to
+    # load_req_id.
+    while True:
+        try:
+            child_msg = await handle.recv()
+        except Exception as exc:
+            logger.exception("resume: error reading child during load")
+            await _write_zed(_jsonrpc_error(zed_id, f"resume: child error during load: {exc}"))
+            await shutdown_child(handle)
+            return
+        if child_msg is None:
+            tail = stderr_tail_text(handle)
+            await _write_zed(_jsonrpc_error(zed_id, f"resume: child died during load; stderr: {tail}"))
+            await shutdown_child(handle)
+            return
+        if child_msg.get("id") == load_req_id:
+            break
+        # Else: it's a session/update from child's replay; we drop it (Zed
+        # already has our replay). This is the expected path.
+
+    # Register mapping. Use the same sid both ways — child kept it.
+    session = ChildSession(child_sid=sid, handle=handle)
+    state.sessions.register(zed_sid=sid, session=session)
+    asyncio.create_task(
+        _drain_child_stdout(state, handle), name=f"child-stdout-{handle.proc.pid}"
+    )
+
+    # Now forward the actual prompt.
+    session.touch()
+    await _forward_prompt_to_child(state, session, msg)
+
+
+async def _forward_prompt_to_child(
+    state: ProxyState, session: ChildSession, msg: dict[str, Any]
+) -> None:
+    """Forward an in-flight session/prompt to the child (sid already mapped)."""
+    zed_id = msg["id"]
+    child_id = session.handle.alloc_request_id()
+    forwarded = dict(msg)
+    forwarded["id"] = child_id
+    params = dict(forwarded.get("params") or {})
+    params["sessionId"] = session.child_sid
+    forwarded["params"] = params
+
+    session.pending.record_zed_request(child_id, zed_id=zed_id, method="session/prompt")
+    await session.handle.send(forwarded)
+
+
+# ---- session/new: classic Plus-menu path (Phase 1 logic preserved) ----------
+
+
+async def _handle_zed_session_new(state: ProxyState, msg: dict[str, Any]) -> None:
+    zed_id = msg["id"]
+    await _ensure_pool_capacity(state)
 
     try:
         handle = await spawn_child(DEFAULT_CHILD_CMD)
     except ChildSpawnError as exc:
-        await _write_zed(init_error_response(zed_id, str(exc)))
-        # Without a child, there's nothing else for the proxy to do.
-        raise SystemExit(2)
+        await _write_zed(_jsonrpc_error(zed_id, f"child spawn failed: {exc}"))
+        return
 
-    # Forward Zed's initialize verbatim to child. (clientCapabilities,
-    # protocolVersion, clientInfo all flow through unchanged.)
-    try:
-        await handle.send(msg)
-        child_response = await handle.recv()
-    except Exception as exc:  # pragma: no cover - defensive
-        await _write_zed(init_error_response(zed_id, f"transport error: {exc}"))
-        await shutdown_child(handle)
-        raise SystemExit(2) from exc
-
-    if child_response is None:
-        tail = stderr_tail_text(handle)
-        await _write_zed(init_error_response(zed_id, f"child exited at init; stderr: {tail}"))
-        await shutdown_child(handle)
-        raise SystemExit(2)
-
-    if classify(child_response) == "error" or "result" not in child_response:
-        # Forward error verbatim with our id (Zed expected zed_id, child
-        # used the same since we forwarded id-as-is in initialize).
-        child_response.setdefault("id", zed_id)
-        child_response["id"] = zed_id
-        await _write_zed(child_response)
-        await shutdown_child(handle)
-        raise SystemExit(2)
-
-    # Success. Rewrite agentInfo and respond to Zed.
-    response = rewrite_init_response(child_response)
-    response["id"] = zed_id
-    await _write_zed(response)
-    state.primed_child = handle
-
-
-async def _handle_zed_session_new(state: ProxyState, msg: dict[str, Any]) -> None:
-    """session/new: spawn or reuse a child, forward, register mapping on response."""
-    zed_id = msg["id"]
-
-    if state.primed_child is not None:
-        # corr-17: reuse the init-time child for the first session/new.
-        handle = state.primed_child
-        state.primed_child = None
-    else:
-        try:
-            handle = await spawn_child(DEFAULT_CHILD_CMD)
-        except ChildSpawnError as exc:
-            await _write_zed(_jsonrpc_error(zed_id, f"child spawn failed: {exc}"))
+    if state.zed_initialize_request is not None:
+        await handle.send(state.zed_initialize_request)
+        init_resp = await handle.recv()
+        if init_resp is None:
+            tail = stderr_tail_text(handle)
+            await _write_zed(_jsonrpc_error(zed_id, f"child died during init; stderr: {tail}"))
+            await shutdown_child(handle)
             return
-        # Replay Zed's initialize to the new child synchronously (BEFORE
-        # any drain task starts — otherwise the task would race us on
-        # handle.proc.stdout.readline()).
-        if state.zed_initialize_request is not None:
-            await handle.send(state.zed_initialize_request)
-            init_resp = await handle.recv()
-            if init_resp is None:
-                tail = stderr_tail_text(handle)
-                await _write_zed(_jsonrpc_error(zed_id, f"child died during init; stderr: {tail}"))
-                await shutdown_child(handle)
-                return
-            # We don't forward this init response back to Zed — Zed already
-            # got initialize response from the primed child.
 
-    # Now forward session/new to the (initialized) child.
     child_id = handle.alloc_request_id()
     forwarded = dict(msg)
     forwarded["id"] = child_id
-    # corr-5: mcpServers stays as a list — Phase 3 may prepend playmaker's own MCP here.
     params = dict(forwarded.get("params") or {})
     if "mcpServers" in params:
         params["mcpServers"] = list(params["mcpServers"])
     forwarded["params"] = params
 
-    # We don't have a ChildSid yet — we'll learn it from the response.
-    placeholder_session = ChildSession(child_sid="<pending>", handle=handle)
+    placeholder = ChildSession(child_sid="<pending>", handle=handle)
     state.pending_session_create[child_id] = _PendingSessionCreate(
         zed_id=zed_id,
         method="session/new",
         request_session_id=None,
-        child_session=placeholder_session,
+        child_session=placeholder,
     )
     await handle.send(forwarded)
-
-    # Start the single drain task for this child (idempotent).
     _start_drain_once(state, handle)
 
 
-async def _handle_zed_session_fork_or_resume(
-    state: ProxyState, msg: dict[str, Any]
-) -> None:
-    """fork/resume: forward, register new mapping on response if child returned a new sid."""
-    zed_id = msg["id"]
-    zed_sid = (msg.get("params") or {}).get("sessionId")
-    if zed_sid is None:
-        await _write_zed(_jsonrpc_error(zed_id, "missing sessionId in fork/resume"))
-        return
-    session = state.sessions.by_zed(zed_sid)
-    if session is None:
-        await _write_zed(_jsonrpc_error(zed_id, f"unknown sessionId: {zed_sid}"))
-        return
-
-    handle = session.handle
-    child_id = handle.alloc_request_id()
-    forwarded = dict(msg)
-    forwarded["id"] = child_id
-    params = dict(forwarded.get("params") or {})
-    params["sessionId"] = session.child_sid
-    forwarded["params"] = params
-
-    state.pending_session_create[child_id] = _PendingSessionCreate(
-        zed_id=zed_id,
-        method=msg["method"],
-        request_session_id=session.child_sid,  # for resume sid-equality check
-        child_session=session,  # we'll mint new only if response.sid differs
-    )
-    await handle.send(forwarded)
+# ---- session/close ----------------------------------------------------------
 
 
 async def _handle_zed_session_close(state: ProxyState, msg: dict[str, Any]) -> None:
-    """session/close: forward, drop mapping on response (corr-12)."""
     zed_id = msg["id"]
-    zed_sid = (msg.get("params") or {}).get("sessionId")
-    if zed_sid is None:
-        await _write_zed(_jsonrpc_error(zed_id, "missing sessionId in close"))
+    sid = (msg.get("params") or {}).get("sessionId")
+    if not sid:
+        await _write_zed(_jsonrpc_error(zed_id, "session/close missing sessionId"))
         return
-    session = state.sessions.by_zed(zed_sid)
+    session = state.sessions.by_zed(sid)
     if session is None:
-        await _write_zed(_jsonrpc_error(zed_id, f"unknown sessionId: {zed_sid}"))
-        return
-
-    handle = session.handle
-    child_id = handle.alloc_request_id()
-    forwarded = dict(msg)
-    forwarded["id"] = child_id
-    params = dict(forwarded.get("params") or {})
-    params["sessionId"] = session.child_sid
-    forwarded["params"] = params
-
-    state.pending_session_close[child_id] = _PendingSessionClose(
-        zed_id=zed_id, zed_sid=zed_sid
-    )
-    session.closed = True
-    await handle.send(forwarded)
-
-
-async def _forward_request_to_child(state: ProxyState, msg: dict[str, Any]) -> None:
-    """Generic request: rewrite sid, allocate child-side id, record pending."""
-    zed_id = msg["id"]
-    params = msg.get("params") or {}
-    zed_sid = params.get("sessionId")
-    if zed_sid is None:
-        await _write_zed(_jsonrpc_error(zed_id, f"missing sessionId in {msg.get('method')!r}"))
-        return
-    session = state.sessions.by_zed(zed_sid)
-    if session is None:
-        await _write_zed(_jsonrpc_error(zed_id, f"unknown sessionId: {zed_sid}"))
+        # Not in pool — answer success, nothing to do.
+        await _write_zed({"jsonrpc": "2.0", "id": zed_id, "result": {}})
         return
 
     child_id = session.handle.alloc_request_id()
     forwarded = dict(msg)
     forwarded["id"] = child_id
-    new_params = dict(params)
-    new_params["sessionId"] = session.child_sid
-    forwarded["params"] = new_params
+    params = dict(forwarded.get("params") or {})
+    params["sessionId"] = session.child_sid
+    forwarded["params"] = params
 
-    # corr-15: multiple in-flight prompts per session are valid.
+    state.pending_session_close[child_id] = _PendingSessionClose(zed_id=zed_id, zed_sid=sid)
+    session.closed = True
+    await session.handle.send(forwarded)
+
+
+# ---- generic forwarders (used for less-common methods) ----------------------
+
+
+async def _forward_request_to_child(state: ProxyState, msg: dict[str, Any]) -> None:
+    zed_id = msg["id"]
+    sid = (msg.get("params") or {}).get("sessionId")
+    if not sid:
+        await _write_zed(_jsonrpc_error(zed_id, f"missing sessionId in {msg.get('method')!r}"))
+        return
+    session = state.sessions.by_zed(sid)
+    if session is None:
+        await _write_zed(_jsonrpc_error(zed_id, f"unknown sessionId: {sid}"))
+        return
+    session.touch()
+
+    child_id = session.handle.alloc_request_id()
+    forwarded = dict(msg)
+    forwarded["id"] = child_id
+    params = dict(msg["params"])
+    params["sessionId"] = session.child_sid
+    forwarded["params"] = params
     session.pending.record_zed_request(child_id, zed_id=zed_id, method=msg.get("method", "?"))
     await session.handle.send(forwarded)
 
 
 async def _forward_notification_to_child(state: ProxyState, msg: dict[str, Any]) -> None:
-    """Notification (no id): rewrite sid only (corr-1, corr-4). No pending changes."""
+    """Notifications (session/cancel) — sid rewrite only, no pending change (corr-1)."""
     params = msg.get("params") or {}
-    zed_sid = params.get("sessionId")
-    if zed_sid is None:
-        # No sid — broadcast or unknown notification. Drop with log.
-        logger.warning("notification without sessionId: method=%s", msg.get("method"))
+    sid = params.get("sessionId")
+    if not sid:
         return
-    session = state.sessions.by_zed(zed_sid)
+    session = state.sessions.by_zed(sid)
     if session is None:
-        logger.warning("notification for unknown sessionId: %s", zed_sid)
+        # Notification for a session we've evicted from pool: drop silently.
+        # (Cancel for an evicted session — there's nothing to cancel.)
         return
-
+    session.touch()
     forwarded = dict(msg)
     new_params = dict(params)
     new_params["sessionId"] = session.child_sid
@@ -372,65 +508,43 @@ async def _forward_notification_to_child(state: ProxyState, msg: dict[str, Any])
 
 
 async def _forward_response_to_child(state: ProxyState, msg: dict[str, Any]) -> None:
-    """Zed answered child's request (fs/*, request_permission, etc.).
-
-    Look up out_to_zed across ALL sessions — Zed-side ids are unique per
-    session but not globally; in practice we keyed pending by the
-    rewritten zed-side id which we allocated and is unique enough that
-    we can scan, but cleaner: maintain a global zed_id → ChildSession
-    index. For Phase 1 we scan since the count of sessions is small.
-    """
-    zed_id = msg["id"]
+    zed_id = msg.get("id")
+    if not isinstance(zed_id, int):
+        return
     for session in state.sessions.all_sessions():
         pending = session.pending.take_child_request(zed_id)
         if pending is None:
             continue
-        # Found. Rewrite id back to child's original.
+        session.touch()
         forwarded = dict(msg)
         forwarded["id"] = pending.child_id
         await session.handle.send(forwarded)
         return
-    logger.warning("response from Zed with no pending child-side request: id=%s", zed_id)
+    logger.warning("response from Zed for unknown id=%s", zed_id)
 
 
-# ---------- Child stdout draining --------------------------------------------
+# ---------- child stdout draining --------------------------------------------
 
 
 def _start_drain_once(
-    state: ProxyState, handle: ChildHandle, *, owner_session: ChildSession | None = None
+    state: ProxyState, handle: ChildHandle, *, owner: ChildSession | None = None
 ) -> None:
-    """Start the single stdout-drain coroutine for `handle`. Idempotent.
+    """Kick off the single stdout-drain coroutine. Idempotent.
 
-    The `_draining` flag is set SYNCHRONOUSLY (before create_task) so that a
-    second caller within the same event-loop tick sees True and bails out.
-    Without this, two tasks could end up calling readline() on the same
-    pipe concurrently → asyncio raises RuntimeError("readuntil called while
-    another coroutine is already waiting").
+    Sets `_draining=True` synchronously BEFORE creating the task so that a
+    second concurrent caller bails out — without this, two readline()
+    coroutines would race on the same pipe.
     """
     if getattr(handle, "_draining", False):
         return
     handle._draining = True  # type: ignore[attr-defined]
     asyncio.create_task(
-        _drain_child_stdout(state, handle, owner_session=owner_session),
-        name=f"child-stdout-{handle.proc.pid}",
+        _drain_child_stdout(state, handle), name=f"child-stdout-{handle.proc.pid}"
     )
 
 
-async def _drain_child_stdout(
-    state: ProxyState,
-    handle: ChildHandle,
-    *,
-    owner_session: ChildSession | None,
-) -> None:
-    """Read every JSON-RPC frame from child stdout and dispatch.
-
-    On EOF: child died. Synthesize errors for any out_to_child entries
-    we own, drop out_to_zed entries (corr-3).
-
-    `_draining` flag is set by the caller (`_start_drain_once`) before
-    this coroutine runs — DO NOT set it here, that would re-introduce
-    the race window.
-    """
+async def _drain_child_stdout(state: ProxyState, handle: ChildHandle) -> None:
+    """Read every JSON-RPC frame from child stdout and dispatch."""
     try:
         while True:
             try:
@@ -449,43 +563,41 @@ async def _handle_child_message(
     state: ProxyState, handle: ChildHandle, msg: dict[str, Any]
 ) -> None:
     kind = classify(msg)
+    msg_id = msg.get("id")
 
-    # 1) Responses to session-creating requests (session/new/fork/resume).
-    if kind in ("response", "error"):
-        msg_id = msg.get("id")
-        if isinstance(msg_id, int):
-            create = state.pending_session_create.pop(msg_id, None)
-            if create is not None:
-                await _finalize_session_create(state, handle, msg, create)
-                return
-            close = state.pending_session_close.pop(msg_id, None)
-            if close is not None:
-                await _finalize_session_close(state, msg, close)
-                return
-
-    # 2) Other responses: look up via per-session out_to_child.
-    if kind in ("response", "error"):
-        msg_id = msg.get("id")
-        if isinstance(msg_id, int):
-            for session in state.sessions.all_sessions():
-                if session.handle is not handle:
-                    continue
-                pending = session.pending.take_zed_request(msg_id)
-                if pending is None:
-                    continue
-                forwarded = dict(msg)
-                forwarded["id"] = pending.zed_id
-                await _write_zed(forwarded)
-                return
-            logger.warning("response from child with no matching pending: id=%s", msg_id)
+    # Responses to session/new (or fork/resume in Phase 3).
+    if kind in ("response", "error") and isinstance(msg_id, int):
+        create = state.pending_session_create.pop(msg_id, None)
+        if create is not None:
+            await _finalize_session_create(state, handle, msg, create)
+            return
+        close = state.pending_session_close.pop(msg_id, None)
+        if close is not None:
+            await _finalize_session_close(state, msg, close)
             return
 
-    # 3) Requests from child (fs/*, session/request_permission).
+    # Generic responses — look up via per-session out_to_child.
+    if kind in ("response", "error") and isinstance(msg_id, int):
+        for session in state.sessions.all_sessions():
+            if session.handle is not handle:
+                continue
+            pending = session.pending.take_zed_request(msg_id)
+            if pending is None:
+                continue
+            session.touch()
+            forwarded = dict(msg)
+            forwarded["id"] = pending.zed_id
+            await _write_zed(forwarded)
+            return
+        logger.warning("child response with no matching pending: id=%s", msg_id)
+        return
+
+    # Child-originated requests (fs/*, request_permission).
     if kind == "request":
         await _forward_request_to_zed(state, handle, msg)
         return
 
-    # 4) Notifications from child (session/update, etc.) — corr-8: byte-for-byte.
+    # Notifications (session/update) — corr-8 byte-for-byte forward.
     if kind == "notification":
         await _forward_notification_to_zed(state, handle, msg)
         return
@@ -497,9 +609,7 @@ async def _finalize_session_create(
     response: dict[str, Any],
     create: _PendingSessionCreate,
 ) -> None:
-    """Process response to session/new/fork/resume: register mapping (or not)."""
     if "error" in response:
-        # Forward error verbatim with the original Zed id.
         forwarded = dict(response)
         forwarded["id"] = create.zed_id
         await _write_zed(forwarded)
@@ -508,47 +618,28 @@ async def _finalize_session_create(
     result = response.get("result") or {}
     new_child_sid = result.get("sessionId")
     if not new_child_sid:
-        forwarded = _jsonrpc_error(create.zed_id, "child returned no sessionId")
-        await _write_zed(forwarded)
+        await _write_zed(_jsonrpc_error(create.zed_id, "child returned no sessionId"))
         return
 
-    if create.method == "session/resume" and create.request_session_id == new_child_sid:
-        # Resume reused the same sid — the existing mapping still applies.
-        # Reuse the existing zed_sid for the response.
-        zed_sid = state.sessions.by_child(new_child_sid)
-        if zed_sid is None:
-            # Should be impossible — mapping must exist for an existing session.
-            forwarded = _jsonrpc_error(create.zed_id, "internal: lost mapping on resume")
-            await _write_zed(forwarded)
-            return
-        zed_sid_str = zed_sid[0]
+    zed_sid = SessionMap.mint_zed_sid()
+    if create.child_session.child_sid == "<pending>":
+        create.child_session.child_sid = new_child_sid
+        state.sessions.register(zed_sid=zed_sid, session=create.child_session)
     else:
-        # New sid → new mapping.
-        zed_sid_str = SessionMap.mint_zed_sid()
-        # If the placeholder ChildSession has child_sid="<pending>",
-        # update it; otherwise create a fresh one (fork from existing).
-        if create.child_session.child_sid == "<pending>":
-            create.child_session.child_sid = new_child_sid
-            state.sessions.register(zed_sid=zed_sid_str, session=create.child_session)
-        else:
-            new_session = ChildSession(child_sid=new_child_sid, handle=handle)
-            state.sessions.register(zed_sid=zed_sid_str, session=new_session)
+        new_session = ChildSession(child_sid=new_child_sid, handle=handle)
+        state.sessions.register(zed_sid=zed_sid, session=new_session)
 
-    # Rewrite response.result.sessionId → zed_sid, forward to Zed.
     forwarded = dict(response)
     forwarded["id"] = create.zed_id
     new_result = dict(result)
-    new_result["sessionId"] = zed_sid_str
+    new_result["sessionId"] = zed_sid
     forwarded["result"] = new_result
     await _write_zed(forwarded)
 
 
 async def _finalize_session_close(
-    state: ProxyState,
-    response: dict[str, Any],
-    close: _PendingSessionClose,
+    state: ProxyState, response: dict[str, Any], close: _PendingSessionClose
 ) -> None:
-    """Process response to session/close: drop mapping (corr-12)."""
     forwarded = dict(response)
     forwarded["id"] = close.zed_id
     await _write_zed(forwarded)
@@ -558,40 +649,27 @@ async def _finalize_session_close(
 async def _forward_request_to_zed(
     state: ProxyState, handle: ChildHandle, msg: dict[str, Any]
 ) -> None:
-    """Child-originated request (fs/read_text_file, etc.) → Zed.
-
-    Rewrite sessionId child→zed; allocate zed-side id; record out_to_zed.
-    """
     child_id = msg.get("id")
     if not isinstance(child_id, int):
-        logger.warning("child request has no integer id: %r", msg.get("method"))
         return
 
     params = msg.get("params") or {}
     child_sid = params.get("sessionId")
-    target_session: ChildSession | None = None
-    target_zed_sid: str | None = None
+    target: ChildSession | None = None
+    target_zed: str | None = None
     if child_sid is not None:
         found = state.sessions.by_child(child_sid)
         if found is not None:
-            target_zed_sid, target_session = found
+            target_zed, target = found
 
-    if target_session is None or target_session.handle is not handle:
-        logger.warning("child request for unknown sessionId: %s", child_sid)
+    if target is None or target.handle is not handle:
         return
 
-    # Allocate a zed-side id. We use the child id as-is; ids are
-    # per-direction and not required to be globally unique. This
-    # avoids needing a separate counter for our zed-side requests.
-    zed_id = child_id
-    target_session.pending.record_child_request(
-        zed_id, child_id=child_id, method=msg.get("method", "?")
-    )
-
+    target.touch()
+    target.pending.record_child_request(child_id, child_id=child_id, method=msg.get("method", "?"))
     forwarded = dict(msg)
-    forwarded["id"] = zed_id
     new_params = dict(params)
-    new_params["sessionId"] = target_zed_sid
+    new_params["sessionId"] = target_zed
     forwarded["params"] = new_params
     await _write_zed(forwarded)
 
@@ -599,19 +677,16 @@ async def _forward_request_to_zed(
 async def _forward_notification_to_zed(
     state: ProxyState, handle: ChildHandle, msg: dict[str, Any]
 ) -> None:
-    """Child notification (session/update) → Zed (corr-8: byte-for-byte)."""
     params = msg.get("params") or {}
     child_sid = params.get("sessionId")
     if child_sid is None:
-        # A notification without sessionId — pass through as-is.
         await _write_zed(msg)
         return
     found = state.sessions.by_child(child_sid)
     if found is None:
-        logger.warning("notification for unknown child sessionId: %s", child_sid)
         return
-    zed_sid, _session = found
-
+    zed_sid, session = found
+    session.touch()
     forwarded = dict(msg)
     new_params = dict(params)
     new_params["sessionId"] = zed_sid
@@ -619,25 +694,19 @@ async def _forward_notification_to_zed(
     await _write_zed(forwarded)
 
 
-# ---------- Death and shutdown -----------------------------------------------
+# ---------- death and shutdown -----------------------------------------------
 
 
 async def _on_child_death(state: ProxyState, handle: ChildHandle) -> None:
-    """Child stdout EOF: synthesize errors and drop sessions (corr-3)."""
     affected: list[ChildSession] = [
         s for s in state.sessions.all_sessions() if s.handle is handle
     ]
     for session in affected:
-        # Synthesize errors for outstanding Zed requests.
         for pending in session.pending.drain_outstanding_zed_requests():
-            await _write_zed(
-                _jsonrpc_error(pending.zed_id, f"child died (method={pending.method})")
-            )
-        # Drop child-originated pending — Zed's eventual responses to
-        # these will be ignored by _forward_response_to_child since the
-        # session won't be in the map anymore.
+            await _write_zed(_jsonrpc_error(
+                pending.zed_id, f"child died (method={pending.method})"
+            ))
         session.pending.drain_outstanding_child_requests()
-        # Drop pending session-creating requests targeting this child.
         for pid_, create in list(state.pending_session_create.items()):
             if create.child_session.handle is handle:
                 await _write_zed(_jsonrpc_error(create.zed_id, "child died before session/new completed"))
@@ -647,66 +716,52 @@ async def _on_child_death(state: ProxyState, handle: ChildHandle) -> None:
             if sess is not None and sess.handle is handle:
                 await _write_zed(_jsonrpc_error(close.zed_id, "child died before session/close completed"))
                 state.pending_session_close.pop(pid_, None)
-        state.sessions.unregister(_zed_sid_for(state, session))
+        zed_pair = state.sessions.by_child(session.child_sid)
+        if zed_pair is not None:
+            state.sessions.unregister(zed_pair[0])
 
-    # Phase-2 policy: do NOT auto-respawn. Logged for operator awareness.
     logger.warning("child pid=%s died; %d session(s) affected", handle.proc.pid, len(affected))
 
 
-def _zed_sid_for(state: ProxyState, session: ChildSession) -> str:
-    """Reverse-lookup zed_sid given ChildSession (used in shutdown only)."""
-    found = state.sessions.by_child(session.child_sid)
-    return found[0] if found else ""
-
-
-def _stdout_drain_running(handle: ChildHandle) -> bool:
-    return getattr(handle, "_draining", False)
-
-
-def _jsonrpc_error(zed_id: int, message: str, code: int = -32000) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": zed_id, "error": {"code": code, "message": message}}
-
-
-# ---------- Top-level entry --------------------------------------------------
+# ---------- top-level entry --------------------------------------------------
 
 
 async def run_proxy(child_cmd: list[str] | None = None) -> int:
-    """Main async entrypoint. Read from stdin, pump to/from children.
-
-    Returns process exit code.
-    """
     if child_cmd is not None:
-        # Mutate module-level default — Phase 1 runs one child kind at a time.
         global DEFAULT_CHILD_CMD
         DEFAULT_CHILD_CMD = child_cmd
 
     state = ProxyState()
     loop = asyncio.get_running_loop()
 
-    # Wrap stdin with an asyncio StreamReader.
     reader = asyncio.StreamReader()
     protocol = asyncio.StreamReaderProtocol(reader)
     await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+
+    sweeper = asyncio.create_task(_idle_sweeper(state), name="idle-sweeper")
 
     try:
         while True:
             msg = await _read_zed_line(reader)
             if msg is None:
-                break  # Zed disconnected
+                break
             try:
                 await _handle_zed_message(state, msg)
             except SystemExit:
-                # Initialize-time fatal error — propagate to caller for clean exit.
                 raise
             except Exception:
-                logger.exception("error handling zed message: method=%s id=%s",
-                                 msg.get("method"), msg.get("id"))
+                logger.exception(
+                    "error handling zed message: method=%s id=%s",
+                    msg.get("method"), msg.get("id"),
+                )
     finally:
-        # corr-7 / §7: SIGTERM all children, 3s grace, SIGKILL.
-        # ChildHandle is a mutable dataclass (not hashable); dedup by identity.
+        sweeper.cancel()
+        try:
+            await sweeper
+        except (asyncio.CancelledError, Exception):
+            pass
+
         all_handles: list[ChildHandle] = []
-        if state.primed_child is not None:
-            all_handles.append(state.primed_child)
         for s in state.sessions.all_sessions():
             if not any(h is s.handle for h in all_handles):
                 all_handles.append(s.handle)

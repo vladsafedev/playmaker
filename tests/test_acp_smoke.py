@@ -1,10 +1,14 @@
-"""Regression smoke for the ACP middleware proxy.
+"""Regression smoke for the ACP server.
 
-Drives `playmaker acp` as a subprocess against a fake ACP child and
-verifies the core forwarding invariants from docs/acp-phase1.md:
+Phase 2 changes (vs the original Phase 1 smoke):
+  - initialize now responds with STATIC playmaker caps (no child spawn),
+    so we no longer assert that fake-child's _meta.fake passes through.
+  - session/new still spawns a child and forwards verbatim; sid mint and
+    rewrite assertions are unchanged.
 
-  - corr-6  initialize: agentInfo.{name,title} overridden, capabilities
-            and _meta passed through verbatim
+Asserts:
+  - initialize: agentInfo {name="playmaker", title="Playmaker"} + the
+    declared static caps (loadSession=true, sessionCapabilities.close).
   - §3      session/new: proxy mints a new zed-side sid, never echoes
             the child's
   - §4      session/update from child: sessionId rewritten back to
@@ -12,9 +16,9 @@ verifies the core forwarding invariants from docs/acp-phase1.md:
   - corr-1  session/cancel notification: forwarded with sid rewrite
   - §7      clean shutdown on stdin EOF: exit 0, no traceback
 
-Multi-session and tool_call/permission flows are exercised in real
-Zed (see commit message); not covered here because they require the
-real claude-acp child or a much fatter mock.
+Multi-session and tool_call/permission flows are exercised in real Zed
+(see commit message); not covered here because they require the real
+claude-acp child or a much fatter mock.
 """
 
 from __future__ import annotations
@@ -96,10 +100,10 @@ class ACPSmokeTest(unittest.TestCase):
         init = self._recv()
         self.assertEqual(init["id"], 0)
         self.assertEqual(init["result"]["agentInfo"]["name"], "playmaker")
-        self.assertEqual(init["result"]["agentInfo"]["title"], "Playmaker (Claude proxy)")
-        # capabilities pass through (fake child declares loadSession + _meta.fake)
+        self.assertEqual(init["result"]["agentInfo"]["title"], "Playmaker")
+        # Phase 2: static caps. We declare loadSession + close, no _meta passthrough.
         self.assertTrue(init["result"]["agentCapabilities"]["loadSession"])
-        self.assertEqual(init["result"]["agentCapabilities"]["_meta"], {"fake": True})
+        self.assertIn("close", init["result"]["agentCapabilities"]["sessionCapabilities"])
 
         # session/new — proxy must mint its own sid (§3).
         self._send(

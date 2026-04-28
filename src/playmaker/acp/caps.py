@@ -1,8 +1,23 @@
-"""Protocol constants and capability-rewriting helpers.
+"""Static playmaker capabilities for ACP `initialize`.
 
-(corr-6) We do NOT hardcode an INITIAL_CAPS bag. Instead we eagerly spawn
-the child on Zed's `initialize`, forward Zed's request verbatim, and
-take child's response — rewriting only the agent-identifying fields.
+Phase 1 had us forward Zed's initialize to a child and rewrite the response
+(corr-6). Phase 2 pivot: we are no longer a transparent proxy. We are a
+proper agent — for `session/load` we serve from state.db without a child
+at all, and for `session/new` we own the session lifecycle.
+
+Static caps means initialize is fast (no spawn on Zed startup) and
+predictable. Trade-off: if we declare a capability we do not actually
+support yet, we'll hit it at runtime.
+
+The shape mirrors claude-acp's response (we observed it in
+~/acp-logs/claude-20260428-224329.out.jsonl line 1) so Zed UI features
+that depend on these caps continue to work. Values were chosen to match
+what playmaker can actually deliver in Phase 2:
+
+  - loadSession = true               we serve session/load from state.db
+  - sessionCapabilities.close        we handle session/close (kill child)
+  - promptCapabilities.image=true    children we wrap support images
+  - mcpCapabilities.http=true        children support http MCP
 """
 
 from __future__ import annotations
@@ -11,37 +26,48 @@ from typing import Any
 
 
 PROXY_NAME = "playmaker"
-PROXY_TITLE = "Playmaker (Claude proxy)"
+PROXY_TITLE = "Playmaker"
+PROXY_VERSION = "0.1.0"
 
 
-def rewrite_init_response(child_response: dict[str, Any]) -> dict[str, Any]:
-    """Rewrite child's initialize response so Zed sees us as the agent.
+def initialize_response(zed_id: int) -> dict[str, Any]:
+    """Build a JSON-RPC reply to Zed's `initialize` request.
 
-    (corr-6) Capabilities, _meta, version, authMethods — pass through.
-    Only agentInfo.{name, title} are overridden so Zed's identity layer
-    reflects that it's talking to playmaker, not directly to the child.
+    Static — does not require a live child.
     """
-    out = dict(child_response)
-    result = dict(out.get("result") or {})
-    agent_info = dict(result.get("agentInfo") or {})
-    agent_info["name"] = PROXY_NAME
-    agent_info["title"] = PROXY_TITLE
-    result["agentInfo"] = agent_info
-    out["result"] = result
-    return out
+    return {
+        "jsonrpc": "2.0",
+        "id": zed_id,
+        "result": {
+            "protocolVersion": 1,
+            "agentCapabilities": {
+                "loadSession": True,
+                "promptCapabilities": {
+                    "image": True,
+                    "embeddedContext": True,
+                },
+                "mcpCapabilities": {"http": True, "sse": True},
+                "sessionCapabilities": {"close": {}},
+            },
+            "agentInfo": {
+                "name": PROXY_NAME,
+                "title": PROXY_TITLE,
+                "version": PROXY_VERSION,
+            },
+        },
+    }
 
 
 def init_error_response(zed_id: int, message: str) -> dict[str, Any]:
-    """Build a JSON-RPC error reply to Zed's initialize (corr-16).
-
-    Used when child spawn or child's own initialize fails — without this,
-    Zed would hang or show an unhelpful generic failure.
+    """JSON-RPC error reply to initialize. Currently unused (static caps
+    cannot fail) — kept for symmetry with Phase 1 corr-16 plus future
+    Phase 3 where we might want to fail-fast on missing dependencies.
     """
     return {
         "jsonrpc": "2.0",
         "id": zed_id,
         "error": {
             "code": -32000,
-            "message": f"playmaker: child failed to initialize: {message}",
+            "message": f"playmaker: {message}",
         },
     }

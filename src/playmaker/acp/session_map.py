@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -24,7 +25,8 @@ class ChildSession:
       - Zed's `session/close` response (if agent declared
         sessionCapabilities.close, which both Claude and Codex do); OR
       - child unexpected death; OR
-      - playmaker shutdown.
+      - playmaker shutdown; OR
+      - LRU eviction (Phase 2: max 3 children, idle timeout 5min).
     Cancel never closes the mapping (corr-1).
     (corr-15) Multiple in-flight prompts to the same session are valid
     when promptQueueing is declared — pending tables are keyed by
@@ -35,6 +37,13 @@ class ChildSession:
     handle: "ChildHandle"
     pending: PendingTables = field(default_factory=PendingTables)
     closed: bool = False
+    # Phase 2: monotonic timestamp of last traffic to/from this child.
+    # Updated by proxy on every forward in either direction.
+    last_activity: float = field(default_factory=time.monotonic)
+
+    def touch(self) -> None:
+        """Mark recent activity for LRU/idle-timeout policy."""
+        self.last_activity = time.monotonic()
 
 
 class SessionMap:

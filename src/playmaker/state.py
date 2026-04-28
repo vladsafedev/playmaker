@@ -125,6 +125,20 @@ def get_session(session_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def get_session_by_agent_session_id(agent_session_id: str) -> dict[str, Any] | None:
+    """Lookup by the agent's NATIVE session id (claude UUID, codex thread_id,
+    gemini session_id) — what gets written into Zed's `sidebar_threads.session_id`
+    and arrives in `session/load` params.
+    """
+    with connect() as c:
+        row = c.execute(
+            "SELECT * FROM sessions WHERE agent_session_id = ? "
+            "ORDER BY started_at DESC LIMIT 1",
+            (agent_session_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def list_sessions(
     *,
     status: str | None = None,
