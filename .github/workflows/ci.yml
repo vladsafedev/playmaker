@@ -39,3 +39,5 @@ jobs:
           uv venv --python ${{ matrix.python-version }} .smoke
           .smoke/bin/python -m pip install dist/*.whl
           .smoke/bin/playmaker --help
+      - name: Run unit tests
+        run: .smoke/bin/python -m unittest discover -s tests -p "test_*.py" -v
