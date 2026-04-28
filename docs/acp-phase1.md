@@ -349,22 +349,35 @@ Validates: id/sid rewriting, message-shape preservation, ordering.
 Does NOT validate: concurrency, races under contention, partial-frame
 parsing edge cases. Those defer to Phase 2 fuzz tests.
 
-## §11 Open questions / TODO
+## §11 Open questions
 
-- **session/resume sid behavior** — does claude-acp return new sid or
-  reuse? Empirical test in Phase 1 (no fixture in current traces).
-- **session/list cross-child aggregation** — Phase 2 only.
-- **`session/list` for unknown sids** — if Zed somehow sends a sid we
-  don't know (e.g. from Zed's pre-existing thread store written by
-  some other process before playmaker), proxy should respond
+Split into two lists — items we *plan* to tackle in a later phase, vs.
+items we *watch* and only act on if they actually surface as problems.
+The distinction matters because backlogs accumulate; watched items can
+be retired without ever being worked on.
+
+### Planned (will be done)
+
+- **session/list cross-child aggregation** — Phase 2 only. Currently
+  forwards as-is; multi-child means rewriting the response's sid list
+  across children.
+- **Bookkeeping child pattern** (corr-17). Decision: keep current
+  "first-child reuse" until golden traces show divergence; otherwise
+  switch.
+- **`session/list` for unknown sids** — proxy should respond
   `error: unknown session` rather than silently forward to a random
-  child.
-- **Bookkeeping child** — see corr-17. Decision deferred.
-- **Multi-session deadlock from a sync stdin/stdout driver.** During Phase 1
-  development a sync-driver smoke test (subprocess.PIPE write + readline)
-  hung on the *second* `session/new`. Real Zed (asyncio client) handled
-  4+ concurrent threads through the proxy without issue, so the freeze
-  is most likely driver-side pipe buffering, not a proxy bug. Reproducer
-  and minimal asyncio driver to confirm — Phase 2 task; if the freeze
-  reproduces with an asyncio driver, the proxy has a real second-session
-  bug that doesn't manifest under Zed's I/O pattern.
+  child. Becomes urgent in Phase 2.
+
+### Watched (act only if surfaced)
+
+- **session/resume sid behavior** — does claude-acp return a new sid
+  or reuse on resume? Currently handled by runtime
+  `request.sid != response.sid` check; if that branch is never hit
+  in real traffic, no further action needed.
+- **Multi-session deadlock from a sync stdin/stdout driver.** Phase 1
+  dev smoke (subprocess.PIPE blocking write + readline) hung on the
+  second `session/new`. Real Zed (asyncio client) opened 4+ concurrent
+  threads through the proxy without issue — almost certainly a
+  driver-side buffering artifact, not a proxy bug. Will only investigate
+  if Phase 2 with multi-child surfaces an analogous freeze under Zed's
+  actual I/O pattern.
