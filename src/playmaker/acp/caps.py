@@ -34,6 +34,13 @@ def initialize_response(zed_id: int) -> dict[str, Any]:
     """Build a JSON-RPC reply to Zed's `initialize` request.
 
     Static — does not require a live child.
+
+    `authMethods` is REQUIRED by Zed UI even though playmaker itself doesn't
+    auth — sub-agents handle their own authentication (Claude subscription,
+    OpenAI key, Google account). Without at least one declared method, Zed
+    renders "Failed to Launch — Authentication required" on sidebar click,
+    even when session/load flow works fine. Declare a single passthrough
+    method so Zed considers the agent ready.
     """
     return {
         "jsonrpc": "2.0",
@@ -54,6 +61,17 @@ def initialize_response(zed_id: int) -> dict[str, Any]:
                 "title": PROXY_TITLE,
                 "version": PROXY_VERSION,
             },
+            "authMethods": [
+                {
+                    "id": "playmaker-passthrough",
+                    "name": "Pre-authenticated (sub-agents handle auth)",
+                    "description": (
+                        "playmaker proxies threads whose underlying agents "
+                        "(Claude, Codex, Gemini) are already authenticated. "
+                        "No login flow needed here."
+                    ),
+                },
+            ],
         },
     }
 
