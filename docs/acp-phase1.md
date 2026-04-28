@@ -349,6 +349,32 @@ Validates: id/sid rewriting, message-shape preservation, ordering.
 Does NOT validate: concurrency, races under contention, partial-frame
 parsing edge cases. Those defer to Phase 2 fuzz tests.
 
+## §10.5 Path-B verified empirically (post-Phase-1)
+
+Phase 1 implemented a single-thread proxy where the user must open a thread
+through the Plus menu. The actual user need is different: live rendering for
+threads created by `playmaker dispatch` (batch, sidebar-driven), not Plus-menu.
+
+A 30-minute probe (`tests/probe_session_load.py` + `tests/probe_insert_sidebar.py`)
+verified the missing piece: **Zed sends `session/load` to its `agent_server`
+when the user clicks a `sidebar_threads` row whose `agent_id` matches a
+registered `agent_server` and whose agent declared `loadSession: true`**.
+
+Captured payload:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"session/load",
+ "params":{"mcpServers":[],"cwd":"/Users/shulyugin/Sites/team",
+           "sessionId":"probe-session-aaa-bbb-ccc"}}
+```
+
+Implication: Phase 2 target is `session/load` handler implementation (replay
+historic turns from session-files via `session/update`, optionally attach to
+still-running children for live continuation), NOT mode-routing as
+originally drafted. Phase 1 proxy/child/session-map primitives are reused
+verbatim; only the session/load route changes from "forward to child" to
+"serve from state.db + reopen child".
+
 ## §11 Open questions
 
 Split into two lists — items we *plan* to tackle in a later phase, vs.
