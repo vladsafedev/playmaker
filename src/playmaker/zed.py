@@ -74,7 +74,8 @@ def register(
     if agent_id is None:
         raise ValueError(f"unknown agent {agent!r}; supported: {list(_AGENT_ID)}")
 
-    title = _make_title(prompt)
+    # 🟢 marker stays until `finalize()` is called on terminal status.
+    title = f"{RUNNING_PREFIX}{_make_title(prompt, limit=80 - len(RUNNING_PREFIX))}"
     thread_id = thread_id_for(agent, agent_session_id)
     now_iso = datetime.now(timezone.utc).isoformat()
     created_iso = started_at_iso or now_iso
@@ -138,3 +139,37 @@ def _make_title(prompt: str, *, limit: int = 80) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 3].rstrip() + "..."
+
+
+# Prefixed onto a thread's sidebar title while the dispatched sub-agent is
+# running, stripped on terminal status (done/failed/killed). Lets the user
+# see which sidebar rows are live without opening them — Zed UI doesn't
+# render any spinner/loader on closed sidebar rows otherwise.
+RUNNING_PREFIX = "🟢 "
+
+
+def finalize(*, agent: str, agent_session_id: str) -> bool:
+    """Strip the running-marker prefix from this thread's sidebar title.
+
+    Called by `_run_dispatch` once the sub-agent transitions to a terminal
+    state (done / failed / killed). Returns True if a row was updated.
+    Idempotent: no-op if the prefix is already absent.
+    """
+    if not is_available():
+        return False
+    agent_id = _AGENT_ID.get(agent)
+    if agent_id is None:
+        return False
+    thread_id = thread_id_for(agent, agent_session_id)
+    conn = sqlite3.connect(str(ZED_DB), timeout=10.0)
+    try:
+        conn.execute("PRAGMA busy_timeout = 5000")
+        cur = conn.execute(
+            "UPDATE sidebar_threads SET title = substr(title, ?) "
+            "WHERE thread_id = ? AND substr(title, 1, ?) = ?",
+            (len(RUNNING_PREFIX) + 1, thread_id, len(RUNNING_PREFIX), RUNNING_PREFIX),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()

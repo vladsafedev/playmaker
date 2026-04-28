@@ -161,6 +161,14 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
             )
     except Exception as exc:
         state.update_session(sid, status="failed", finished_at=state.now_iso(), exit_code=1)
+        # Strip the 🟢 running marker from sidebar — best-effort.
+        latest = state.get_session(sid) or {}
+        ag_sid = latest.get("agent_session_id")
+        if ag_sid:
+            try:
+                zed.finalize(agent=row["agent"], agent_session_id=ag_sid)
+            except Exception:
+                pass
         err_console.print(f"[red]dispatch failed:[/red] {exc}")
         notify.notify("playmaker — dispatch failed", f"{row['agent']}: {exc}", sound=True)
         raise typer.Exit(1) from exc
@@ -179,6 +187,13 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
         duration_seconds=result.duration_seconds,
         exit_code=result.exit_code,
     )
+
+    # Strip the 🟢 running marker from sidebar title.
+    if result.agent_session_id:
+        try:
+            zed.finalize(agent=row["agent"], agent_session_id=result.agent_session_id)
+        except Exception as exc:
+            err_console.print(f"[yellow]zed finalize skipped:[/yellow] {exc}")
 
     notify.notify(
         "playmaker — done",
@@ -620,6 +635,11 @@ def kill(
     state.update_session(
         row["id"], status="killed", finished_at=state.now_iso(), exit_code=143
     )
+    if row.get("agent_session_id"):
+        try:
+            zed.finalize(agent=row["agent"], agent_session_id=row["agent_session_id"])
+        except Exception:
+            pass
     console.print(f"[magenta]killed[/magenta] {row['id']} (pid {pid})")
 
 
