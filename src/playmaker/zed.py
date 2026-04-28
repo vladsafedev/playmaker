@@ -81,16 +81,19 @@ def register(
     conn = sqlite3.connect(str(ZED_DB), timeout=10.0)
     try:
         conn.execute("PRAGMA busy_timeout = 5000")
-        # Dedup: if Zed already has any row for this session_id+agent_id (e.g.
-        # auto-imported), don't add a parallel row. Restrict the check to a
-        # different thread_id so our own re-registers still upsert.
-        existing = conn.execute(
-            "SELECT thread_id FROM sidebar_threads "
-            "WHERE session_id = ? AND agent_id = ? AND thread_id != ? LIMIT 1",
-            (agent_session_id, agent_id, thread_id),
-        ).fetchone()
-        if existing is not None:
-            return None
+        # Archive any native-Import duplicate for the same session_id. Zed's
+        # "External Agent Threads" Import automatically indexes claude jsonl
+        # files in ~/.claude/projects/, creating a parallel row with
+        # agent_id="claude-acp". When playmaker is the routing target
+        # (corr-Phase2), that parallel row confuses the user — clicking it
+        # opens native claude-acp instead of our proxy. Solution: hide the
+        # native row by archiving it. We don't DELETE because the user may
+        # un-archive it manually if they want to inspect via the native path.
+        conn.execute(
+            "UPDATE sidebar_threads SET archived = 1 "
+            "WHERE session_id = ? AND thread_id != ? AND archived = 0",
+            (agent_session_id, thread_id),
+        )
         conn.execute(
             """
             INSERT INTO sidebar_threads (
