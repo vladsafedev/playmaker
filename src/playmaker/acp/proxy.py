@@ -266,6 +266,9 @@ async def _handle_zed_message(state: ProxyState, msg: dict[str, Any]) -> None:
         if method == "initialize":
             await _handle_zed_initialize(state, msg)
             return
+        if method == "authenticate":
+            await _handle_zed_authenticate(state, msg)
+            return
         if method == "session/load":
             await _handle_zed_session_load(state, msg)
             return
@@ -297,6 +300,20 @@ async def _handle_zed_initialize(state: ProxyState, msg: dict[str, Any]) -> None
     """
     state.zed_initialize_request = msg
     await _write_zed(initialize_response(msg["id"]))
+
+
+async def _handle_zed_authenticate(state: ProxyState, msg: dict[str, Any]) -> None:
+    """Per ACP spec: if `authMethods` was declared in initialize, Zed will
+    send `authenticate(methodId)` and refuses to proceed (Failed to Launch
+    — Authentication required) until we respond.
+
+    Playmaker doesn't authenticate — sub-agents do, when they were
+    dispatched via CLI. Reply with empty result to signal "auth complete".
+    """
+    zed_id = msg["id"]
+    method_id = (msg.get("params") or {}).get("methodId")
+    logger.info("authenticate: methodId=%s -> success (passthrough)", method_id)
+    await _write_zed({"jsonrpc": "2.0", "id": zed_id, "result": {}})
 
 
 # ---- session/load: serve from state.db --------------------------------------
