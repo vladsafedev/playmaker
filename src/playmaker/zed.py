@@ -81,6 +81,10 @@ def register(
     now_iso = datetime.now(timezone.utc).isoformat()
     created_iso = started_at_iso or now_iso
 
+    sys.stderr.write(
+        f"[zed.register] agent={agent} sid={agent_session_id[:8]} "
+        f"thread_id={thread_id.hex()[:8]} title={title[:50]!r}\n"
+    )
     conn = sqlite3.connect(str(ZED_DB), timeout=10.0)
     try:
         conn.execute("PRAGMA busy_timeout = 5000")
