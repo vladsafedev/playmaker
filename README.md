@@ -111,7 +111,7 @@ Then in any Claude Code session, give a multi-component task and the skill activ
 
 ## Quotas
 
-Token-based capacity probes. Status as of v0.1:
+Token-based capacity probes. Status as of v0.2:
 
 - **Claude** — full support via `claude /usage` (PTY parse).
 - **Codex** — stub. Their quota lives behind an undocumented API; web-scraping fragile.
