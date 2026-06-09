@@ -51,6 +51,11 @@ class ClaudeHandler:
             "--output-format",
             "stream-json",
             "--verbose",
+            # Detached runs have no human to approve tool prompts; without this
+            # the agent stalls on the first file write and ends its turn with
+            # zero changes. Skipping permissions is what makes sibling-Claude
+            # usable for write-heavy subtasks in headless mode.
+            "--dangerously-skip-permissions",
         ]
         if model:
             cmd += ["--model", model]
@@ -152,6 +157,8 @@ class ClaudeHandler:
             agent_session_id,
             "--output-format",
             "json",
+            # See dispatch(): detached resume has no human to approve prompts.
+            "--dangerously-skip-permissions",
         ]
         if model:
             cmd += ["--model", model]
