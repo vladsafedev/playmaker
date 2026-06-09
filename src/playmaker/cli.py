@@ -693,6 +693,21 @@ def _render_provider(name: str, info: dict) -> None:
             line += f"   [dim]{'  ·  '.join(right_parts)}[/dim]"
         console.print(line)
 
+    # Metered overage pool ("Extra usage" in Claude's UI) — the bucket that
+    # holds usage-credit / Agent-SDK spend. monthly_limit/used arrive in cents.
+    extra = info.get("extra_usage")
+    if extra and extra.get("monthly_limit_usd") is not None:
+        limit = (extra.get("monthly_limit_usd") or 0) / 100
+        used = (extra.get("used_credits_usd") or 0) / 100
+        util = extra.get("utilization_pct")
+        if util is None and limit > 0:
+            util = round(used / limit * 100)
+        util_str = f"{util}% used" if util is not None else ""
+        console.print(
+            f"  [bold]{'Extra usage':<11}[/bold] ${used:.2f} / ${limit:.2f}"
+            f"   [dim]{util_str}[/dim]"
+        )
+
 
 def _bar(pct: int, width: int = 20) -> str:
     pct = max(0, min(100, pct))
