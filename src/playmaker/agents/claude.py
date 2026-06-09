@@ -31,16 +31,16 @@ class ClaudeHandler:
         cwd: Path,
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        model: str | None = None,
     ) -> DispatchResult:
         """Streaming dispatch — emits on_session_started early.
 
         `claude -p --output-format stream-json --verbose` produces JSONL
         on stdout where the first line is a `system/init` event carrying
-        `session_id`. We catch that within the first poll, fire the
-        callback, and let `playmaker dispatch` write to state.db +
-        sidebar_threads BEFORE the agent finishes — so the user sees the
-        thread row in Zed's sidebar within ~1s of dispatch instead of
-        having to wait for the full run.
+        `session_id`. We catch that within the first poll and fire the
+        callback so `playmaker dispatch` persists the id to state.db BEFORE
+        the agent finishes — other commands (`get`, `thread`) can locate
+        the session within ~1s instead of waiting for the full run.
         """
         full_prompt = self._build_prompt(prompt, files or [])
         # `--verbose` is required by claude-cli when stream-json is used
@@ -51,8 +51,10 @@ class ClaudeHandler:
             "--output-format",
             "stream-json",
             "--verbose",
-            full_prompt,
         ]
+        if model:
+            cmd += ["--model", model]
+        cmd.append(full_prompt)
         import time as _time
         t0 = _time.monotonic()
         proc = subprocess.Popen(
@@ -140,6 +142,7 @@ class ClaudeHandler:
         agent_session_id: str,
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        model: str | None = None,
     ) -> DispatchResult:
         full_prompt = self._build_prompt(prompt, files or [])
         cmd = [
@@ -149,8 +152,10 @@ class ClaudeHandler:
             agent_session_id,
             "--output-format",
             "json",
-            full_prompt,
         ]
+        if model:
+            cmd += ["--model", model]
+        cmd.append(full_prompt)
         proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
         if proc.returncode != 0:
             raise RuntimeError(

@@ -15,8 +15,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from playmaker import notify, state, watcher, zed
-from playmaker.acp.server import acp_app
+from playmaker import notify, state, watcher
 from playmaker.registry import get_handler
 
 app = typer.Typer(
@@ -25,7 +24,6 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
-app.add_typer(acp_app, name="acp")
 
 console = Console()
 err_console = Console(stderr=True)
@@ -56,6 +54,13 @@ def dispatch(
     files: Optional[list[Path]] = typer.Option(
         None, "--files", "-f", help="files to attach to prompt"
     ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="forwarded to the agent CLI's --model (e.g. claude 'opus'/'sonnet', "
+        "codex 'gpt-5-codex', gemini 'gemini-2.5-pro'); omitted = agent default",
+    ),
     sync: bool = typer.Option(
         False,
         "--sync",
@@ -63,11 +68,6 @@ def dispatch(
     ),
     parent: Optional[str] = typer.Option(
         None, "--parent", help="parent session id (for delegation tree)"
-    ),
-    register_zed: bool = typer.Option(
-        True,
-        "--register-zed/--no-register-zed",
-        help="upsert into Zed's sidebar_threads on completion (default on; non-interactive runs are filtered out by Zed's native Import)",
     ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
@@ -86,19 +86,17 @@ def dispatch(
         cwd=str(cwd_resolved),
         files=[str(f) for f in (files or [])],
         parent_id=parent,
+        model=model,
     )
 
     if sync:
         state.update_session(sid, status="running", pid=os.getpid())
-        _run_dispatch(sid, register_zed=register_zed)
+        _run_dispatch(sid)
         return
 
     log_path = state.LOGS_DIR / f"{sid}.log"
     log_fh = open(log_path, "wb")
     cmd = [sys.executable, "-m", "playmaker", "_run-detached", sid]
-    env = os.environ.copy()
-    if not register_zed:
-        env["PLAYMAKER_NO_REGISTER_ZED"] = "1"
     proc = subprocess.Popen(
         cmd,
         stdout=log_fh,
@@ -106,7 +104,6 @@ def dispatch(
         stdin=subprocess.DEVNULL,
         start_new_session=True,
         close_fds=True,
-        env=env,
     )
     log_fh.close()
     state.update_session(sid, status="running", pid=proc.pid)
@@ -116,7 +113,7 @@ def dispatch(
         console.print(f"[dim]session: {sid}  pid: {proc.pid}  (detached)[/dim]")
 
 
-def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
+def _run_dispatch(sid: str) -> None:
     """Execute the dispatch for a pending session and update its row."""
     row = state.get_session(sid)
     if row is None:
@@ -130,22 +127,11 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
         # Persist the id immediately so other commands (`get`, `thread`) can
         # locate the session before the agent finishes.
         state.update_session(sid, agent_session_id=agent_session_id)
-        if not register_zed:
-            return
-        try:
-            zed.register(
-                agent=row["agent"],
-                agent_session_id=agent_session_id,
-                prompt=row["prompt"],
-                cwd=row["cwd"],
-                started_at_iso=row["started_at"],
-            )
-        except Exception as exc:
-            err_console.print(f"[yellow]zed register skipped:[/yellow] {exc}")
 
     # Pre-populated agent_session_id is the marker that this row is a resume
     # of an existing agent thread (set by `continue` before spawning).
     resume_target = row.get("agent_session_id")
+    model = row.get("model")
     try:
         if resume_target:
             result = handler.resume(
@@ -154,21 +140,18 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
                 resume_target,
                 files,
                 on_session_started=_on_session_started,
+                model=model,
             )
         else:
             result = handler.dispatch(
-                row["prompt"], cwd, files, on_session_started=_on_session_started
+                row["prompt"],
+                cwd,
+                files,
+                on_session_started=_on_session_started,
+                model=model,
             )
     except Exception as exc:
         state.update_session(sid, status="failed", finished_at=state.now_iso(), exit_code=1)
-        # Strip the 🟢 running marker from sidebar — best-effort.
-        latest = state.get_session(sid) or {}
-        ag_sid = latest.get("agent_session_id")
-        if ag_sid:
-            try:
-                zed.finalize(agent=row["agent"], agent_session_id=ag_sid)
-            except Exception:
-                pass
         err_console.print(f"[red]dispatch failed:[/red] {exc}")
         notify.notify("playmaker — dispatch failed", f"{row['agent']}: {exc}", sound=True)
         raise typer.Exit(1) from exc
@@ -188,13 +171,6 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
         exit_code=result.exit_code,
     )
 
-    # Strip the 🟢 running marker from sidebar title.
-    if result.agent_session_id:
-        try:
-            zed.finalize(agent=row["agent"], agent_session_id=result.agent_session_id)
-        except Exception as exc:
-            err_console.print(f"[yellow]zed finalize skipped:[/yellow] {exc}")
-
     notify.notify(
         "playmaker — done",
         f"{row['agent']}: {result.initial_output[:80]}",
@@ -209,8 +185,7 @@ def _run_dispatch(sid: str, *, register_zed: bool = True) -> None:
 def _run_detached(session_id: str) -> None:
     """Internal: run a pre-inserted session in the background."""
     state.init_db()
-    register = os.environ.get("PLAYMAKER_NO_REGISTER_ZED") != "1"
-    _run_dispatch(session_id, register_zed=register)
+    _run_dispatch(session_id)
 
 
 @app.command("continue")
@@ -225,13 +200,14 @@ def continue_(
     files: Optional[list[Path]] = typer.Option(
         None, "--files", "-f", help="files to attach to prompt"
     ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="override the model for this turn; defaults to the parent session's model",
+    ),
     sync: bool = typer.Option(
         False, "--sync", help="block until done and print final output (default is detached)"
-    ),
-    register_zed: bool = typer.Option(
-        True,
-        "--register-zed/--no-register-zed",
-        help="upsert into Zed's sidebar_threads on session start (default on)",
     ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
@@ -257,6 +233,7 @@ def continue_(
         raise typer.Exit(1)
 
     cwd_resolved = (cwd or Path(parent["cwd"])).expanduser().resolve()
+    effective_model = model if model is not None else parent.get("model")
 
     # New playmaker session that targets the parent's live agent thread.
     sid = state.insert_session(
@@ -265,21 +242,19 @@ def continue_(
         cwd=str(cwd_resolved),
         files=[str(f) for f in (files or [])],
         parent_id=parent["id"],
+        model=effective_model,
     )
     # Pre-populating agent_session_id flips _run_dispatch into resume mode.
     state.update_session(sid, agent_session_id=parent_agent_session_id)
 
     if sync:
         state.update_session(sid, status="running", pid=os.getpid())
-        _run_dispatch(sid, register_zed=register_zed)
+        _run_dispatch(sid)
         return
 
     log_path = state.LOGS_DIR / f"{sid}.log"
     log_fh = open(log_path, "wb")
     cmd = [sys.executable, "-m", "playmaker", "_run-detached", sid]
-    env = os.environ.copy()
-    if not register_zed:
-        env["PLAYMAKER_NO_REGISTER_ZED"] = "1"
     proc = subprocess.Popen(
         cmd,
         stdout=log_fh,
@@ -287,7 +262,6 @@ def continue_(
         stdin=subprocess.DEVNULL,
         start_new_session=True,
         close_fds=True,
-        env=env,
     )
     log_fh.close()
     state.update_session(sid, status="running", pid=proc.pid)
@@ -635,11 +609,6 @@ def kill(
     state.update_session(
         row["id"], status="killed", finished_at=state.now_iso(), exit_code=143
     )
-    if row.get("agent_session_id"):
-        try:
-            zed.finalize(agent=row["agent"], agent_session_id=row["agent_session_id"])
-        except Exception:
-            pass
     console.print(f"[magenta]killed[/magenta] {row['id']} (pid {pid})")
 
 
@@ -737,49 +706,6 @@ def _bar(pct: int, width: int = 20) -> str:
     return f"[{color}]{'█' * filled}[/{color}]{'░' * (width - filled)}"
 
 
-@app.command("register-zed")
-def register_zed_cmd(
-    session_id: str = typer.Argument(..., help="session id or unique prefix"),
-) -> None:
-    """Backfill an existing session into Zed's sidebar_threads.
-
-    Useful for sessions that were dispatched with --no-register-zed, or those
-    spawned before the register-zed default was introduced. Restart Zed to see
-    the entry.
-    """
-    state.init_db()
-    row = state.get_session(session_id)
-    if row is None:
-        err_console.print(f"[red]session {session_id!r} not found[/red]")
-        raise typer.Exit(1)
-    if not row.get("agent_session_id"):
-        err_console.print(
-            f"[red]session has no agent_session_id yet (status={row['status']})[/red]"
-        )
-        raise typer.Exit(1)
-    try:
-        thread_id = zed.register(
-            agent=row["agent"],
-            agent_session_id=row["agent_session_id"],
-            prompt=row["prompt"],
-            cwd=row["cwd"],
-            started_at_iso=row["started_at"],
-        )
-    except Exception as exc:
-        err_console.print(f"[red]register failed:[/red] {exc}")
-        raise typer.Exit(1) from exc
-    if thread_id is None:
-        console.print(
-            f"[dim]{row['id'][:8]}  already in Zed (Zed Import handled it); skipping[/dim]"
-        )
-    else:
-        console.print(
-            f"[green]registered[/green] {row['id'][:8]}  "
-            f"thread_id={thread_id.hex()[:8]}  "
-            f"[dim](restart Zed to see)[/dim]"
-        )
-
-
 @app.command()
 def agents() -> None:
     """List registered agents — name, availability, profile path."""
@@ -815,10 +741,6 @@ _DEFAULT_CONFIG = """\
 on_complete = true
 on_fail = true
 sound = true
-
-[zed]
-# We rely on Zed's native "Import External Agent Threads" — no INSERT.
-# This block is reserved for future tweaks.
 
 [agents.claude]
 binary = "claude"

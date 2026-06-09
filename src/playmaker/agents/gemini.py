@@ -38,13 +38,14 @@ class GeminiHandler:
         cwd: Path,
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        model: str | None = None,
     ) -> DispatchResult:
         """Streaming dispatch via `gemini -p ... -o stream-json` so that
         `on_session_started` fires within the first event instead of at
         the very end. The first JSONL line carries `session_id` (or
-        `sessionId`); we callback on it so dispatch's state.db +
-        sidebar_threads write happens early — Zed sidebar shows the row
-        almost immediately after CLI invocation.
+        `sessionId`); we callback on it so dispatch's state.db write
+        happens early — other commands can locate the session almost
+        immediately after CLI invocation.
         """
         full_prompt = self._build_prompt(prompt, files or [])
         cmd = [
@@ -55,6 +56,8 @@ class GeminiHandler:
             "stream-json",
             "--yolo",
         ]
+        if model:
+            cmd += ["-m", model]
         t0 = time.monotonic()
         proc = subprocess.Popen(
             cmd,
@@ -129,6 +132,7 @@ class GeminiHandler:
         agent_session_id: str,
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        model: str | None = None,
     ) -> DispatchResult:
         # Gemini's --resume takes an INDEX (or "latest"), not a UUID — resolve
         # it from `gemini --list-sessions` run in the same cwd, since the list
@@ -150,6 +154,8 @@ class GeminiHandler:
             "json",
             "--yolo",
         ]
+        if model:
+            cmd += ["-m", model]
         t0 = time.monotonic()
         proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
         duration = time.monotonic() - t0

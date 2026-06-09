@@ -40,6 +40,7 @@ class CodexHandler:
         cwd: Path,
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        model: str | None = None,
     ) -> DispatchResult:
         full_prompt = self._build_prompt(prompt, files or [])
 
@@ -57,8 +58,10 @@ class CodexHandler:
             str(cwd),
             "-o",
             str(last_msg_path),
-            full_prompt,
         ]
+        if model:
+            cmd += ["-m", model]
+        cmd.append(full_prompt)
         t0 = time.monotonic()
         proc = subprocess.Popen(
             cmd,
@@ -149,6 +152,7 @@ class CodexHandler:
         agent_session_id: str,
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        model: str | None = None,
     ) -> DispatchResult:
         full_prompt = self._build_prompt(prompt, files or [])
 
@@ -166,9 +170,10 @@ class CodexHandler:
             "--skip-git-repo-check",
             "-o",
             str(last_msg_path),
-            agent_session_id,
-            full_prompt,
         ]
+        if model:
+            cmd += ["-m", model]
+        cmd += [agent_session_id, full_prompt]
         t0 = time.monotonic()
         proc = subprocess.Popen(
             cmd,

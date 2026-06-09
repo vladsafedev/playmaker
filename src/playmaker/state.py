@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     output_path TEXT,
     session_file_path TEXT,
     parent_id TEXT,
-    pid INTEGER
+    pid INTEGER,
+    model TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_agent ON sessions(agent);
@@ -70,6 +71,10 @@ def init_db() -> None:
     ensure_dirs()
     with connect() as c:
         c.executescript(SCHEMA)
+        # Migration: pre-existing databases may not have `model` yet.
+        existing_cols = {row["name"] for row in c.execute("PRAGMA table_info(sessions)")}
+        if "model" not in existing_cols:
+            c.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
         c.commit()
 
 
@@ -80,6 +85,7 @@ def insert_session(
     cwd: str,
     files: list[str] | None = None,
     parent_id: str | None = None,
+    model: str | None = None,
 ) -> str:
     """Insert a new pending session, return its id."""
     sid = new_session_id()
@@ -88,8 +94,8 @@ def insert_session(
             """
             INSERT INTO sessions (
                 id, agent, prompt, cwd, files,
-                status, started_at, parent_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                status, started_at, parent_id, model
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 sid,
@@ -100,6 +106,7 @@ def insert_session(
                 "pending",
                 now_iso(),
                 parent_id,
+                model,
             ),
         )
         c.commit()
@@ -121,20 +128,6 @@ def get_session(session_id: str) -> dict[str, Any] | None:
         row = c.execute(
             "SELECT * FROM sessions WHERE id = ? OR id LIKE ?",
             (session_id, f"{session_id}%"),
-        ).fetchone()
-    return dict(row) if row else None
-
-
-def get_session_by_agent_session_id(agent_session_id: str) -> dict[str, Any] | None:
-    """Lookup by the agent's NATIVE session id (claude UUID, codex thread_id,
-    gemini session_id) — what gets written into Zed's `sidebar_threads.session_id`
-    and arrives in `session/load` params.
-    """
-    with connect() as c:
-        row = c.execute(
-            "SELECT * FROM sessions WHERE agent_session_id = ? "
-            "ORDER BY started_at DESC LIMIT 1",
-            (agent_session_id,),
         ).fetchone()
     return dict(row) if row else None
 

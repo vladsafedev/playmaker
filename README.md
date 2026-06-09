@@ -96,12 +96,6 @@ Per-project profile overrides go in `./.playmaker/agents/<name>.md` next to your
 
 `thread`/`summary` parse those into a uniform turn list so you can read all three in the same shape.
 
-## Zed integration
-
-If you use [Zed](https://zed.dev), `playmaker` upserts dispatched sessions into Zed's `sidebar_threads` so they show up under "Thread History" alongside your interactive ones. Zed's native "Import External Agent Threads" filters out non-interactive runs (`codex exec`, `gemini -p`) — `playmaker` registers them explicitly. Restart Zed to see new entries.
-
-Disable per-call with `--no-register-zed`.
-
 ## The coach skill
 
 `playmaker` is a runner. The decision-making lives in [`playmaker-coach`](https://github.com/shulyugin/playmaker-coach) — a Claude Code skill that knows when delegation is worth the overhead, how to decompose tasks, and how to review sub-agent diffs.
@@ -127,14 +121,9 @@ Codex/Gemini availability is treated as "unknown" until you hit a rate-limit err
 
 ## Limitations
 
-- macOS-only path conventions in a few places (Zed DB, Keychain). Linux works for everything except Zed/Claude-quota probing.
-- `playmaker` does not resume sub-agent sessions — each `dispatch` is a fresh agent session. Coach feeds context through the prompt instead.
+- macOS-only Claude-quota probe (Keychain/PTY parse of `claude /usage`). Everything else works on Linux.
 - No remote agents. Everything runs locally on your machine.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-<!-- ping -->
-<!-- ping -->
-<!-- ping -->
-<!-- ping -->

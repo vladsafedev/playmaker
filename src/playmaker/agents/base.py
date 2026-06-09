@@ -54,12 +54,16 @@ class AgentHandler(Protocol):
         cwd: Path,
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        model: str | None = None,
     ) -> DispatchResult:
         """Run agent non-interactively, await first turn, return metadata.
 
         Implementations MUST call `on_session_started(agent_session_id)` exactly
         once as soon as the id is known — early if the agent's protocol exposes
         it mid-stream, otherwise just before returning.
+
+        `model` is forwarded to the agent CLI's own `--model` flag when set;
+        when None the agent picks its configured default.
         """
         ...
 
@@ -70,6 +74,7 @@ class AgentHandler(Protocol):
         agent_session_id: str,
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
+        model: str | None = None,
     ) -> DispatchResult:
         """Continue a previously-started agent session with a new prompt.
 
