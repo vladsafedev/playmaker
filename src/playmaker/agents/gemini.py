@@ -115,11 +115,17 @@ class GeminiHandler:
                 f"{''.join(first_lines)[:500]}"
             )
 
+        # `gemini -p -o stream-json` does not reliably emit a `response` field
+        # in the stream (varies by version), so `last_response` can be empty
+        # even on success. The final answer is always in the session file —
+        # fall back to its last assistant turn so callers get real output.
+        session_file = self.find_session_file(agent_session_id, cwd)
+        initial_output = last_response or self._last_assistant_text(session_file)
         return DispatchResult(
             agent_session_id=agent_session_id,
             cwd=str(cwd),
-            session_file=self.find_session_file(agent_session_id, cwd),
-            initial_output=last_response,
+            session_file=session_file,
+            initial_output=initial_output,
             cost_usd=None,  # Gemini json reports tokens, not USD
             duration_seconds=duration,
             exit_code=proc.returncode,
@@ -180,15 +186,32 @@ class GeminiHandler:
                 on_session_started(new_session_id)
             except Exception:
                 pass
+        session_file = self.find_session_file(new_session_id, cwd)
+        initial_output = data.get("response", "") or self._last_assistant_text(session_file)
         return DispatchResult(
             agent_session_id=new_session_id,
             cwd=str(cwd),
-            session_file=self.find_session_file(new_session_id, cwd),
-            initial_output=data.get("response", ""),
+            session_file=session_file,
+            initial_output=initial_output,
             cost_usd=None,
             duration_seconds=duration,
             exit_code=proc.returncode,
         )
+
+    def _last_assistant_text(self, session_file: Path | None) -> str:
+        """Last non-empty assistant turn from the session file.
+
+        Used as a fallback when the CLI's streamed/`-o json` `response` field
+        is empty. The file can lag process exit slightly, so retry briefly.
+        """
+        if session_file is None:
+            return ""
+        for _ in range(5):
+            for turn in reversed(self.parse_session_file(session_file)):
+                if turn.role == "assistant" and turn.content.strip():
+                    return turn.content
+            time.sleep(0.2)
+        return ""
 
     @staticmethod
     def _resolve_session_index(uuid: str, cwd: Path) -> int | None:
