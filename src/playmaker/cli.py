@@ -173,8 +173,7 @@ def _run_dispatch(sid: str) -> None:
         _maybe_finalize_batch(row.get("batch_id"))
         raise typer.Exit(1) from exc
 
-    output_path = state.OUTPUTS_DIR / f"{sid}.txt"
-    output_path.write_text(result.initial_output, encoding="utf-8")
+    output_path = _write_output(sid, result.initial_output)
 
     state.update_session(
         sid,
@@ -202,6 +201,22 @@ def _run_dispatch(sid: str) -> None:
 
     console.print(f"[dim]session: {sid}  agent_session: {result.agent_session_id}[/dim]")
     typer.echo(result.initial_output)
+
+
+def _write_output(sid: str, text: str) -> Path:
+    """Persist an agent's final output. Most outputs are Markdown, so use `.md`
+    (renders in Quick Look / editors); detect genuine JSON and use `.json`."""
+    ext = "md"
+    stripped = (text or "").strip()
+    if stripped[:1] in "{[":
+        try:
+            json.loads(stripped)
+            ext = "json"
+        except ValueError:
+            pass
+    path = state.OUTPUTS_DIR / f"{sid}.{ext}"
+    path.write_text(text or "", encoding="utf-8")
+    return path
 
 
 def _one_line(text: str, limit: int = 90) -> str:
@@ -256,7 +271,10 @@ def _render_batch_file(batch_id: str, siblings: list) -> Optional[Path]:
     lines = [f"# playmaker batch: {batch_id}", ""]
     for s in siblings:
         lines.append(f"## {s['agent']} — {s['status']}  ({s['id'][:8]})")
-        out_path = s.get("output_path") or str(state.OUTPUTS_DIR / f"{s['id']}.txt")
+        out_path = s.get("output_path")
+        if not out_path:
+            matches = sorted(state.OUTPUTS_DIR.glob(f"{s['id']}.*"))
+            out_path = str(matches[0]) if matches else str(state.OUTPUTS_DIR / f"{s['id']}.md")
         try:
             content = Path(out_path).read_text(encoding="utf-8").strip()
         except OSError:
