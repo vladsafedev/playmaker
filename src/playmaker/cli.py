@@ -193,7 +193,7 @@ def _run_dispatch(sid: str) -> None:
         notify.notify(
             f"playmaker — {row['agent']} done",
             _one_line(result.initial_output),
-            sound_name="Submarine",
+            sound_name="Blow",
             open_path=str(output_path),
             group=f"playmaker-{sid}",
         )
@@ -260,7 +260,7 @@ def _maybe_finalize_batch(batch_id: Optional[str]) -> None:
     notify.notify(
         "playmaker — batch done",
         f"{len(ok)}/{len(siblings)} done · {marks}",
-        sound_name="Submarine" if len(ok) == len(siblings) else "Basso",
+        sound_name="Blow" if len(ok) == len(siblings) else "Basso",
         open_path=str(combined) if combined else None,
         group=f"playmaker-batch-{_batch_slug(batch_id)}",
     )

@@ -20,7 +20,7 @@ def notify(
     message: str,
     *,
     sound: bool = True,
-    sound_name: str = "Submarine",
+    sound_name: str = "Blow",
     open_path: str | None = None,
     group: str | None = None,
 ) -> None:
