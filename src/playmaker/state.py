@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     session_file_path TEXT,
     parent_id TEXT,
     pid INTEGER,
-    model TEXT
+    model TEXT,
+    batch_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_agent ON sessions(agent);
@@ -71,10 +72,14 @@ def init_db() -> None:
     ensure_dirs()
     with connect() as c:
         c.executescript(SCHEMA)
-        # Migration: pre-existing databases may not have `model` yet.
+        # Migration: pre-existing databases may lack newer columns.
         existing_cols = {row["name"] for row in c.execute("PRAGMA table_info(sessions)")}
         if "model" not in existing_cols:
             c.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
+        if "batch_id" not in existing_cols:
+            c.execute("ALTER TABLE sessions ADD COLUMN batch_id TEXT")
+        # Created after migration so it works on pre-existing tables too.
+        c.execute("CREATE INDEX IF NOT EXISTS idx_batch ON sessions(batch_id)")
         c.commit()
 
 
@@ -86,6 +91,7 @@ def insert_session(
     files: list[str] | None = None,
     parent_id: str | None = None,
     model: str | None = None,
+    batch_id: str | None = None,
 ) -> str:
     """Insert a new pending session, return its id."""
     sid = new_session_id()
@@ -94,8 +100,8 @@ def insert_session(
             """
             INSERT INTO sessions (
                 id, agent, prompt, cwd, files,
-                status, started_at, parent_id, model
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, started_at, parent_id, model, batch_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 sid,
@@ -107,10 +113,21 @@ def insert_session(
                 now_iso(),
                 parent_id,
                 model,
+                batch_id,
             ),
         )
         c.commit()
     return sid
+
+
+def list_batch(batch_id: str) -> list[dict[str, Any]]:
+    """All sessions in a dispatch batch, oldest first."""
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM sessions WHERE batch_id = ? ORDER BY started_at ASC",
+            (batch_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def update_session(session_id: str, **fields: Any) -> None:

@@ -69,6 +69,13 @@ def dispatch(
     parent: Optional[str] = typer.Option(
         None, "--parent", help="parent session id (for delegation tree)"
     ),
+    batch: Optional[str] = typer.Option(
+        None,
+        "--batch",
+        help="batch label: pass the same value to every dispatch in one fan-out. "
+        "Per-dispatch success pings are suppressed; one summary fires when the "
+        "whole batch finishes. Failures still ping immediately.",
+    ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Run an agent non-interactively. Detached by default — prints session id
@@ -87,6 +94,7 @@ def dispatch(
         files=[str(f) for f in (files or [])],
         parent_id=parent,
         model=model,
+        batch_id=batch,
     )
 
     if sync:
@@ -153,7 +161,16 @@ def _run_dispatch(sid: str) -> None:
     except Exception as exc:
         state.update_session(sid, status="failed", finished_at=state.now_iso(), exit_code=1)
         err_console.print(f"[red]dispatch failed:[/red] {exc}")
-        notify.notify("playmaker — dispatch failed", f"{row['agent']}: {exc}", sound=True)
+        # Failures always ping immediately and loudly (Basso), even inside a
+        # batch — they're the actionable event. Click opens the log.
+        notify.notify(
+            f"playmaker — {row['agent']} FAILED",
+            _one_line(str(exc), 120),
+            sound_name="Basso",
+            open_path=str(state.LOGS_DIR / f"{sid}.log"),
+            group=f"playmaker-fail-{sid}",
+        )
+        _maybe_finalize_batch(row.get("batch_id"))
         raise typer.Exit(1) from exc
 
     output_path = state.OUTPUTS_DIR / f"{sid}.txt"
@@ -171,14 +188,86 @@ def _run_dispatch(sid: str) -> None:
         exit_code=result.exit_code,
     )
 
-    notify.notify(
-        "playmaker — done",
-        f"{row['agent']}: {result.initial_output[:80]}",
-        sound=True,
-    )
+    # In a batch, stay quiet per-dispatch — one summary fires when the whole
+    # batch drains (see _maybe_finalize_batch). Solo dispatches ping here.
+    if not row.get("batch_id"):
+        notify.notify(
+            f"playmaker — {row['agent']} done",
+            _one_line(result.initial_output),
+            sound_name="Submarine",
+            open_path=str(output_path),
+            group=f"playmaker-{sid}",
+        )
+    _maybe_finalize_batch(row.get("batch_id"))
 
     console.print(f"[dim]session: {sid}  agent_session: {result.agent_session_id}[/dim]")
     typer.echo(result.initial_output)
+
+
+def _one_line(text: str, limit: int = 90) -> str:
+    """Collapse whitespace, drop markdown markers, truncate (char-safe)."""
+    t = " ".join((text or "").split())
+    for ch in ("`", "*", "#", ">", "_", "~"):
+        t = t.replace(ch, "")
+    t = " ".join(t.split())
+    return (t[:limit] + "…") if len(t) > limit else t
+
+
+def _batch_slug(batch_id: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_" else "-" for c in batch_id)[:60]
+
+
+def _maybe_finalize_batch(batch_id: Optional[str]) -> None:
+    """Fire one summary notification when every session in a batch is terminal.
+
+    Cross-process safe: each detached dispatch calls this on completion; only
+    the finisher that wins the O_EXCL sentinel actually notifies.
+    """
+    if not batch_id:
+        return
+    siblings = state.list_batch(batch_id)
+    if not siblings:
+        return
+    terminal = {"done", "failed", "killed"}
+    if any(s["status"] not in terminal for s in siblings):
+        return  # not the last to finish
+
+    sentinel = state.LOGS_DIR / f".batch-{_batch_slug(batch_id)}.done"
+    try:
+        fd = os.open(str(sentinel), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.close(fd)
+    except FileExistsError:
+        return  # another finisher already fired the summary
+
+    ok = [s for s in siblings if s["status"] == "done"]
+    marks = " · ".join(f"{s['agent']} {'✓' if s['status'] == 'done' else '✗'}" for s in siblings)
+    combined = _render_batch_file(batch_id, siblings)
+    notify.notify(
+        "playmaker — batch done",
+        f"{len(ok)}/{len(siblings)} done · {marks}",
+        sound_name="Submarine" if len(ok) == len(siblings) else "Basso",
+        open_path=str(combined) if combined else None,
+        group=f"playmaker-batch-{_batch_slug(batch_id)}",
+    )
+
+
+def _render_batch_file(batch_id: str, siblings: list) -> Optional[Path]:
+    """Write a combined markdown view of all batch outputs to /tmp for review."""
+    lines = [f"# playmaker batch: {batch_id}", ""]
+    for s in siblings:
+        lines.append(f"## {s['agent']} — {s['status']}  ({s['id'][:8]})")
+        out_path = s.get("output_path") or str(state.OUTPUTS_DIR / f"{s['id']}.txt")
+        try:
+            content = Path(out_path).read_text(encoding="utf-8").strip()
+        except OSError:
+            content = "_(no output captured — see `playmaker logs " + s["id"][:8] + "`)_"
+        lines += ["", content or "_(empty)_", ""]
+    target = Path("/tmp") / f"playmaker-batch-{_batch_slug(batch_id)}.md"
+    try:
+        target.write_text("\n".join(lines), encoding="utf-8")
+        return target
+    except OSError:
+        return None
 
 
 @app.command("_run-detached", hidden=True)
