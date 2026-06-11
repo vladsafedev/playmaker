@@ -29,9 +29,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/shulyugin/playmaker"
-Repository = "https://github.com/shulyugin/playmaker"
-Issues = "https://github.com/shulyugin/playmaker/issues"
+Homepage = "https://github.com/vladsafedev/playmaker"
+Repository = "https://github.com/vladsafedev/playmaker"
+Issues = "https://github.com/vladsafedev/playmaker/issues"
 
 [project.scripts]
 playmaker = "playmaker.cli:app"

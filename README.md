@@ -37,15 +37,6 @@ skip_permissions = false
 
 ## Install
 
-### macOS (Homebrew)
-
-```bash
-brew tap shulyugin/playmaker
-brew install playmaker
-```
-
-### Cross-platform (Python)
-
 ```bash
 # uv (recommended)
 uv tool install playmaker-cli
@@ -126,13 +117,13 @@ Each session's final output lands in `~/.playmaker/outputs/<id>.md` (or `.json` 
 
 ## The coach skill
 
-`playmaker` is a runner. The decision-making lives in [`playmaker-coach`](https://github.com/shulyugin/playmaker-coach) — a Claude Code skill that knows when delegation is worth the overhead, how to decompose tasks, and how to review sub-agent diffs.
+`playmaker` is a runner. The decision-making lives in [`playmaker-coach`](https://github.com/vladsafedev/playmaker-coach) — a Claude Code skill that knows when delegation is worth the overhead, how to decompose tasks, and how to review sub-agent diffs.
 
 Install:
 
 ```bash
 # in your Claude Code skills directory
-git clone https://github.com/shulyugin/playmaker-coach ~/.claude/skills/playmaker-coach
+git clone https://github.com/vladsafedev/playmaker-coach ~/.claude/skills/playmaker-coach
 ```
 
 Then in any Claude Code session, give a multi-component task and the skill activates.

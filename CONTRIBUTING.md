@@ -21,7 +21,7 @@ Requires **Python 3.11+**. We use [`uv`](https://docs.astral.sh/uv/), but `pipx`
 works too.
 
 ```bash
-git clone https://github.com/shulyugin/playmaker
+git clone https://github.com/vladsafedev/playmaker
 cd playmaker
 
 # editable install (uv)
