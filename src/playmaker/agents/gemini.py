@@ -275,7 +275,6 @@ class GeminiHandler:
         For both, message content is either a list[{text}] (user) or
         a string (gemini), or sometimes empty (token-only chunk).
         """
-        from datetime import datetime
 
         turns: list[Turn] = []
         if not path.exists():
