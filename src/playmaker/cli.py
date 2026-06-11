@@ -866,6 +866,11 @@ sound = true
 
 [agents.claude]
 binary = "claude"
+# Headless dispatch passes --dangerously-skip-permissions so unattended runs
+# are not blocked by tool-permission prompts. Set to false to keep Claude
+# Code's normal permission checks (detached runs will then stall on the first
+# tool prompt and finish without writing anything).
+skip_permissions = true
 
 [agents.codex]
 binary = "codex"

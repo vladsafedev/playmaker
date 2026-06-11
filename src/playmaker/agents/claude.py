@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
+from playmaker.config import agent_setting
 
 
 class ClaudeHandler:
@@ -51,12 +52,14 @@ class ClaudeHandler:
             "--output-format",
             "stream-json",
             "--verbose",
-            # Detached runs have no human to approve tool prompts; without this
-            # the agent stalls on the first file write and ends its turn with
-            # zero changes. Skipping permissions is what makes sibling-Claude
-            # usable for write-heavy subtasks in headless mode.
-            "--dangerously-skip-permissions",
         ]
+        # Detached runs have no human to approve tool prompts; without this
+        # the agent stalls on the first file write and ends its turn with
+        # zero changes. Skipping permissions is what makes sibling-Claude
+        # usable for write-heavy subtasks in headless mode. Opt out via
+        # [agents.claude] skip_permissions = false in ~/.playmaker/config.toml.
+        if agent_setting("claude", "skip_permissions", True):
+            cmd.append("--dangerously-skip-permissions")
         if model:
             cmd += ["--model", model]
         cmd.append(full_prompt)
@@ -157,9 +160,10 @@ class ClaudeHandler:
             agent_session_id,
             "--output-format",
             "json",
-            # See dispatch(): detached resume has no human to approve prompts.
-            "--dangerously-skip-permissions",
         ]
+        # See dispatch(): detached resume has no human to approve prompts.
+        if agent_setting("claude", "skip_permissions", True):
+            cmd.append("--dangerously-skip-permissions")
         if model:
             cmd += ["--model", model]
         cmd.append(full_prompt)
