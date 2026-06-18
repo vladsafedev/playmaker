@@ -76,6 +76,7 @@ class ClaudeHandler:
 
         agent_session_id: str | None = None
         last_text = ""
+        error_text = ""  # error reported in the stream-json result event
         cost_usd: float | None = None
         duration_seconds: float | None = None
         first_lines: list[str] = []  # for diagnostics if no session_id
@@ -110,6 +111,13 @@ class ClaudeHandler:
                         last_text = block.get("text", "") or last_text
             elif etype == "result":
                 last_text = obj.get("result", last_text)
+                # claude -p reports failures here (overload, rate-limit, refusal)
+                # with is_error=true and exit 1 but an EMPTY stderr — capture the
+                # message so the failure isn't surfaced as a blank "failed".
+                if obj.get("is_error") or (obj.get("subtype") not in (None, "success")):
+                    error_text = (
+                        obj.get("result") or obj.get("error") or obj.get("subtype") or ""
+                    )
                 if obj.get("total_cost_usd") is not None:
                     cost_usd = obj["total_cost_usd"]
                 if obj.get("duration_ms") is not None:
@@ -119,10 +127,8 @@ class ClaudeHandler:
         proc.wait()
 
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"claude failed (exit {proc.returncode}): "
-                f"{stderr_buf.strip() or ''.join(first_lines)[:500]}"
-            )
+            detail = stderr_buf.strip() or error_text or last_text or "".join(first_lines)[:500]
+            raise RuntimeError(f"claude failed (exit {proc.returncode}): {detail or '(no error output)'}")
 
         if agent_session_id is None:
             raise RuntimeError(
