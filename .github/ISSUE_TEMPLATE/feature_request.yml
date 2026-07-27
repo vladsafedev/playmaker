@@ -1,0 +1,22 @@
+name: Feature request
+description: Propose a change to playmaker — including support for another agent CLI
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The workflow that is awkward today, not the solution yet.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: >
+        For a new agent CLI, include how it runs headlessly, how it reports the
+        final message, and where it writes its session transcript — that is what
+        a handler needs (see CONTRIBUTING.md).
+    validations:
+      required: true

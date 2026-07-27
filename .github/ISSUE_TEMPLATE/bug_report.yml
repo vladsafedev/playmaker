@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in playmaker behaves differently than documented
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, what you got instead.
+      placeholder: |
+        $ playmaker dispatch codex --prompt "..."
+        expected: ...
+        got: ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Which agent
+      multiple: true
+      options:
+        - claude
+        - codex
+        - agy (Antigravity)
+        - gemini
+        - not agent-specific
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: >
+        Output of `playmaker --version`, your OS, and the version of the agent
+        CLI involved (`claude --version`, `codex --version`, `agy --version`).
+      placeholder: "playmaker 0.4.0, macOS 15.5, codex 0.125.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: >
+        `playmaker logs <id>` or the failing command's output. Scrub tokens and
+        anything from `~/.playmaker/outputs/` you would rather not publish.
+      render: shell
