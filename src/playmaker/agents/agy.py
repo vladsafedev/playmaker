@@ -1,12 +1,15 @@
 """Antigravity CLI (`agy`) handler.
 
 Empirically (agy 1.1.1):
-- oneshot: `agy -p "<prompt>" [--model "<display name>"] [--dangerously-skip-permissions]
+- oneshot: `agy -p "<prompt>" [--model <name>] [--dangerously-skip-permissions]
   [--print-timeout 60m] [--log-file <path>]`; stdout is the final response as
   plain text (no JSON envelope).
 - resume: `agy --conversation <uuid> -p "..."` — keeps the same conversation id.
-- models are addressed by *display name* from `agy models`, e.g.
-  "Claude Opus 4.6 (Thinking)", "Gemini 3.5 Flash (Low)".
+- `--model` takes a name from `agy models` verbatim, e.g.
+  "claude-opus-4-6-thinking", "gemini-3.6-flash-high". Both the roster and its
+  *spelling* move with Antigravity releases — earlier builds took display names
+  like "Claude Opus 4.6 (Thinking)" — which is why _validate_model() reads the
+  live list instead of trusting a hardcoded one.
 - the conversation id is NOT printed to stdout; it is recovered from the CLI
   debug log (`--log-file`) via the `Created conversation <uuid>` line, which
   appears a few seconds in — that is our early on_session_started signal.
@@ -53,7 +56,7 @@ class AgyHandler:
     @staticmethod
     @functools.lru_cache(maxsize=1)
     def available_models() -> tuple[str, ...]:
-        """Exact model display names agy accepts, from `agy models`.
+        """Exact model names agy accepts, from `agy models`.
 
         agy resolves an unknown `--model` to its default *silently* (no error,
         wrong model runs), so we validate against this list before dispatch.

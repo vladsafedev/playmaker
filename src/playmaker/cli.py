@@ -131,8 +131,8 @@ def dispatch(
         "--model",
         "-m",
         help="forwarded to the agent CLI's --model (e.g. claude 'opus'/'sonnet', "
-        "codex 'gpt-5-codex', agy 'Claude Opus 4.6 (Thinking)' / 'Gemini 3.5 Flash "
-        "(High)' — display names from `agy models`); omitted = agent default",
+        "codex 'gpt-5-codex', agy 'claude-opus-4-6-thinking' — exact names from "
+        "`agy models`); omitted = agent default",
     ),
     sync: bool = typer.Option(
         False,
@@ -977,8 +977,9 @@ binary = "codex"
 
 [agents.agy]
 binary = "agy"
-# Antigravity CLI. Model names are display strings from `agy models`,
-# e.g. "Claude Opus 4.6 (Thinking)", "Gemini 3.5 Flash (High)".
+# Antigravity CLI. Model names come from `agy models` verbatim, e.g.
+# "claude-opus-4-6-thinking", "gemini-3.6-flash-high". The roster changes
+# with Antigravity releases, so read it rather than copying from docs.
 #
 # agy has no per-mode permission flag — a detached run either auto-approves or
 # comes back having done nothing — so this defaults to on.

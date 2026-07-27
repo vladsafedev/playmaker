@@ -7,7 +7,9 @@ description: Playing-coach orchestration of Claude/Codex/Antigravity (agy) sub-a
 
 Use the `playmaker` CLI as a facade to dispatch sub-tasks to Codex / Antigravity (`agy`) / a sibling Claude, monitor them, read their threads, review their diffs, and feed back. The coach (this thread) does its own portion of the work in parallel.
 
-> **`agy` (Antigravity CLI)** does not only serve Google models: `agy models` exposes **Gemini 3.5 Flash (Low/Medium/High)**, **Gemini 3.1 Pro (Low/High)**, **Claude Sonnet 4.6 (Thinking)**, **Claude Opus 4.6 (Thinking)**, and **GPT-OSS 120B (Medium)**. Opus via agy runs on *Google's* quota pool — top-tier Claude work that does not touch the Anthropic subscription's scarce Opus weekly bucket. Model names are the exact display strings (quote them in bash): `--model "Claude Opus 4.6 (Thinking)"`.
+> **`agy` (Antigravity CLI)** does not only serve Google models: alongside the Gemini Flash and Pro tiers, `agy models` carries **Claude Sonnet and Opus** and a **GPT-OSS** mid-tier. Opus via agy runs on *Google's* quota pool — top-tier Claude work that does not touch the Anthropic subscription's scarce Opus weekly bucket: `--model claude-opus-4-6-thinking`.
+>
+> **Never write an agy model name from memory — run `agy models` and copy a line.** Both the roster *and its spelling* move with Antigravity releases: names used to be quoted display strings like `"Claude Opus 4.6 (Thinking)"` and are now bare slugs. playmaker validates `--model` against the live roster and fails the dispatch on a stale name, so a wrong guess costs you a round-trip.
 
 **The point of the coach pattern:** all available models do useful work in parallel under your direction. The coach's job is *orchestration*, not *production*. A coach that does its own implementation, runs its own codebase recon, and reviews everything line by line burns the same budget delegation was meant to save. Treat your own context window as the most expensive resource on the table — every byte you read or generate yourself is a byte that could have come from a cheaper model. Push out as much as you can: implementation, recon, summarization, even drafting the per-subtask prompts when the task is large enough.
 
@@ -31,7 +33,7 @@ All Claude work — coach, internal sub-agents, external `claude -p` — draws f
 | is an independent stream you'll monitor / continue separately | **external `dispatch claude --model sonnet`** | tracked & detached; Sonnet's own weekly bucket spares Opus |
 | is heavy reasoning only the coach can do | **coach** | top-tier Opus, serial |
 | is write-heavy and can leave Claude | **codex / agy** | their own quotas |
-| needs top-tier Claude but the Anthropic Opus weekly is precious | **`dispatch agy --model "Claude Opus 4.6 (Thinking)"`** | Opus quality on Google's pool |
+| needs top-tier Claude but the Anthropic Opus weekly is precious | **`dispatch agy --model claude-opus-4-6-thinking`** | Opus quality on Google's pool |
 
 **Sonnet is your cheap parallel Claude worker** — a separate weekly bucket that usually sits idle while Opus depletes. Reach for it (via `dispatch claude --model sonnet`, or by pointing an internal sub-agent at Sonnet) instead of burning Opus on mid-tier work.
 
@@ -69,7 +71,7 @@ Codebase exploration ("find where the User entity lives, list its existing field
 Pattern: dispatch a recon subtask with an explicit deliverable.
 
 ```bash
-playmaker dispatch agy --model "Gemini 3.5 Flash (Low)" --cwd $(pwd) --sync \
+playmaker dispatch agy --model gemini-3.6-flash-low --cwd $(pwd) --sync \
   --prompt "Recon only — do not edit any files. In apps/backend/, locate: (a) the User entity/schema and the migration tooling used (Prisma vs TypeORM vs other), (b) the auth middleware that resolves the current user, (c) where DTOs are defined for user PATCH endpoints if any. Report under 200 words as a numbered list with file paths and line ranges."
 ```
 
@@ -89,9 +91,9 @@ Break the task into 2-5 subtasks (don't go finer-grained than that on first run 
 
 1. Sort *models* (not agents) by remaining capacity — freshest at the top. A provider with one fresh model and one depleted model is two separate buckets.
 2. **Tier-match each subtask to the cheapest model that can finish it cleanly:**
-   - **Architectural / spec judgment / cross-module integration:** top tier (Opus, agy "Claude Opus 4.6 (Thinking)" / "Gemini 3.1 Pro (High)", Codex top-tier). The coach lives here; agy-Opus is the overflow lane when the Anthropic Opus weekly is precious.
-   - **Pattern-following implementation, well-scoped CRUD, mechanical refactor, test scaffolding, writing inside an existing convention:** mid tier (Claude Sonnet, agy "Claude Sonnet 4.6 (Thinking)" / "Gemini 3.5 Flash (High)" / "Gemini 3.1 Pro (Low)", mid-tier Codex). This is where the bulk of delegated implementation goes.
-   - **Recon, summarization, mechanical loops over many files, name normalization:** cheap tier (agy "Gemini 3.5 Flash (Low)"/"(Medium)", **Claude Haiku**, Sonnet for recon-with-judgment).
+   - **Architectural / spec judgment / cross-module integration:** top tier (Opus, agy `claude-opus-4-6-thinking` / `gemini-3.1-pro-high`, Codex top-tier). The coach lives here; agy-Opus is the overflow lane when the Anthropic Opus weekly is precious.
+   - **Pattern-following implementation, well-scoped CRUD, mechanical refactor, test scaffolding, writing inside an existing convention:** mid tier (Claude Sonnet, agy `claude-sonnet-4-6` / `gemini-3.5-flash-high` / `gemini-3.1-pro-low`, mid-tier Codex). This is where the bulk of delegated implementation goes.
+   - **Recon, summarization, mechanical loops over many files, name normalization:** cheap tier (agy's lowest Flash tiers, **Claude Haiku**, Sonnet for recon-with-judgment).
 
    For Claude specifically, tier is orthogonal to **lane** (see "Execution lanes"): pick the model tier here, then decide *internal sub-agent* (coach integrates the result) vs *external `-p`* (tracked detached stream).
 3. Pass the model explicitly: `playmaker dispatch <agent> --model <name> ...`. Without `--model`, the agent CLI uses its default — which is usually fine but means the coach gives up control over tier-matching. **For sibling Claude, default to `--model sonnet`** (Haiku for trivial mechanical work); never omit it and let the CLI pick Opus — that burns the scarce shared Opus weekly bucket.
@@ -112,7 +114,7 @@ To make a subtask finishable, every dispatch must carry:
 2. **Acceptance criteria as a check the agent runs itself.** A green command — `npx prisma validate`, `pnpm test users.spec.ts`, `tsc --noEmit`, an `eslint` pass on a specific file. The agent is told to keep iterating until that command exits 0 and to surface its output in the final answer. This replaces coach-side review for ~80% of the work.
 3. **Done definition in one sentence**, written so the coach can confirm it in seconds without reading the diff line by line. "Column added, migration generated, prisma validate green." If the coach can't write such a sentence, the subtask isn't sized right yet — split or specify further before dispatching.
 4. **Context the agent needs but doesn't have.** Spec section excerpts, naming conventions, the one related file it should mirror. Paste these into the prompt; don't make the agent find them by reading half the repo. If your team keeps durable notes (a docs folder, a wiki, a notes vault), pass the *exact* paths worth reading rather than asking the agent to go looking.
-5. **Match to capability.** Codex / agy-Gemini do well on pattern-following, well-scoped CRUD, test scaffolding, mechanical refactors, and writing within an existing convention. They do poorly on architectural decisions across files they haven't been pointed at, novel API design, and judging whether a spec rule applies. Keep those for the coach — or for agy's "Claude Opus 4.6 (Thinking)" when the subtask genuinely needs top-tier judgment but should not burn the Anthropic Opus weekly. If a profile in `.playmaker/agents/<name>.md` exists, trust its guidance over these defaults.
+5. **Match to capability.** Codex / agy-Gemini do well on pattern-following, well-scoped CRUD, test scaffolding, mechanical refactors, and writing within an existing convention. They do poorly on architectural decisions across files they haven't been pointed at, novel API design, and judging whether a spec rule applies. Keep those for the coach — or for agy's `claude-opus-4-6-thinking` when the subtask genuinely needs top-tier judgment but should not burn the Anthropic Opus weekly. If a profile in `.playmaker/agents/<name>.md` exists, trust its guidance over these defaults.
 
 A useful smell test before dispatching: *"If this came back done, would I review by running one command and reading one paragraph — or would I need to read the whole diff and think hard about whether it's right?"* If the latter, re-scope before sending.
 
@@ -121,7 +123,7 @@ Output the plan as a short proposal:
 Plan:
 - Coach (me): schema design + integration glue
 - Codex: FastAPI handlers in apps/api/
-- agy (Gemini 3.5 Flash High): pytest tests + README
+- agy (gemini-3.6-flash-high): pytest tests + README
 
 Quotas: Claude session 93% / weekly 80%, Codex 100%,
         agy Gemini 5h 100% / weekly 96%, Claude/GPT 5h 88% / weekly 71%.
@@ -151,7 +153,7 @@ playmaker dispatch <agent> --model <name> --prompt "<scoped prompt>" --cwd $(pwd
 
 Always pass `--cwd $(pwd)` — `playmaker`'s default is the *coach process's* current dir, which is not always what you want.
 
-Always pass `--model` when you've made a tier-matching decision in step 3. Without it, the agent CLI uses its own default (which may be its top-tier model, defeating the load-distribution effort). Model name is what the agent's native CLI accepts: `claude --model sonnet`, `codex exec -m gpt-5-codex`, `agy --model "Gemini 3.5 Flash (High)"` — agy takes the exact display names from `agy models` and they contain spaces, so **always quote them**. Note: agy's own default is a top-tier model, another reason never to omit `--model` on agy dispatches meant to be cheap.
+Always pass `--model` when you've made a tier-matching decision in step 3. Without it, the agent CLI uses its own default (which may be its top-tier model, defeating the load-distribution effort). Model name is what the agent's native CLI accepts: `claude --model sonnet`, `codex exec -m gpt-5-codex`, `agy --model gemini-3.6-flash-high` — for agy, copy the line from `agy models` rather than typing it. Note: agy's own default is a top-tier model, another reason never to omit `--model` on agy dispatches meant to be cheap.
 
 **agy prompt discipline:** the agy agent's shell lives in a private scratch directory, not the workspace. playmaker automatically prepends a workspace preamble to every agy dispatch, but reinforce it: word file instructions with paths relative to the workspace root or absolute paths, never "in the current directory".
 
@@ -164,7 +166,7 @@ Always pass `--model` when you've made a tier-matching decision in step 3. Witho
 ```bash
 B=admin-dashboard   # any short label shared across this fan-out
 playmaker dispatch codex --batch "$B" --model gpt-5-codex --prompt "..." --cwd $(pwd)
-playmaker dispatch agy   --batch "$B" --model "Gemini 3.5 Flash (High)" --prompt "..." --cwd $(pwd)
+playmaker dispatch agy   --batch "$B" --model gemini-3.6-flash-high --prompt "..." --cwd $(pwd)
 ```
 
 `playmaker continue <id> --model <name>` overrides the model for one follow-up turn while keeping the live session; without `--model` it inherits the parent session's model.
@@ -263,9 +265,9 @@ playmaker watch                                 # Rich live TUI of sessions
 
 Every command takes `--json` for machine-readable output.
 
-`--model NAME` is forwarded to the agent's native CLI: `claude --model sonnet`, `codex exec -m gpt-5-codex`, `agy --model "Claude Opus 4.6 (Thinking)"` (display names from `agy models`, always quoted). Without it the agent CLI uses its own default. Model is stored on the session row, so detached re-runs and `continue` inherit it; `continue --model X` overrides for that one turn.
+`--model NAME` is forwarded to the agent's native CLI: `claude --model sonnet`, `codex exec -m gpt-5-codex`, `agy --model claude-opus-4-6-thinking`. Without it the agent CLI uses its own default. Model is stored on the session row, so detached re-runs and `continue` inherit it; `continue --model X` overrides for that one turn.
 
-agy model roster (from `agy models`): `Gemini 3.5 Flash (Low)` / `(Medium)` / `(High)`, `Gemini 3.1 Pro (Low)` / `(High)`, `Claude Sonnet 4.6 (Thinking)`, `Claude Opus 4.6 (Thinking)`, `GPT-OSS 120B (Medium)`. Re-check the roster with `agy models` when in doubt — it changes with Antigravity releases.
+**The agy roster is not documented here on purpose** — it changes with Antigravity releases, and so does the spelling convention. Run `agy models` and copy a line. At the time of writing it returns bare slugs in the shape `gemini-3.6-flash-{low,medium,high}`, `gemini-3.1-pro-{low,high}`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium` — but treat that as an example of the *shape*, not a list to copy from.
 
 ## Anti-patterns
 

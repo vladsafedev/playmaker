@@ -16,7 +16,7 @@ $ B=dashboard                      # one label for the whole fan-out
 
 $ playmaker dispatch codex  --batch $B --model gpt-5-codex -p "Add PATCH /users/:id …"
 session: 9f2c1a4e-…  pid: 48211  (detached)
-$ playmaker dispatch agy    --batch $B --model "Gemini 3.5 Flash (High)" -p "pytest coverage for …"
+$ playmaker dispatch agy    --batch $B --model gemini-3.6-flash-high -p "pytest coverage for …"
 session: 4b1f9c02-…  pid: 48219  (detached)
 $ playmaker dispatch claude --batch $B --model sonnet -p "Update the API docs for …"
 session: c07d5511-…  pid: 48244  (detached)
@@ -142,7 +142,7 @@ playmaker agents          # which agent CLIs are reachable
 |---|---|---|
 | **Claude Code** | `npm i -g @anthropic-ai/claude-code` | `--model sonnet` / `opus` / `haiku` |
 | **Codex CLI** | `npm i -g @openai/codex` | `--model gpt-5-codex` |
-| **Antigravity (`agy`)** | bundled with [Antigravity](https://antigravity.google) | models are display names: `--model "Claude Opus 4.6 (Thinking)"` — see `agy models` |
+| **Antigravity (`agy`)** | bundled with [Antigravity](https://antigravity.google) | `--model claude-opus-4-6-thinking` — the roster moves, so read it from `agy models` |
 | **Gemini CLI** (legacy) | `npm i -g @google/gemini-cli` | still supported, superseded by `agy` |
 
 At least one is required; `playmaker agents` tells you which it can see.
