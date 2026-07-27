@@ -62,6 +62,58 @@ def init() -> None:
     console.print(f"  config: {state.CONFIG_PATH}")
 
 
+skill_app = typer.Typer(
+    help="Install the bundled playmaker-coach skill for Claude Code.",
+    no_args_is_help=True,
+)
+app.add_typer(skill_app, name="skill")
+
+SKILL_NAME = "playmaker-coach"
+
+
+def _bundled_skill_dir() -> Path:
+    """Where the coach skill ships: inside the wheel, or `skills/` in a checkout."""
+    packaged = Path(__file__).resolve().parent / "_skills" / SKILL_NAME
+    if packaged.is_dir():
+        return packaged
+    return Path(__file__).resolve().parents[2] / "skills" / SKILL_NAME
+
+
+@skill_app.command("path")
+def skill_path() -> None:
+    """Print the path of the bundled skill inside this installation."""
+    console.print(str(_bundled_skill_dir()))
+
+
+@skill_app.command("install")
+def skill_install(
+    dest: Path = typer.Option(
+        Path("~/.claude/skills"),
+        "--dir",
+        help="skills directory to install into",
+    ),
+    force: bool = typer.Option(False, "--force", help="overwrite an existing copy"),
+) -> None:
+    """Copy the playmaker-coach skill into your Claude Code skills directory."""
+    source = _bundled_skill_dir() / "SKILL.md"
+    if not source.exists():
+        err_console.print(f"[red]bundled skill not found at {source}[/red]")
+        raise typer.Exit(1)
+
+    target_dir = dest.expanduser() / SKILL_NAME
+    target = target_dir / "SKILL.md"
+    if target.exists() and not force:
+        err_console.print(
+            f"[yellow]{target} already exists[/yellow] — pass --force to overwrite"
+        )
+        raise typer.Exit(1)
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    console.print(f"[green]installed[/green] {target}")
+    console.print("  Start a new Claude Code session and give it a multi-part task.")
+
+
 @app.command()
 def dispatch(
     agent: str = typer.Argument(..., help="agent name (claude|codex|agy|gemini)"),

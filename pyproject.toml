@@ -60,10 +60,18 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/playmaker"]
 
+# The coach skill lives at skills/ for discoverability on GitHub; ship it inside
+# the package so `playmaker skill install` works from a pip/uv install too.
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "playmaker/_skills"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "src/playmaker",
+    "skills",
+    "tests",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "pyproject.toml",
 ]
