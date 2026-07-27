@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-07-27
+
+### Fixed
+
+- **The bundled coach skill taught agy model names agy no longer accepts.**
+  `agy models` switched from quoted display strings (`"Claude Opus 4.6
+  (Thinking)"`) to bare slugs (`claude-opus-4-6-thinking`), so every agy
+  dispatch the skill proposed failed model validation. The skill now says to
+  read the live roster from `agy models` instead of spelling names from
+  memory. It also recommended `codex -m gpt-5-codex`, which fails on accounts
+  whose plan lacks that model; codex dispatches now default to the account's
+  own default model. Both fixes landed on main just after v0.5.0 was tagged —
+  this release exists because the skill ships inside the wheel, so doc fixes
+  are not live until published.
+
 ## [0.5.0] - 2026-07-27
 
 ### Changed
