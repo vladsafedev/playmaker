@@ -36,7 +36,6 @@ from pathlib import Path
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
 from playmaker.config import agent_setting
 
-
 AGY_BRAIN_ROOT = Path("~/.gemini/antigravity-cli/brain").expanduser()
 
 # `Created conversation <uuid>` for fresh runs; resumes keep the known id.

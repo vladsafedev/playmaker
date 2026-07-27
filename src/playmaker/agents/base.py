@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Protocol
-
+from typing import Protocol
 
 # Called by a handler the moment it learns the agent's session id, before the
 # dispatch finishes. Codex emits it from a `thread.started` stdout event ~1s in;

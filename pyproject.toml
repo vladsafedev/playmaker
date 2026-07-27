@@ -1,19 +1,30 @@
 [project]
 name = "playmaker-cli"
 version = "0.4.0"
-description = "Playing-coach CLI for orchestrating Claude/Codex/Gemini sub-agents in parallel."
+description = "Playing-coach CLI for orchestrating Claude Code, Codex and Antigravity sub-agents in parallel."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Vladislav Shulyugin", email = "vladislav.shulyugin@gmail.com" },
 ]
-keywords = ["ai", "claude", "codex", "gemini", "agents", "orchestration", "cli"]
+keywords = [
+    "ai",
+    "agents",
+    "orchestration",
+    "cli",
+    "claude",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "gemini",
+    "subagents",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
@@ -60,3 +71,12 @@ include = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# Typer's whole API is `param: T = typer.Option(...)`, which B008 flags by design.
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

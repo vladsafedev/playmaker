@@ -36,7 +36,12 @@ def test_parse_session_file_maps_roles(tmp_path: Path) -> None:
                 "created_at": "2026-07-12T13:26:31Z",
                 "content": "The command completed successfully.",
             },
-            {"step_index": 4, "source": "SYSTEM", "type": "CHECKPOINT", "content": "{{ CHECKPOINT }}"},
+            {
+                "step_index": 4,
+                "source": "SYSTEM",
+                "type": "CHECKPOINT",
+                "content": "{{ CHECKPOINT }}",
+            },
             {
                 "step_index": 5,
                 "source": "MODEL",

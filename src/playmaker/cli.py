@@ -9,24 +9,44 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from playmaker import notify, state, watcher
+from playmaker import __version__, notify, state, watcher
 from playmaker.registry import get_handler
 
 app = typer.Typer(
     name="playmaker",
-    help="Multi-agent orchestration CLI. Dispatch subtasks to Claude/Codex/Antigravity and observe.",
+    help="Multi-agent orchestration CLI. Dispatch subtasks to "
+    "Claude/Codex/Antigravity and observe.",
     no_args_is_help=True,
     add_completion=False,
 )
 
 console = Console()
 err_console = Console(stderr=True)
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"playmaker {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="show the installed playmaker version and exit",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """Multi-agent orchestration CLI."""
 
 
 @app.command()
@@ -51,10 +71,10 @@ def dispatch(
         "--cwd",
         help="working directory for the agent (defaults to current dir)",
     ),
-    files: Optional[list[Path]] = typer.Option(
+    files: list[Path] | None = typer.Option(
         None, "--files", "-f", help="files to attach to prompt"
     ),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None,
         "--model",
         "-m",
@@ -67,10 +87,10 @@ def dispatch(
         "--sync",
         help="block until the agent finishes and print final output (default is detached)",
     ),
-    parent: Optional[str] = typer.Option(
+    parent: str | None = typer.Option(
         None, "--parent", help="parent session id (for delegation tree)"
     ),
-    batch: Optional[str] = typer.Option(
+    batch: str | None = typer.Option(
         None,
         "--batch",
         help="batch label: pass the same value to every dispatch in one fan-out. "
@@ -233,7 +253,7 @@ def _batch_slug(batch_id: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "-" for c in batch_id)[:60]
 
 
-def _maybe_finalize_batch(batch_id: Optional[str]) -> None:
+def _maybe_finalize_batch(batch_id: str | None) -> None:
     """Fire one summary notification when every session in a batch is terminal.
 
     Cross-process safe: each detached dispatch calls this on completion; only
@@ -267,7 +287,7 @@ def _maybe_finalize_batch(batch_id: Optional[str]) -> None:
     )
 
 
-def _render_batch_file(batch_id: str, siblings: list) -> Optional[Path]:
+def _render_batch_file(batch_id: str, siblings: list) -> Path | None:
     """Write a combined markdown view of all batch outputs to /tmp for review."""
     lines = [f"# playmaker batch: {batch_id}", ""]
     for s in siblings:
@@ -300,15 +320,15 @@ def _run_detached(session_id: str) -> None:
 def continue_(
     session_id: str = typer.Argument(..., help="existing session id (or unique prefix) to resume"),
     prompt: str = typer.Option(..., "--prompt", "-p", help="follow-up prompt"),
-    cwd: Optional[Path] = typer.Option(
+    cwd: Path | None = typer.Option(
         None,
         "--cwd",
         help="override working directory (defaults to the parent session's cwd)",
     ),
-    files: Optional[list[Path]] = typer.Option(
+    files: list[Path] | None = typer.Option(
         None, "--files", "-f", help="files to attach to prompt"
     ),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None,
         "--model",
         "-m",
@@ -394,8 +414,8 @@ def continue_(
 
 @app.command("list")
 def list_cmd(
-    status: Optional[str] = typer.Option(None, "--status", help="pending|running|done|failed|killed"),
-    agent: Optional[str] = typer.Option(None, "--agent", help="filter by agent"),
+    status: str | None = typer.Option(None, "--status", help="pending|running|done|failed|killed"),
+    agent: str | None = typer.Option(None, "--agent", help="filter by agent"),
     json_out: bool = typer.Option(False, "--json"),
     limit: int = typer.Option(50, "--limit"),
 ) -> None:
@@ -480,7 +500,7 @@ DEFAULT_THREAD_BYTES = 50_000
 def thread(
     session_id: str = typer.Argument(..., help="session id or unique prefix"),
     last: int = typer.Option(5, "--last", help="show last N turns (ignored with --all)"),
-    role: Optional[str] = typer.Option(
+    role: str | None = typer.Option(
         None, "--role", help="filter to user|assistant|tool"
     ),
     all_: bool = typer.Option(False, "--all", help="emit the entire thread"),
@@ -713,7 +733,7 @@ def kill(
         pass
     except PermissionError as exc:
         err_console.print(f"[red]cannot kill pid {pid}: {exc}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     state.update_session(
         row["id"], status="killed", finished_at=state.now_iso(), exit_code=143
     )
@@ -873,6 +893,9 @@ _DEFAULT_CONFIG = """\
 on_complete = true
 on_fail = true
 sound = true
+# App that a clicked notification opens the agent's output file in
+# (terminal-notifier only). Any app name `open -a` accepts.
+editor = "Zed"
 
 [agents.claude]
 binary = "claude"

@@ -22,7 +22,6 @@ from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
 
-
 GEMINI_CHATS_ROOT = Path("~/.gemini/tmp").expanduser()
 
 

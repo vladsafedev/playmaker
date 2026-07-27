@@ -11,8 +11,15 @@ import shlex
 import shutil
 import subprocess
 
-# App used to open agent files when a notification is clicked.
-OPEN_WITH_APP = "Zed"
+from playmaker.config import setting
+
+# Fallback app used to open agent output when a notification is clicked;
+# override with `editor = "..."` under [notifications] in config.toml.
+DEFAULT_OPEN_WITH_APP = "Zed"
+
+
+def open_with_app() -> str:
+    return str(setting("notifications", "editor", DEFAULT_OPEN_WITH_APP))
 
 
 def notify(
@@ -26,8 +33,9 @@ def notify(
 ) -> None:
     """Fire a macOS notification.
 
-    `open_path` — file to open in OPEN_WITH_APP when the banner is clicked
-    (terminal-notifier only). `group` — coalesce key; same group replaces.
+    `open_path` — file to open in the configured editor when the banner is
+    clicked (terminal-notifier only). `group` — coalesce key; same group
+    replaces.
     """
     if shutil.which("terminal-notifier"):
         _terminal_notifier(title, message, sound, sound_name, open_path, group)
@@ -51,7 +59,8 @@ def _terminal_notifier(
     if open_path:
         # Click → open the file in the editor. Absolute `open` path: -execute
         # runs under a minimal PATH.
-        args += ["-execute", f"/usr/bin/open -a {shlex.quote(OPEN_WITH_APP)} {shlex.quote(open_path)}"]
+        cmd = f"/usr/bin/open -a {shlex.quote(open_with_app())} {shlex.quote(open_path)}"
+        args += ["-execute", cmd]
     try:
         subprocess.run(args, capture_output=True, timeout=5)
     except (FileNotFoundError, subprocess.TimeoutExpired):

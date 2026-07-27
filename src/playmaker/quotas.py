@@ -21,8 +21,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
+from playmaker import __version__
 
 # OAuth installed-app client credentials shipped with the public gemini-cli
 # npm package — not a private secret (Google publishes them in gemini-cli's
@@ -32,13 +34,15 @@ from pathlib import Path
 # The literals are split so the assembled values don't trip GitHub secret
 # scanning / push protection for everyone who forks this repo (the scanner
 # also decodes base64, so encoding is not enough).
-_GEMINI_OAUTH_CLIENT_ID = "681255809395-oo8ft2opr" + "drnp9e3aqf6av3hmdib135j" + ".apps" + ".googleusercontent.com"
+_GEMINI_OAUTH_CLIENT_ID = (
+    "681255809395-oo8ft2opr" + "drnp9e3aqf6av3hmdib135j" + ".apps" + ".googleusercontent.com"
+)
 _GEMINI_OAUTH_CLIENT_SECRET = "GOCSPX-" + "4uHgMPm-1o7Sk-geV6Cu5clXFsxl"
 
 _CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 _CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
-_USER_AGENT = "playmaker-cli/0.1"
+_USER_AGENT = f"playmaker-cli/{__version__}"
 
 
 # ---- HTTP helpers -----------------------------------------------------------
@@ -182,7 +186,7 @@ def _codex_refresh(auth: dict) -> dict:
     if "refresh_token" in resp:
         tokens["refresh_token"] = resp["refresh_token"]
     auth["tokens"] = tokens
-    auth["last_refresh"] = datetime.now(timezone.utc).isoformat()
+    auth["last_refresh"] = datetime.now(UTC).isoformat()
     _codex_save_auth(auth)
     return auth
 
@@ -307,7 +311,7 @@ def _epoch_to_iso(value: int | float | None) -> str | None:
         return None
     if v > 1e12:
         v /= 1000.0
-    return datetime.fromtimestamp(v, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(v, tz=UTC).isoformat()
 
 
 def _humanize_codex_tier(plan: str | None) -> str | None:
@@ -909,7 +913,7 @@ def refresh_all(quotas_path: Path) -> dict:
             previous = {}
 
     out: dict = {
-        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "fetched_at": datetime.now(UTC).isoformat(),
         "providers": {},
     }
     for name, probe in PROBES.items():

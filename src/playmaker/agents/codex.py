@@ -24,7 +24,6 @@ from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
 
-
 CODEX_SESSIONS_ROOT = Path("~/.codex/sessions").expanduser()
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +13,6 @@ from rich.table import Table
 
 from playmaker import state
 from playmaker.registry import get_handler
-
 
 _ICONS = {
     "pending": "⏳",
@@ -27,7 +26,7 @@ _ICONS = {
 def _build_table() -> Table:
     rows = state.list_sessions(limit=50)
     # Keep non-terminal + recently terminated (last 5 minutes).
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     keep = []
     for r in rows:
         if r["status"] in ("pending", "running"):

@@ -22,3 +22,9 @@ def load_config() -> dict[str, Any]:
 def agent_setting(agent: str, key: str, default: Any = None) -> Any:
     """Look up [agents.<agent>] <key>, falling back to `default`."""
     return load_config().get("agents", {}).get(agent, {}).get(key, default)
+
+
+def setting(section: str, key: str, default: Any = None) -> Any:
+    """Look up [<section>] <key>, falling back to `default`."""
+    value = load_config().get(section, {})
+    return value.get(key, default) if isinstance(value, dict) else default

@@ -128,7 +128,9 @@ class ClaudeHandler:
 
         if proc.returncode != 0:
             detail = stderr_buf.strip() or error_text or last_text or "".join(first_lines)[:500]
-            raise RuntimeError(f"claude failed (exit {proc.returncode}): {detail or '(no error output)'}")
+            raise RuntimeError(
+                f"claude failed (exit {proc.returncode}): {detail or '(no error output)'}"
+            )
 
         if agent_session_id is None:
             raise RuntimeError(

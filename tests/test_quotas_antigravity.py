@@ -7,7 +7,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import playmaker.quotas as quotas
 
-
 # Shape returned by agy's localhost RetrieveUserQuotaSummary endpoint.
 _SUMMARY = {
     "groups": [
@@ -63,7 +62,9 @@ def test_group_and_bucket_classifiers() -> None:
 def test_antigravity_probe_prefers_local(monkeypatch) -> None:
     monkeypatch.setattr(quotas, "_antigravity_daemon_ports", lambda: [51024])
     monkeypatch.setattr(quotas, "_antigravity_local_summary", lambda ports, timeout=5.0: _SUMMARY)
-    monkeypatch.setattr(quotas, "_antigravity_account_meta", lambda: {"email": "x@y.z", "tier": "Paid"})
+    monkeypatch.setattr(
+        quotas, "_antigravity_account_meta", lambda: {"email": "x@y.z", "tier": "Paid"}
+    )
 
     result = quotas.antigravity_probe()
 
