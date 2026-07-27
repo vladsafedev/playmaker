@@ -1,7 +1,7 @@
 # Contributing to playmaker
 
 Thanks for your interest in improving `playmaker` — the playing-coach CLI that
-dispatches sub-tasks to Claude, Codex, and Gemini.
+dispatches sub-tasks to Claude Code, Codex, and Antigravity.
 
 ## Project layout
 
@@ -10,9 +10,11 @@ The package lives under `src/` (src-layout, `playmaker` package):
 ```
 src/playmaker/
 ├── cli.py        Typer app — every `playmaker <command>` lives here
-├── agents/       per-provider handlers (claude, codex, gemini) + base Protocol
+├── agents/       per-agent handlers (claude, codex, agy, gemini) + base Protocol
+├── registry.py   name → handler lookup, profile discovery
 ├── state.py      SQLite-backed session store (~/.playmaker/state.db)
-└── quotas.py     per-provider capacity probes
+├── quotas.py     per-provider capacity probes
+└── notify.py     macOS notifications for detached runs
 ```
 
 ## Local development
@@ -43,18 +45,32 @@ The `playmaker` entry point is defined in `pyproject.toml` as
 
 ## Adding a new agent handler
 
-Each provider is a handler that satisfies the `AgentHandler` Protocol in
-`src/playmaker/agents/base.py`. To add one:
+Each agent is a handler that satisfies the `AgentHandler` Protocol in
+`src/playmaker/agents/base.py`. Before writing code, work out three things
+about the target CLI — they are what every handler is built around:
+
+- how it runs **headlessly** (one shot, no TTY, no permission prompt);
+- how it reports the **final assistant message**;
+- where it writes its **session transcript**, and how the session id is
+  recovered (some print it, `agy` only writes it to a debug log).
+
+Then:
 
 1. Create `src/playmaker/agents/<name>.py`.
-2. Implement the `AgentHandler` Protocol — the dispatch, session-file
-   discovery, and native-output parsing methods defined in `base.py`.
-3. Register the handler so the CLI can resolve it by name (in the agent
-   registry alongside the existing claude/codex/gemini handlers).
-4. Add the agent's default profile markdown under `agents/`.
+2. Implement the `AgentHandler` Protocol — dispatch, resume, session-file
+   discovery, and native-output parsing, as defined in `base.py`.
+3. Register it in `src/playmaker/registry.py` so the CLI resolves it by name.
+4. Add tests under `tests/` — parse a captured transcript fixture rather than
+   invoking the real CLI, the way `tests/test_agy.py` does.
+5. Add an entry to the config template in `cli.py` (`_DEFAULT_CONFIG`) if the
+   agent needs settings, and document it in the README.
 
 Match the existing handlers for the shape of session parsing — `thread` and
 `summary` rely on every handler producing the same uniform turn list.
+
+Optional per-agent profile markdown is discovered, not shipped: a user drops
+`~/.playmaker/agents/<name>.md`, or `./.playmaker/agents/<name>.md` next to a
+repo, and it is prepended to every dispatch for that agent.
 
 ## Coding conventions
 
@@ -73,18 +89,26 @@ Match the existing handlers for the shape of session parsing — `thread` and
 
 ## Running and testing
 
-Run the CLI straight from your editable install:
-
 ```bash
-playmaker agents      # which providers are reachable
+uv run pytest         # unit tests
+uv run ruff check .   # lint
+
+playmaker agents      # which agent CLIs are reachable
 playmaker --help      # full command list
 ```
 
-Before opening a PR, make sure `ruff check .` is clean and that
-`playmaker agents` / a sample `playmaker dispatch` still work end to end.
+The test suite never shells out to a real agent CLI: handlers are exercised
+against captured transcript fixtures and a faked `subprocess.Popen`. Keep it
+that way so CI stays hermetic and free.
+
+Before opening a PR, make sure `ruff check .` and `pytest` are clean, and that
+`playmaker agents` plus a sample `playmaker dispatch` still work end to end
+against whichever CLI you touched.
 
 ## Pull requests
 
-Keep PRs focused, run ruff, and describe what you changed and how you verified
-it. Contributions for proper Codex/Gemini quota probes (see README) are
-especially welcome.
+Keep PRs focused and describe what you changed and how you verified it —
+including which agent CLI and version you tested against, since almost
+everything here is empirical about a third-party tool's behaviour.
+
+Handlers for additional agent CLIs are especially welcome.
