@@ -131,8 +131,8 @@ def dispatch(
         "--model",
         "-m",
         help="forwarded to the agent CLI's --model (e.g. claude 'opus'/'sonnet', "
-        "codex 'gpt-5-codex', agy 'claude-opus-4-6-thinking' — exact names from "
-        "`agy models`); omitted = agent default",
+        "agy 'claude-opus-4-6-thinking' — exact names from `agy models`); "
+        "omitted = agent default, which is the safe choice for codex",
     ),
     sync: bool = typer.Option(
         False,

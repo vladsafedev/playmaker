@@ -153,7 +153,11 @@ playmaker dispatch <agent> --model <name> --prompt "<scoped prompt>" --cwd $(pwd
 
 Always pass `--cwd $(pwd)` — `playmaker`'s default is the *coach process's* current dir, which is not always what you want.
 
-Always pass `--model` when you've made a tier-matching decision in step 3. Without it, the agent CLI uses its own default (which may be its top-tier model, defeating the load-distribution effort). Model name is what the agent's native CLI accepts: `claude --model sonnet`, `codex exec -m gpt-5-codex`, `agy --model gemini-3.6-flash-high` — for agy, copy the line from `agy models` rather than typing it. Note: agy's own default is a top-tier model, another reason never to omit `--model` on agy dispatches meant to be cheap.
+Always pass `--model` when you've made a tier-matching decision in step 3. Without it, the agent CLI uses its own default (which may be its top-tier model, defeating the load-distribution effort). Model name is what the agent's native CLI accepts: `claude --model sonnet`, `agy --model gemini-3.6-flash-high` — for agy, copy the line from `agy models` rather than typing it.
+
+Two exceptions to "always pass `--model`":
+- **codex** — its model roster depends on the account plan, and an unavailable name fails the whole dispatch (`codex turn failed: … not supported when using Codex with a ChatGPT account`). Omitting `--model` uses whatever that account actually has, which is usually what you want.
+- **agy** — its own default is a top-tier model, so omitting `--model` on a dispatch meant to be cheap silently spends the expensive bucket. Always pass it here.
 
 **agy prompt discipline:** the agy agent's shell lives in a private scratch directory, not the workspace. playmaker automatically prepends a workspace preamble to every agy dispatch, but reinforce it: word file instructions with paths relative to the workspace root or absolute paths, never "in the current directory".
 
@@ -165,7 +169,7 @@ Always pass `--model` when you've made a tier-matching decision in step 3. Witho
 
 ```bash
 B=admin-dashboard   # any short label shared across this fan-out
-playmaker dispatch codex --batch "$B" --model gpt-5-codex --prompt "..." --cwd $(pwd)
+playmaker dispatch codex --batch "$B" --prompt "..." --cwd $(pwd)
 playmaker dispatch agy   --batch "$B" --model gemini-3.6-flash-high --prompt "..." --cwd $(pwd)
 ```
 
@@ -175,7 +179,7 @@ For sequential delegation (e.g. "I'll do schema first, then Codex builds on top"
 
 ```bash
 git commit -am "checkpoint: schema before backend dispatch"
-playmaker dispatch codex --model gpt-5-codex --prompt "..." --cwd $(pwd) --sync   # blocks, prints output
+playmaker dispatch codex --prompt "..." --cwd $(pwd) --sync   # blocks, prints output
 ```
 
 ### 6. Coach's own work
@@ -265,7 +269,7 @@ playmaker watch                                 # Rich live TUI of sessions
 
 Every command takes `--json` for machine-readable output.
 
-`--model NAME` is forwarded to the agent's native CLI: `claude --model sonnet`, `codex exec -m gpt-5-codex`, `agy --model claude-opus-4-6-thinking`. Without it the agent CLI uses its own default. Model is stored on the session row, so detached re-runs and `continue` inherit it; `continue --model X` overrides for that one turn.
+`--model NAME` is forwarded to the agent's native CLI: `claude --model sonnet`, `agy --model claude-opus-4-6-thinking`, `codex -m <whatever that account has>`. Without it the agent CLI uses its own default. Model is stored on the session row, so detached re-runs and `continue` inherit it; `continue --model X` overrides for that one turn.
 
 **The agy roster is not documented here on purpose** — it changes with Antigravity releases, and so does the spelling convention. Run `agy models` and copy a line. At the time of writing it returns bare slugs in the shape `gemini-3.6-flash-{low,medium,high}`, `gemini-3.1-pro-{low,high}`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium` — but treat that as an example of the *shape*, not a list to copy from.
 

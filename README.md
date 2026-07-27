@@ -14,7 +14,7 @@ parses their native session files, and pings you when they land.
 ```console
 $ B=dashboard                      # one label for the whole fan-out
 
-$ playmaker dispatch codex  --batch $B --model gpt-5-codex -p "Add PATCH /users/:id …"
+$ playmaker dispatch codex  --batch $B -p "Add PATCH /users/:id …"
 session: 9f2c1a4e-…  pid: 48211  (detached)
 $ playmaker dispatch agy    --batch $B --model gemini-3.6-flash-high -p "pytest coverage for …"
 session: 4b1f9c02-…  pid: 48219  (detached)
@@ -141,7 +141,7 @@ playmaker agents          # which agent CLIs are reachable
 | Agent | Install | Notes |
 |---|---|---|
 | **Claude Code** | `npm i -g @anthropic-ai/claude-code` | `--model sonnet` / `opus` / `haiku` |
-| **Codex CLI** | `npm i -g @openai/codex` | `--model gpt-5-codex` |
+| **Codex CLI** | `npm i -g @openai/codex` | the model roster depends on your plan; omit `--model` to use the account default |
 | **Antigravity (`agy`)** | bundled with [Antigravity](https://antigravity.google) | `--model claude-opus-4-6-thinking` — the roster moves, so read it from `agy models` |
 | **Gemini CLI** (legacy) | `npm i -g @google/gemini-cli` | still supported, superseded by `agy` |
 
