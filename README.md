@@ -176,13 +176,15 @@ still live — that's the cheap path for "almost right, fix Y". Start fresh with
 
 ```mermaid
 flowchart LR
-    C["🧑‍🏫 coach<br/>your Claude Code session"] -->|dispatch| P(("playmaker"))
-    P --> A1["claude -p<br/><i>--model sonnet</i>"]
+    C["coach<br/>your Claude Code session"] -->|dispatch| P(("playmaker"))
+    P --> A1["claude -p<br/>--model sonnet"]
     P --> A2["codex exec"]
     P --> A3["agy -p"]
-    A1 & A2 & A3 --> S[("state.db<br/>outputs/ · logs/")]
-    S -->|list · thread · summary| C
-    S -.->|batch drained| N["🔔 one ping"]
+    A1 --> S[("state.db<br/>outputs/ + logs/")]
+    A2 --> S
+    A3 --> S
+    S -->|"list / thread / summary"| C
+    S -.->|"batch drained"| N["one ping"]
 ```
 
 Each dispatch is a detached OS process with its own quota; playmaker owns the
