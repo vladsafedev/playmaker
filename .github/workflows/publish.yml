@@ -1,9 +1,17 @@
 name: Publish to PyPI
 
+# Publishing is triggered by *publishing a GitHub Release*, not by pushing the
+# tag. That way a tag can land (and the release notes can be drafted) before
+# PyPI Trusted Publishing is set up, and a failed publish can be re-run from
+# the Actions tab without cutting a new tag.
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "tag to publish, e.g. v0.4.0"
+        required: true
 
 jobs:
   publish:
@@ -14,20 +22,23 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - name: Set up Python
         run: uv python install 3.13
-      - name: Build distributions
-        run: uv build
       - name: Verify version matches tag
         run: |
-          tag="${GITHUB_REF#refs/tags/v}"
+          tag="${{ github.event.inputs.tag || github.event.release.tag_name }}"
+          tag="${tag#v}"
           version=$(grep -E '^version' pyproject.toml | head -1 | cut -d'"' -f2)
           if [ "$tag" != "$version" ]; then
             echo "::error::tag ($tag) != pyproject version ($version)"
             exit 1
           fi
+      - name: Build distributions
+        run: uv build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
