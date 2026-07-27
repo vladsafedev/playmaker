@@ -20,7 +20,7 @@ from playmaker.registry import get_handler
 
 app = typer.Typer(
     name="playmaker",
-    help="Multi-agent orchestration CLI. Dispatch subtasks to Claude/Codex/Gemini and observe.",
+    help="Multi-agent orchestration CLI. Dispatch subtasks to Claude/Codex/Antigravity and observe.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -44,7 +44,7 @@ def init() -> None:
 
 @app.command()
 def dispatch(
-    agent: str = typer.Argument(..., help="agent name (claude|codex|gemini)"),
+    agent: str = typer.Argument(..., help="agent name (claude|codex|agy|gemini)"),
     prompt: str = typer.Option(..., "--prompt", "-p", help="initial prompt"),
     cwd: Path = typer.Option(
         Path.cwd(),
@@ -59,7 +59,8 @@ def dispatch(
         "--model",
         "-m",
         help="forwarded to the agent CLI's --model (e.g. claude 'opus'/'sonnet', "
-        "codex 'gpt-5-codex', gemini 'gemini-2.5-pro'); omitted = agent default",
+        "codex 'gpt-5-codex', agy 'Claude Opus 4.6 (Thinking)' / 'Gemini 3.5 Flash "
+        "(High)' — display names from `agy models`); omitted = agent default",
     ),
     sync: bool = typer.Option(
         False,
@@ -758,13 +759,19 @@ def quotas(
 
 def _render_provider(name: str, info: dict) -> None:
     status = info.get("status")
-    label_color = {"codex": "blue", "claude": "magenta", "gemini": "cyan"}.get(name, "white")
-    title = f"[bold {label_color}]{name.capitalize()}[/bold {label_color}]"
+    label_color = {"codex": "blue", "claude": "magenta", "agy": "green", "gemini": "cyan"}.get(
+        name, "white"
+    )
+    display = {"agy": "Antigravity (agy)"}.get(name, name.capitalize())
+    title = f"[bold {label_color}]{display}[/bold {label_color}]"
     suffix_parts: list[str] = []
     if info.get("account_email"):
         suffix_parts.append(info["account_email"])
     if info.get("tier"):
         suffix_parts.append(info["tier"])
+    # agy has two data sources; "remote" is the coarse Gemini-only fallback.
+    if info.get("source") == "remote":
+        suffix_parts.append("Gemini-only (daemon offline)")
     suffix = "  ·  ".join(suffix_parts)
     if suffix:
         console.print(f"{title}  [dim]{suffix}[/dim]")
@@ -785,10 +792,13 @@ def _render_provider(name: str, info: dict) -> None:
         console.print("  [dim]no quota windows reported[/dim]")
         return
 
+    # Adaptive name column so longer categorized labels (e.g. "Claude/GPT
+    # weekly") keep the bars aligned instead of overflowing a fixed width.
+    name_width = max(11, *(len(w["name"]) for w in windows))
     for w in windows:
         pct = w.get("pct_left")
         bar = _bar(pct) if isinstance(pct, int) else " " * 20
-        line = f"  [bold]{w['name']:<11}[/bold] {bar} {pct}% left"
+        line = f"  [bold]{w['name']:<{name_width}}[/bold] {bar} {pct}% left"
         right_parts = []
         if w.get("reset_relative"):
             right_parts.append(f"resets in {w['reset_relative']}")
@@ -874,6 +884,15 @@ skip_permissions = true
 
 [agents.codex]
 binary = "codex"
+
+[agents.agy]
+binary = "agy"
+# Antigravity CLI. Model names are display strings from `agy models`,
+# e.g. "Claude Opus 4.6 (Thinking)", "Gemini 3.5 Flash (High)".
+skip_permissions = true
+# Forwarded to agy --print-timeout; the CLI's own default (5m) is too short
+# for real subtasks.
+print_timeout = "60m"
 
 [agents.gemini]
 binary = "gemini"

@@ -40,7 +40,7 @@ class Turn:
 
 
 class AgentHandler(Protocol):
-    """Each supported agent (claude/codex/gemini) implements this Protocol."""
+    """Each supported agent (claude/codex/agy/gemini) implements this Protocol."""
 
     name: str
 

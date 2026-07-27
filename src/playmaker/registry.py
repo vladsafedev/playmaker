@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from playmaker.agents.agy import AgyHandler
 from playmaker.agents.base import AgentHandler
 from playmaker.agents.claude import ClaudeHandler
 from playmaker.agents.codex import CodexHandler
@@ -13,6 +14,7 @@ from playmaker.state import AGENTS_DIR
 _HANDLERS: dict[str, AgentHandler] = {
     "claude": ClaudeHandler(),
     "codex": CodexHandler(),
+    "agy": AgyHandler(),
     "gemini": GeminiHandler(),
 }
 
