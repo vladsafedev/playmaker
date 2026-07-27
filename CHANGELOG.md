@@ -5,10 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-07-12
+## [0.4.0] - 2026-07-27
+
+### Added
+
+- `playmaker skill install` — the `playmaker-coach` Claude Code skill now ships
+  with the package (`skills/playmaker-coach/SKILL.md`) and installs itself into
+  `~/.claude/skills/`. It was previously documented as a separate repository
+  that was never published.
+- `playmaker --version`. `__version__` is read from installed package metadata
+  rather than a hand-maintained literal, which had drifted to 0.1.0.
+- `[notifications] editor` in `config.toml` — the app a clicked notification
+  opens the output in was hardcoded to Zed.
 
 ### Fixed
 
+- `claude`: a failing `claude -p` run reports the error in its final
+  stream-json event with an empty stderr, so failures surfaced as a blank
+  `claude failed (exit 1):`. The error text is now captured and raised.
+- `codex`: a non-zero exit no longer discards an answer the CLI had already
+  written. The last-message file is consumed before the exit-code check, so
+  testing the file at that point always failed — codex's harmless
+  "failed to record rollout items" shutdown warning would have lost the result.
 - `codex`: invalid-model / auth / upstream failures are now surfaced. Codex
   reports these via a `turn.failed`/`error` stream event while still exiting 0
   and writing an empty last-message file, so a bad `--model` used to look "done"
@@ -31,6 +49,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ported from steipete/CodexBar's `AntigravityStatusProbe`.
 - Quota render: adaptive name column so longer categorized labels keep bar
   alignment.
+
+### Changed
+
+- Packaging: PEP 639 license metadata, accurate description/keywords, sdist now
+  ships tests and the skill.
+- Lint: ruff `select = E,F,I,UP,B` (minus B008, which flags Typer's own API) and
+  linting covers `tests/` too.
+- Removed `packaging/homebrew/playmaker.rb` — it targeted a tap that was never
+  published, under an org name no longer in use.
 
 ## [0.3.0] - 2026-07-12
 
