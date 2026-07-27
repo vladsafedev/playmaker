@@ -4,7 +4,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/playmaker-cli.svg)](https://pypi.org/project/playmaker-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A **playing-coach** CLI for orchestrating Claude Code, Codex, and Gemini sub-agents in parallel.
+A **playing-coach** CLI for orchestrating Claude Code, Codex, and Antigravity (`agy`) sub-agents in parallel (legacy gemini-cli still supported).
 
 The coach (you, in your active Claude Code session) keeps doing your part of the work — and dispatches the rest as detached subprocesses to other AI CLIs. `playmaker` is the runner: it spawns them, tracks state, parses their session files, surfaces threads, and notifies on completion.
 
@@ -15,14 +15,14 @@ The intelligence — *when* to delegate, *which* agent gets *which* slice, how t
 Three reasons to fan work out across agent CLIs instead of grinding through it in one serial session:
 
 1. **Wall-clock speed.** A task that decomposes into 3–5 independent work-streams (schema, backend, frontend, tests, docs) finishes 2–4× faster when each stream runs as its own parallel agent.
-2. **Provider arbitrage.** Codex and Gemini quotas are entirely separate pools from your Anthropic plan. Every slice you hand them is capacity your main session never spends.
-3. **Otherwise-idle credit.** Headless `claude -p` — what playmaker dispatches — doesn't draw from your interactive Claude subscription. It bills the **Claude Agent SDK credit** included with paid plans (Pro $20 / Max 5x $100 / Max 20x $200 per month, metered at API rates). If you're not running headless agents, that credit sits unused; playmaker puts it to work without touching your session limits.
+2. **Provider arbitrage.** Codex and Antigravity quotas are entirely separate pools from your Anthropic plan. Every slice you hand them is capacity your main session never spends — and Antigravity's roster includes Claude Sonnet/Opus, so even Claude-quality work can run on Google's pool.
+3. **Bucket arbitrage inside one plan.** Headless `claude -p` draws on the same subscription as your interactive session, but per-model weekly buckets are separate — dispatching `--model sonnet` spends Sonnet's usually-idle bucket instead of the scarce Opus one.
 
 The catch: doing it manually (terminal tabs, jumping between tools, copy-pasting context) is friction. `playmaker` removes the friction; the skill provides the discipline.
 
 ## ⚠️ Sub-agents skip permission prompts by default
 
-By default, playmaker launches Claude sub-agents with `--dangerously-skip-permissions` (and Gemini with `--yolo`). This is deliberate: a headless agent has no human at the keyboard, so without these flags a detached run stalls at the first tool-approval prompt and finishes having written nothing.
+By default, playmaker launches Claude and Antigravity sub-agents with `--dangerously-skip-permissions` (and Gemini with `--yolo`). This is deliberate: a headless agent has no human at the keyboard, so without these flags a detached run stalls at the first tool-approval prompt and finishes having written nothing.
 
 It also means a dispatched agent can run commands and edit files **without asking**. Only dispatch prompts you'd be comfortable running unattended, in working directories you trust.
 
@@ -59,7 +59,8 @@ This creates `~/.playmaker/` with state.db, logs/, outputs/, agents/, and a defa
 
 - **Claude Code** — `npm i -g @anthropic-ai/claude-code` (or download from claude.com/code)
 - **Codex CLI** — `npm i -g @openai/codex`
-- **Gemini CLI** — `npm i -g @google/gemini-cli`
+- **Antigravity CLI (`agy`)** — ships with Google Antigravity (antigravity.google); models are addressed by display name, e.g. `--model "Claude Opus 4.6 (Thinking)"` — see `agy models`
+- **Gemini CLI** (legacy) — `npm i -g @google/gemini-cli`
 
 `playmaker agents` will tell you which are reachable.
 
@@ -91,7 +92,7 @@ playmaker watch                               # live TUI of sessions
 ~/.playmaker/
 ├── state.db          SQLite — sessions, status, pids, output paths
 ├── config.toml
-├── agents/           agent profile markdown (claude.md, codex.md, gemini.md)
+├── agents/           agent profile markdown (claude.md, codex.md, agy.md, gemini.md)
 ├── outputs/          final output per session — .md, or .json when the agent returned JSON
 ├── logs/             subprocess stdout for detached runs
 └── quotas.json       latest capacity snapshot
@@ -103,9 +104,12 @@ Per-project profile overrides go in `./.playmaker/agents/<name>.md` next to your
 
 - Claude: `~/.claude/projects/<cwd-with-slashes-as-dashes>/<id>.jsonl`
 - Codex: `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<thread_id>.jsonl`
+- Antigravity: `~/.gemini/antigravity-cli/brain/<conversation-id>/.system_generated/logs/transcript_full.jsonl`
 - Gemini: `~/.gemini/tmp/<cwd-basename>/chats/session-<ts>-<short_id>.{json,jsonl}`
 
-`thread`/`summary` parse those into a uniform turn list so you can read all three in the same shape.
+`thread`/`summary` parse those into a uniform turn list so you can read them all in the same shape.
+
+Antigravity quirk: the agy agent's shell cwd is a private scratch dir, not your workspace — playmaker prepends a workspace preamble to every agy dispatch so file work lands where you pointed `--cwd`.
 
 ## Notifications
 
@@ -130,17 +134,15 @@ Then in any Claude Code session, give a multi-component task and the skill activ
 
 ## Quotas
 
-Token-based capacity probes. Status as of v0.2:
+Token-based capacity probes. Status as of v0.4:
 
-- **Claude** — full support via `claude /usage` (PTY parse).
-- **Codex** — stub. Their quota lives behind an undocumented API; web-scraping fragile.
-- **Gemini** — stub. Same issue.
-
-Codex/Gemini availability is treated as "unknown" until you hit a rate-limit error. Contributions for proper probes welcome.
+- **Claude** — OAuth usage API (token from the Claude Code Keychain entry).
+- **Codex** — ChatGPT `wham/usage` API (token from `~/.codex/auth.json`).
+- **Antigravity (agy)** — prefers agy's **local daemon**: `RetrieveUserQuotaSummary` over the embedded self-signed-TLS gRPC-web endpoint (the same source CodexBar reads). Gives the full categorized breakdown — Gemini and Claude/GPT, each split 5-hour vs weekly. Works whenever any agy process (or a running CodexBar) has the singleton language-server daemon up. Falls back to the OAuth `retrieveUserQuota` on the Antigravity backend (creds from `~/.gemini/oauth_creds.json`) when no daemon is reachable — that path only surfaces coarse Gemini daily buckets and is flagged "daemon offline". Ported from [steipete/CodexBar](https://github.com/steipete/CodexBar).
 
 ## Limitations
 
-- macOS-only Claude-quota probe (Keychain/PTY parse of `claude /usage`). Everything else works on Linux.
+- macOS-only Claude-quota probe (reads the Claude Code Keychain entry). Everything else works on Linux.
 - No remote agents. Everything runs locally on your machine.
 
 ## License
