@@ -1,8 +1,8 @@
 # playmaker
 
 [![CI](https://github.com/vladsafedev/playmaker/actions/workflows/ci.yml/badge.svg)](https://github.com/vladsafedev/playmaker/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/playmaker-cli.svg)](https://pypi.org/project/playmaker-cli/)
-[![Python](https://img.shields.io/pypi/pyversions/playmaker-cli.svg)](https://pypi.org/project/playmaker-cli/)
+[![PyPI](https://img.shields.io/pypi/v/playmaker-cli.svg?cacheSeconds=3600)](https://pypi.org/project/playmaker-cli/)
+[![Python](https://img.shields.io/pypi/pyversions/playmaker-cli.svg?cacheSeconds=3600)](https://pypi.org/project/playmaker-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **Run Claude Code, Codex and Antigravity as parallel sub-agents from one terminal — and spend three separate quotas instead of one.**
