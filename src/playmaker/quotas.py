@@ -1,17 +1,21 @@
 """Quota probes — token-based, faithful port of CodexBar's strategies.
 
-All three providers go through OAuth Bearer tokens; no WebKit, no PTY.
+All providers go through OAuth Bearer tokens; no WebKit, no PTY.
 
 - Codex: ChatGPT JWT in ~/.codex/auth.json -> chatgpt.com/backend-api/wham/usage
 - Claude: macOS Keychain entry "Claude Code-credentials" -> api.anthropic.com/api/oauth/usage
-- Gemini: ~/.gemini/oauth_creds.json -> cloudcode-pa.googleapis.com loadCodeAssist + retrieveUserQuota
+- Antigravity (agy): ~/.gemini/oauth_creds.json -> daily-cloudcode-pa.googleapis.com
+  loadCodeAssist + retrieveUserQuota (ideType ANTIGRAVITY); Gemini buckets only
+- Gemini (retired locally): same creds -> cloudcode-pa.googleapis.com
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import re
 import shutil
+import ssl
 import subprocess
 import time
 import urllib.error
@@ -534,21 +538,37 @@ def _gemini_refresh(creds: dict) -> dict:
     return creds
 
 
-def _gemini_load_code_assist(access_token: str) -> dict:
+# gemini-cli and Antigravity (agy) share the OAuth creds file but talk to
+# different Code Assist backends with different ideType metadata.
+_GEMINI_CLOUDCODE_BASE = "https://cloudcode-pa.googleapis.com/v1internal"
+_ANTIGRAVITY_CLOUDCODE_BASE = "https://daily-cloudcode-pa.googleapis.com/v1internal"
+
+
+def _gemini_load_code_assist(
+    access_token: str,
+    *,
+    base_url: str = _GEMINI_CLOUDCODE_BASE,
+    ide_type: str = "GEMINI_CLI",
+) -> dict:
     return _http_json(
-        "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+        f"{base_url}:loadCodeAssist",
         method="POST",
         headers={"Authorization": f"Bearer {access_token}"},
-        body={"metadata": {"ideType": "GEMINI_CLI", "pluginType": "GEMINI"}},
+        body={"metadata": {"ideType": ide_type, "pluginType": "GEMINI"}},
     )
 
 
-def _gemini_retrieve_quota(access_token: str, project_id: str | None) -> dict:
+def _gemini_retrieve_quota(
+    access_token: str,
+    project_id: str | None,
+    *,
+    base_url: str = _GEMINI_CLOUDCODE_BASE,
+) -> dict:
     body: dict = {}
     if project_id:
         body["project"] = project_id
     return _http_json(
-        "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+        f"{base_url}:retrieveUserQuota",
         method="POST",
         headers={"Authorization": f"Bearer {access_token}"},
         body=body,
@@ -568,6 +588,225 @@ def _gemini_categorize_model(model_id: str) -> str | None:
 
 
 def gemini_probe() -> dict:
+    return _google_code_assist_probe(_GEMINI_CLOUDCODE_BASE, "GEMINI_CLI")
+
+
+# ---- Antigravity local daemon probe (rich, categorized) --------------------
+#
+# The full Antigravity quota — Gemini AND Claude/GPT, each split into a 5-hour
+# and a weekly window (what Antigravity's own UI and CodexBar show) — is NOT
+# available to a plain OAuth token: the remote fetchAvailableModels endpoint
+# 403s. It IS served by agy's embedded localhost language-server daemon, over a
+# self-signed-TLS gRPC-web (Connect) endpoint, exactly as CodexBar reads it.
+# agy runs a singleton daemon, so the probe works whenever any agy process (or
+# CodexBar's bounded background agy) is running; we can also spawn a short-lived
+# one ourselves. Approach ported from steipete/CodexBar's AntigravityStatusProbe.
+
+_ANTIGRAVITY_QUOTA_SUMMARY_PATH = (
+    "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
+)
+_ANTIGRAVITY_PROC_NAMES = ("agy", "language_server")
+
+
+def _antigravity_daemon_ports() -> list[int]:
+    """Local TCP ports that a running agy/language_server daemon is listening on."""
+    pids: set[int] = set()
+    for name in _ANTIGRAVITY_PROC_NAMES:
+        try:
+            proc = subprocess.run(
+                ["pgrep", "-f", name], capture_output=True, text=True, timeout=5
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for line in proc.stdout.split():
+            if line.isdigit():
+                pids.add(int(line))
+    ports: set[int] = set()
+    for pid in pids:
+        try:
+            proc = subprocess.run(
+                ["lsof", "-nP", "-p", str(pid), "-iTCP", "-sTCP:LISTEN"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for line in proc.stdout.splitlines():
+            m = re.search(r"127\.0\.0\.1:(\d+)", line)
+            if m:
+                port = int(m.group(1))
+                if port != 5432:  # skip an unrelated Postgres LISTEN
+                    ports.add(port)
+    return sorted(ports)
+
+
+def _antigravity_local_summary(ports: list[int], timeout: float = 5.0) -> dict | None:
+    """POST RetrieveUserQuotaSummary to each candidate daemon port; parse the
+    first response that carries quota groups. Returns the raw summary dict
+    ({"groups": [...]}) or None if no port answered."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    for port in ports:
+        for scheme in ("https", "http"):
+            url = f"{scheme}://127.0.0.1:{port}{_ANTIGRAVITY_QUOTA_SUMMARY_PATH}"
+            req = urllib.request.Request(
+                url,
+                data=b"{}",
+                method="POST",
+                headers={"Content-Type": "application/json", "Connect-Protocol-Version": "1"},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+            except (urllib.error.URLError, ssl.SSLError, OSError, json.JSONDecodeError):
+                continue
+            payload = data.get("response") or data.get("summary") or data
+            if isinstance(payload, dict) and payload.get("groups"):
+                return payload
+    return None
+
+
+# Category / bucket → short window name, and window length for forecasting.
+def _antigravity_group_short(display_name: str) -> str:
+    low = display_name.lower()
+    if "gemini" in low:
+        return "Gemini"
+    if "claude" in low or "gpt" in low or "3p" in low:
+        return "Claude/GPT"
+    return display_name.strip() or "Antigravity"
+
+
+def _antigravity_bucket_window(bucket_id: str, display_name: str) -> tuple[str, int] | None:
+    """(short suffix, window_seconds) for a bucket, or None to skip."""
+    bid = bucket_id.lower()
+    if bid.endswith("5h") or "5h" in bid or "five" in display_name.lower():
+        return "5h", 5 * 3600
+    if bid.endswith("weekly") or "week" in display_name.lower():
+        return "weekly", 7 * 86400
+    return None
+
+
+def _antigravity_windows_from_summary(payload: dict) -> list[dict]:
+    windows: list[dict] = []
+    now = time.time()
+    for group in payload.get("groups") or []:
+        if not isinstance(group, dict):
+            continue
+        prefix = _antigravity_group_short(group.get("displayName") or "")
+        buckets = group.get("buckets") or []
+        parsed: list[tuple[int, dict]] = []
+        for bucket in buckets:
+            if not isinstance(bucket, dict) or bucket.get("disabled"):
+                continue
+            win = _antigravity_bucket_window(
+                bucket.get("bucketId") or "", bucket.get("displayName") or ""
+            )
+            if win is None:
+                continue
+            suffix, window_seconds = win
+            frac = bucket.get("remainingFraction")
+            if frac is None:
+                remaining = bucket.get("remaining") or {}
+                frac = remaining.get("remainingFraction") if isinstance(remaining, dict) else None
+            if frac is None:
+                continue
+            pct_left = max(0, min(100, int(round(float(frac) * 100))))
+            reset_iso = bucket.get("resetTime")
+            forecast = None
+            if reset_iso and suffix == "weekly":
+                try:
+                    reset_dt = datetime.fromisoformat(reset_iso.replace("Z", "+00:00"))
+                    elapsed = max(0.0, window_seconds - (reset_dt.timestamp() - now))
+                    forecast = _forecast_label(100 - pct_left, window_seconds, elapsed)
+                except ValueError:
+                    pass
+            # 5h buckets sort before weekly (order key 0 vs 1).
+            order = 0 if suffix == "5h" else 1
+            parsed.append(
+                (
+                    order,
+                    {
+                        "name": f"{prefix} {suffix}",
+                        "pct_left": pct_left,
+                        "reset_at_iso": reset_iso,
+                        "reset_relative": _format_relative(reset_iso),
+                        "forecast": forecast,
+                        "reserve_pct": None,
+                    },
+                )
+            )
+        windows.extend(w for _, w in sorted(parsed, key=lambda t: t[0]))
+    return windows
+
+
+def antigravity_probe() -> dict:
+    """Quota probe for Antigravity (agy).
+
+    Prefers agy's local daemon, which reports the full categorized quota —
+    Gemini and Claude/GPT, each split 5-hour vs weekly (source: "local"). Falls
+    back to the OAuth retrieveUserQuota, which only surfaces coarse Gemini daily
+    buckets (source: "remote") — the Claude/GPT windows are simply not available
+    to a plain OAuth token. The local path needs a running agy/CodexBar daemon.
+    """
+    ports = _antigravity_daemon_ports()
+    if ports:
+        payload = _antigravity_local_summary(ports)
+        if payload:
+            windows = _antigravity_windows_from_summary(payload)
+            if windows:
+                out = {
+                    "status": "ok",
+                    "account_email": None,
+                    "tier": None,
+                    "windows": windows,
+                    "source": "local",
+                }
+                # Enrich email/tier from the cheap OAuth loadCodeAssist call;
+                # never let that failure sink the rich local windows.
+                try:
+                    meta = _antigravity_account_meta()
+                    out["account_email"] = meta.get("email")
+                    out["tier"] = meta.get("tier")
+                except Exception:
+                    pass
+                return out
+
+    result = _google_code_assist_probe(_ANTIGRAVITY_CLOUDCODE_BASE, "ANTIGRAVITY")
+    result["source"] = "remote"
+    return result
+
+
+def _antigravity_account_meta() -> dict:
+    """email + tier from loadCodeAssist / id_token, without fetching quota."""
+    creds = _gemini_load_creds()
+    expiry = creds.get("expiry_date")
+    if isinstance(expiry, (int, float)) and expiry - _now_ms() < 60_000:
+        creds = _gemini_refresh(creds)
+    access_token = creds["access_token"]
+    email = None
+    id_token = creds.get("id_token")
+    if id_token:
+        try:
+            email = _decode_jwt_payload(id_token).get("email")
+        except Exception:
+            email = None
+    tier = None
+    try:
+        loaded = _gemini_load_code_assist(
+            access_token, base_url=_ANTIGRAVITY_CLOUDCODE_BASE, ide_type="ANTIGRAVITY"
+        )
+        tier_id = (loaded.get("currentTier") or {}).get("id") or ""
+        tier = {"standard-tier": "Paid", "legacy-tier": "Legacy", "free-tier": "Free"}.get(
+            tier_id
+        )
+    except Exception:
+        pass
+    return {"email": email, "tier": tier}
+
+
+def _google_code_assist_probe(base_url: str, ide_type: str) -> dict:
     creds = _gemini_load_creds()
     expiry = creds.get("expiry_date")
     if isinstance(expiry, (int, float)) and expiry - _now_ms() < 60_000:
@@ -576,12 +815,12 @@ def gemini_probe() -> dict:
     access_token = creds["access_token"]
 
     try:
-        loaded = _gemini_load_code_assist(access_token)
+        loaded = _gemini_load_code_assist(access_token, base_url=base_url, ide_type=ide_type)
     except RuntimeError as e:
         if "HTTP 401" in str(e):
             creds = _gemini_refresh(creds)
             access_token = creds["access_token"]
-            loaded = _gemini_load_code_assist(access_token)
+            loaded = _gemini_load_code_assist(access_token, base_url=base_url, ide_type=ide_type)
         else:
             raise
 
@@ -595,7 +834,7 @@ def gemini_probe() -> dict:
 
     tier_node = loaded.get("currentTier") or {}
     tier_id = tier_node.get("id") or ""
-    quota = _gemini_retrieve_quota(access_token, project_id)
+    quota = _gemini_retrieve_quota(access_token, project_id, base_url=base_url)
 
     # Group buckets by display label, take the *minimum* remaining fraction
     # (most-constrained limit per model).
@@ -652,10 +891,12 @@ def gemini_probe() -> dict:
 # ---- Aggregator -------------------------------------------------------------
 
 
+# gemini-cli's probe still works while its creds file exists, but the CLI is
+# retired locally — Antigravity (agy) replaces it in the default probe set.
 PROBES = {
     "codex": codex_probe,
     "claude": claude_probe,
-    "gemini": gemini_probe,
+    "agy": antigravity_probe,
 }
 
 
