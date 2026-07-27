@@ -297,6 +297,8 @@ input the coach skill uses to route each subtask.
 Handlers for other agent CLIs are especially welcome — see
 [CONTRIBUTING.md](CONTRIBUTING.md) for the `AgentHandler` contract and what you
 need to know about a CLI before writing one.
+[SECURITY.md](SECURITY.md) covers which credentials the quota probes read and
+what a dispatched agent is allowed to do.
 
 ```bash
 uv run pytest
