@@ -23,8 +23,21 @@ import time
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
+from playmaker.config import agent_setting
 
 CODEX_SESSIONS_ROOT = Path("~/.codex/sessions").expanduser()
+
+
+def sandbox_args() -> list[str]:
+    """Codex's own sandbox policy, from [agents.codex] sandbox in config.toml.
+
+    Unlike claude and agy, codex needs no permission-skipping flag: `codex exec`
+    is already non-interactive and confines the model's shell commands with its
+    own sandbox. We pass `-s` only when a specific policy was configured;
+    otherwise codex's own default applies.
+    """
+    policy = agent_setting("codex", "sandbox")
+    return ["-s", str(policy)] if policy else []
 
 
 class CodexHandler:
@@ -58,6 +71,7 @@ class CodexHandler:
             "-o",
             str(last_msg_path),
         ]
+        cmd += sandbox_args()
         if model:
             cmd += ["-m", model]
         cmd.append(full_prompt)

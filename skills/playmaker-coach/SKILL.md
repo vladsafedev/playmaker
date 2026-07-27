@@ -20,7 +20,7 @@ All Claude work — coach, internal sub-agents, external `claude -p` — draws f
 2. **Internal sub-agents — the `Task`/`Agent` tool in THIS session.** Run inside this session, **write files** (they inherit the coach's permission mode), return their result straight into the coach's context, and run in parallel. They draw on the same subscription, so the gate is "is weekly quota healthy?" — glance at `playmaker quotas`. **Use them freely** for Claude-side chunks the coach will fold back in directly; spawn several at once, don't be shy.
 
 3. **External dispatch — `playmaker dispatch <agent>`.** Separate OS processes, tracked in playmaker (`list`/`watch`/`thread`/`continue`):
-   - **`claude -p` (sibling Claude):** same subscription. Its key lever is the model bucket — **Sonnet is a separate weekly bucket from Opus**, usually idle while Opus depletes, so default **`--model sonnet`** to spare the scarce Opus bucket (**`--model haiku`** for trivial mechanical work). It **can write files** (playmaker forwards `--dangerously-skip-permissions`; see §10). Use it over an internal sub-agent when you want a **tracked, detached work-stream** you can monitor/continue independently of the coach's turn.
+   - **`claude -p` (sibling Claude):** same subscription. Its key lever is the model bucket — **Sonnet is a separate weekly bucket from Opus**, usually idle while Opus depletes, so default **`--model sonnet`** to spare the scarce Opus bucket (**`--model haiku`** for trivial mechanical work). It **can write files** — playmaker runs it in `acceptEdits`, so it edits and runs commands freely inside `--cwd` and is refused outside it (see §10). Use it over an internal sub-agent when you want a **tracked, detached work-stream** you can monitor/continue independently of the coach's turn.
    - **`codex` / `agy`:** each on its own subscription/quota — the right home for **write-heavy** parallel implementation that can leave the Anthropic subscription. `agy` is special: besides Gemini tiers it carries **Claude Sonnet/Opus 4.6 (Thinking)** on Google's pool, so even "must be Claude-quality" work can leave the Anthropic quota.
 
 **Routing cheat-sheet for Claude-side work:**
@@ -219,14 +219,14 @@ Read `summary` first. If you need more context to judge: `playmaker thread <id>`
 
 If `playmaker dispatch` returns an error (binary missing, auth bad, agent unavailable), don't silently retry. Surface it, propose a re-routed plan ("Codex unavailable; want me to give the backend to Claude instead?"), and wait for user confirmation.
 
-**Sibling-Claude writes are enabled** — playmaker forwards `--dangerously-skip-permissions`, so external `claude -p` dispatch/resume runs headless with permissions skipped and *can* edit files in a detached session. (This is configurable; a user who set `skip_permissions = false` will see detached runs stall on the first tool prompt.)
+**Sibling-Claude writes are enabled, but bounded.** playmaker dispatches `claude -p` with `--permission-mode acceptEdits` by default: it edits files and runs commands inside the dispatch `--cwd` without asking, and claude itself refuses anything outside that directory. So **keep every path in the prompt inside `--cwd`** — a subtask that legitimately needs to touch a sibling repo or a dotfile in `$HOME` will come back refused, and the fix is a different `--cwd` (or the user's `yolo = true`), not a re-prompt.
 
 Both Claude lanes are on the subscription, so pick by **where the work lives**, not cost:
 - **Coach folds the result in directly → internal sub-agent (Task tool).** In-session, write-capable, returns into context. Default choice for "more Claude."
 - **Independent stream you'll monitor / continue separately → `playmaker dispatch claude --model sonnet`.** Tracked, detached; Sonnet's separate weekly bucket spares Opus.
 - **Work that can leave the Claude family → Codex / agy** (their own quotas).
 
-If a dispatch comes back with zero file changes, check `playmaker summary <id>`: a leftover "click Allow" pivot means the local `claude` is older than the skip-permissions wiring or overrides it — fall back to an internal sub-agent or Codex/agy for that subtask. For **agy** specifically, a "done" with no file changes usually means the files landed in agy's private scratch dir (`~/.gemini/antigravity-cli/scratch/`) — the prompt referred to "the current directory" instead of workspace paths; re-dispatch with explicit paths.
+If a dispatch comes back with zero file changes, check `playmaker summary <id>`. Two common causes for Claude: the subtask tried to write outside `--cwd` and was refused (re-dispatch with the right `--cwd`), or the run needed a permission the configured mode doesn't grant — a "I need your permission" answer, not a crash. For **agy** specifically, a "done" with no file changes usually means the files landed in agy's private scratch dir (`~/.gemini/antigravity-cli/scratch/`) — the prompt referred to "the current directory" instead of workspace paths; re-dispatch with explicit paths.
 
 ## Reading discipline
 

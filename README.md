@@ -60,28 +60,54 @@ The catch: doing this by hand — terminal tabs, jumping between tools,
 copy-pasting context — is friction. `playmaker` removes the friction; the
 [coach skill](#the-coach-skill) provides the discipline.
 
-## ⚠️ Sub-agents skip permission prompts by default
+## Permissions
 
-By default, playmaker launches Claude and Antigravity sub-agents with
-`--dangerously-skip-permissions` (and Gemini with `--yolo`). This is
-deliberate: a headless agent has no human at the keyboard, so without these
-flags a detached run stalls at the first tool-approval prompt and finishes
-having written nothing.
+A detached agent has nobody at the keyboard to approve a tool prompt, so you
+decide up front what it may do. Left alone, a headless Claude simply answers
+*"I need your permission"* and finishes having changed nothing — so the choice
+is real, not a formality.
 
-It also means a dispatched agent can run commands and edit files **without
-asking**. Only dispatch prompts you'd be comfortable running unattended, in
-working directories you trust.
+By default playmaker asks for the weakest setting that still lets the work
+finish: **the agent is free inside the directory you dispatched it to, and
+Claude itself refuses anything outside it.**
 
-To opt out for Claude, set this in `~/.playmaker/config.toml`:
+| `[agents.claude] permission_mode` | inside `--cwd` | outside `--cwd` |
+|---|---|---|
+| `"plan"` | reads and plans, no writes | — |
+| `"acceptEdits"` *(default)* | edits files, runs commands | refused |
+| `"bypassPermissions"` | anything | anything |
+
+Narrow it further with an allowlist — Claude Code's own tool syntax:
 
 ```toml
 [agents.claude]
-skip_permissions = false
+permission_mode = "acceptEdits"
+allowed_tools = ["Read", "Edit", "Write", "Bash(pytest:*)"]
+disallowed_tools = ["WebFetch"]
 ```
 
-— with the caveat above: detached runs will then stall on the first permission
-prompt, so this only really makes sense alongside `--sync` workflows or
-allowlist rules you've configured in Claude Code itself.
+**Or skip the whole thing.** One line, no boundary, including the
+working-directory one:
+
+```toml
+[agents.claude]
+yolo = true
+```
+
+That is a reasonable trade for prompts and directories you'd run unattended
+anyway — just make it a decision rather than a default you inherited.
+
+The other agents differ, because their CLIs do:
+
+- **codex** needs none of this. `codex exec` is already non-interactive and
+  sandboxes the model's shell itself, so playmaker passes no bypass flag at
+  all. Override its policy with `sandbox = "read-only" | "workspace-write" |
+  "danger-full-access"`.
+- **agy** has no middle tier — no per-mode flag exists, so a detached run
+  either auto-approves or comes back having done nothing. It therefore
+  defaults to `yolo = true`; layer `sandbox = true` on top for agy's own
+  terminal restrictions.
+- **gemini** (legacy) runs with `--yolo`.
 
 ## Install
 

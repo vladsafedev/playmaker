@@ -28,3 +28,25 @@ def setting(section: str, key: str, default: Any = None) -> Any:
     """Look up [<section>] <key>, falling back to `default`."""
     value = load_config().get(section, {})
     return value.get(key, default) if isinstance(value, dict) else default
+
+
+def yolo_enabled(agent: str, *, default: bool = False) -> bool:
+    """Whether this agent is configured to skip its permission checks entirely.
+
+    `yolo` is the current spelling; `skip_permissions` is the 0.4 name and is
+    still honoured so existing configs keep working.
+    """
+    value = agent_setting(agent, "yolo")
+    if value is None:
+        value = agent_setting(agent, "skip_permissions")
+    return default if value is None else bool(value)
+
+
+def agent_list_setting(agent: str, key: str) -> list[str]:
+    """A list-valued agent setting, tolerating a plain string in the TOML."""
+    value = agent_setting(agent, key)
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(",") if v.strip()]
+    return [str(v) for v in value]

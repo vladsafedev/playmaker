@@ -8,6 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import playmaker.config as config
 from playmaker.agents.claude import ClaudeHandler
 
 
@@ -124,22 +125,24 @@ def test_dispatch_without_a_session_id_is_an_error(monkeypatch, tmp_path) -> Non
         ClaudeHandler().dispatch(prompt="p", cwd=tmp_path)
 
 
-def test_dispatch_skips_permissions_by_default(monkeypatch, tmp_path) -> None:
+def test_dispatch_bounds_the_agent_to_the_cwd_by_default(monkeypatch, tmp_path) -> None:
     fake = _FakePopen(_events(INIT, {"type": "result", "subtype": "success", "result": "ok"}))
     monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
-    monkeypatch.setattr("playmaker.agents.claude.agent_setting", lambda *a, **k: True)
+    monkeypatch.setattr(config, "load_config", dict)
 
     ClaudeHandler().dispatch(prompt="p", cwd=tmp_path, model="sonnet")
 
-    assert "--dangerously-skip-permissions" in fake.cmd
+    assert "--dangerously-skip-permissions" not in fake.cmd
+    assert fake.cmd[fake.cmd.index("--permission-mode") + 1] == "acceptEdits"
     assert fake.cmd[fake.cmd.index("--model") + 1] == "sonnet"
 
 
-def test_dispatch_honours_skip_permissions_false(monkeypatch, tmp_path) -> None:
+def test_dispatch_yolo_is_opt_in(monkeypatch, tmp_path) -> None:
     fake = _FakePopen(_events(INIT, {"type": "result", "subtype": "success", "result": "ok"}))
     monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
-    monkeypatch.setattr("playmaker.agents.claude.agent_setting", lambda *a, **k: False)
+    monkeypatch.setattr(config, "load_config", lambda: {"agents": {"claude": {"yolo": True}}})
 
     ClaudeHandler().dispatch(prompt="p", cwd=tmp_path)
 
-    assert "--dangerously-skip-permissions" not in fake.cmd
+    assert "--dangerously-skip-permissions" in fake.cmd
+    assert "--permission-mode" not in fake.cmd

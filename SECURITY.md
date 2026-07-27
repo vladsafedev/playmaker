@@ -38,25 +38,30 @@ The localhost Antigravity probe disables TLS verification because agy's
 embedded daemon serves a self-signed certificate on `127.0.0.1`. The connection
 never leaves the loopback interface.
 
-### Sub-agents run without permission prompts
+### What a dispatched agent is allowed to do
 
-By default playmaker passes `--dangerously-skip-permissions` to Claude and
-Antigravity (and `--yolo` to Gemini). A dispatched agent can therefore run
-commands and edit files in the working directory you point it at, without
-asking. This is deliberate — a detached run has no human to approve prompts —
-but it means **a dispatch is as dangerous as the prompt you give it**. Treat
+A detached agent cannot answer a permission prompt, so the answer is given
+ahead of time in `~/.playmaker/config.toml`. Defaults as of 0.5:
+
+| Agent | Default | Boundary |
+|---|---|---|
+| claude | `permission_mode = "acceptEdits"` | free inside the dispatch `--cwd`; claude refuses writes outside it |
+| codex | no flag passed | codex's own sandbox for model-run shell commands |
+| agy | `yolo = true` | none — agy exposes no per-mode permission flag |
+| gemini | `--yolo` | none |
+
+Setting `yolo = true` (or the legacy `skip_permissions = true`) removes the
+boundary for that agent, including the working-directory one. It is a
+supported choice, not a trap — but it should be a choice.
+
+Either way, **a dispatch is as dangerous as the prompt you give it**. Treat
 `playmaker dispatch` like running an untrusted script in that directory.
 
-Prompt content is the real attack surface here: an agent that reads a file
-containing instructions may act on them. Don't dispatch against directories
-whose contents you don't trust.
-
-To restore Claude's permission checks:
-
-```toml
-[agents.claude]
-skip_permissions = false
-```
+Prompt content is the real attack surface: an agent that reads a file
+containing instructions may act on them, and the working-directory boundary
+does not help against a prompt that tells the agent to do something harmful
+inside that directory. Don't dispatch against directories whose contents you
+don't trust.
 
 ### Data at rest
 

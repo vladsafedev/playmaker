@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-27
+
+### Changed
+
+- **Sub-agent permissions are configurable, and Claude no longer skips them by
+  default.** 0.4 passed `--dangerously-skip-permissions` to every Claude
+  dispatch because the alternative was believed to be a run that stalls on the
+  first prompt. That is not what happens: a headless `claude -p` without
+  permissions answers "I need your permission" and returns immediately, having
+  changed nothing. There is also a middle tier, verified against claude 2.x:
+  `--permission-mode acceptEdits` lets the agent edit files and run commands
+  inside the dispatch `--cwd` while claude itself refuses anything outside it.
+
+  That is the new default. `[agents.claude]` now accepts `permission_mode`,
+  `allowed_tools` and `disallowed_tools`, and `yolo = true` restores the old
+  no-boundary behaviour in one line. The 0.4 spelling `skip_permissions = true`
+  is still honoured; `skip_permissions = false` now falls through to the
+  default mode instead of producing a run that does nothing.
+
+  **Upgrade note:** a subtask that needs to write outside its `--cwd` will now
+  be refused. Point `--cwd` at the right directory, or set `yolo = true`.
+
+### Added
+
+- `[agents.codex] sandbox` — forwarded to `codex exec -s`
+  (`read-only` / `workspace-write` / `danger-full-access`). Codex needs no
+  permission-skipping flag: `codex exec` is already non-interactive and
+  sandboxes the model's shell itself, and playmaker never passed it one.
+- `[agents.agy] sandbox` — forwarded to `agy --sandbox`. agy has no per-mode
+  permission flag, so it keeps `yolo = true` as its default.
+
 ## [0.4.0] - 2026-07-27
 
 ### Added

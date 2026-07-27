@@ -34,7 +34,7 @@ import time
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
-from playmaker.config import agent_setting
+from playmaker.config import agent_setting, yolo_enabled
 
 AGY_BRAIN_ROOT = Path("~/.gemini/antigravity-cli/brain").expanduser()
 
@@ -146,10 +146,13 @@ class AgyHandler:
         cmd = ["agy", "-p", full_prompt, "--log-file", str(log_path)]
         if conversation_id:
             cmd += ["--conversation", conversation_id]
-        # Detached runs have no human to approve tool prompts (same rationale
-        # as the claude handler). Opt out via [agents.agy] skip_permissions.
-        if agent_setting("agy", "skip_permissions", True):
+        # agy has no middle tier: unlike claude there is no per-mode permission
+        # flag, so a detached run either skips the prompts or answers nothing.
+        # `--sandbox` is orthogonal and can be layered on top.
+        if yolo_enabled("agy", default=True):
             cmd.append("--dangerously-skip-permissions")
+        if agent_setting("agy", "sandbox", False):
+            cmd.append("--sandbox")
         # agy's built-in print timeout is 5m — too short for real subtasks.
         cmd += ["--print-timeout", str(agent_setting("agy", "print_timeout", "60m"))]
         if model:

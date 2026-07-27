@@ -17,7 +17,36 @@ import subprocess
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
-from playmaker.config import agent_setting
+from playmaker.config import agent_list_setting, agent_setting, yolo_enabled
+
+# What a sub-agent is allowed to do without a human at the keyboard.
+# Verified against claude 2.x in `-p` mode:
+#   default       -> the agent writes nothing and answers "I need permission";
+#                    it does NOT hang, it just returns having done nothing.
+#   acceptEdits   -> edits and commands proceed inside the working directory,
+#                    and anything outside it is refused by claude itself.
+#   bypassPermissions / --dangerously-skip-permissions -> no boundary at all.
+# acceptEdits is the default here because it is the weakest mode that still
+# lets a detached run finish its work.
+DEFAULT_PERMISSION_MODE = "acceptEdits"
+
+
+def permission_args() -> list[str]:
+    """Permission flags for a headless run, from [agents.claude] in config.toml."""
+    if yolo_enabled("claude"):
+        return ["--dangerously-skip-permissions"]
+
+    mode = agent_setting("claude", "permission_mode", DEFAULT_PERMISSION_MODE)
+    args = ["--permission-mode", str(mode)]
+    # Comma-separated rather than variadic: `--allowedTools A B` would swallow
+    # the positional prompt that follows.
+    allowed = agent_list_setting("claude", "allowed_tools")
+    if allowed:
+        args += ["--allowedTools", ",".join(allowed)]
+    disallowed = agent_list_setting("claude", "disallowed_tools")
+    if disallowed:
+        args += ["--disallowedTools", ",".join(disallowed)]
+    return args
 
 
 class ClaudeHandler:
@@ -53,13 +82,7 @@ class ClaudeHandler:
             "stream-json",
             "--verbose",
         ]
-        # Detached runs have no human to approve tool prompts; without this
-        # the agent stalls on the first file write and ends its turn with
-        # zero changes. Skipping permissions is what makes sibling-Claude
-        # usable for write-heavy subtasks in headless mode. Opt out via
-        # [agents.claude] skip_permissions = false in ~/.playmaker/config.toml.
-        if agent_setting("claude", "skip_permissions", True):
-            cmd.append("--dangerously-skip-permissions")
+        cmd += permission_args()
         if model:
             cmd += ["--model", model]
         cmd.append(full_prompt)
@@ -169,9 +192,8 @@ class ClaudeHandler:
             "--output-format",
             "json",
         ]
-        # See dispatch(): detached resume has no human to approve prompts.
-        if agent_setting("claude", "skip_permissions", True):
-            cmd.append("--dangerously-skip-permissions")
+        # See dispatch(): detached resume has no human to approve prompts either.
+        cmd += permission_args()
         if model:
             cmd += ["--model", model]
         cmd.append(full_prompt)

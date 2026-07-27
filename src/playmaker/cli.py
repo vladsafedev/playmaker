@@ -949,22 +949,43 @@ sound = true
 # (terminal-notifier only). Any app name `open -a` accepts.
 editor = "Zed"
 
+# How much each sub-agent may do while nobody is watching. A detached agent
+# cannot answer a permission prompt, so every agent needs *some* answer here.
+
 [agents.claude]
 binary = "claude"
-# Headless dispatch passes --dangerously-skip-permissions so unattended runs
-# are not blocked by tool-permission prompts. Set to false to keep Claude
-# Code's normal permission checks (detached runs will then stall on the first
-# tool prompt and finish without writing anything).
-skip_permissions = true
+# "acceptEdits" (default): the agent edits files and runs commands freely
+#   inside the dispatch --cwd, and claude itself refuses anything outside it.
+# "plan": read and plan only, no writes.
+# "bypassPermissions": no boundary at all — same as yolo below.
+permission_mode = "acceptEdits"
+# Optional allowlist/denylist, narrower than the mode. Tool syntax is Claude
+# Code's own, e.g. "Bash(pytest:*)" to permit one command family.
+# allowed_tools = ["Read", "Edit", "Write", "Bash(pytest:*)"]
+# disallowed_tools = ["WebFetch"]
+#
+# Escape hatch: skip every check, including the working-directory boundary.
+# Only for prompts and directories you would run unattended.
+# yolo = true
 
 [agents.codex]
 binary = "codex"
+# codex exec is already non-interactive and sandboxes the model's shell itself,
+# so it needs no permission flag. Set a policy to override its default:
+# "read-only" | "workspace-write" | "danger-full-access"
+# sandbox = "workspace-write"
 
 [agents.agy]
 binary = "agy"
 # Antigravity CLI. Model names are display strings from `agy models`,
 # e.g. "Claude Opus 4.6 (Thinking)", "Gemini 3.5 Flash (High)".
-skip_permissions = true
+#
+# agy has no per-mode permission flag — a detached run either auto-approves or
+# comes back having done nothing — so this defaults to on.
+yolo = true
+# Layer agy's own terminal restrictions on top.
+# sandbox = true
+#
 # Forwarded to agy --print-timeout; the CLI's own default (5m) is too short
 # for real subtasks.
 print_timeout = "60m"
