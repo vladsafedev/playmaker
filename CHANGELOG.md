@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `done` and `failed`, but `kill` never finalised, so killing a fan-out's last
   live session left nobody to notice the batch had drained: no summary, ever.
 
+### Changed
+
+- **The combined batch file moved out of `/tmp`.** It is what a batch
+  notification opens on click, so it now lands with the outputs it quotes —
+  `~/.playmaker/outputs/batch-<label>.md` rather than
+  `/tmp/playmaker-batch-<label>.md`, a predictable name in a world-writable
+  directory built from a label the user chose. It also meant the test suite
+  wrote outside `tmp_path`.
+
 ## [0.6.0] - 2026-07-27
 
 ### Added

@@ -102,6 +102,24 @@ def test_killing_the_last_running_member_still_drains_the_batch(
     assert summaries == ["1/2 done · codex ✓ · claude ✗"]
 
 
+def test_the_combined_batch_file_lands_next_to_the_outputs_it_quotes(db: Path, monkeypatch) -> None:
+    # It is the file the notification click opens, so it belongs with the rest
+    # of a run's artefacts rather than in a world-writable /tmp under a name
+    # anyone can predict — and a hard-coded /tmp escapes tmp_path in tests.
+    opened: list[str | None] = []
+    monkeypatch.setattr(
+        cli.notify,
+        "notify",
+        lambda title, message, **kwargs: opened.append(kwargs.get("open_path")),
+    )
+
+    _fan_out("dash", ["codex", "claude"])
+
+    combined = db / "outputs" / "batch-dash.md"
+    assert opened == [str(combined)]
+    assert combined.read_text(encoding="utf-8").count("\n## ") == 2
+
+
 def test_a_batch_of_one_that_failed_reports_the_failure(db: Path, summaries: list[str]) -> None:
     sid = state.insert_session(agent="agy", prompt="p", cwd="/repo", batch_id="solo")
 
