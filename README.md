@@ -236,7 +236,8 @@ bookkeeping in between.
 ├── state.db          SQLite — sessions, status, pids, models, output paths
 ├── config.toml
 ├── agents/           optional agent profile markdown (claude.md, codex.md, agy.md…)
-├── outputs/          final output per session — .md, or .json if the agent returned JSON
+├── outputs/          final output per session — .md, or .json if the agent returned JSON,
+│                     plus batch-<label>.md, every output in one fan-out combined
 ├── logs/             subprocess stdout for detached runs
 ├── opencode/         pointer per opencode session (its transcript lives in SQLite)
 └── quotas.json       latest capacity snapshot

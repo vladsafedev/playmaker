@@ -340,7 +340,12 @@ def _maybe_finalize_batch(batch_id: str | None) -> None:
 
 
 def _render_batch_file(batch_id: str, siblings: list) -> Path | None:
-    """Write a combined markdown view of all batch outputs to /tmp for review."""
+    """Write a combined markdown view of all batch outputs, for review.
+
+    It lands in `outputs/` beside the per-session files it quotes: it is what
+    the batch notification opens on click, and its name is derived from a label
+    the user chose, which is not something to hand to a shared /tmp.
+    """
     lines = [f"# playmaker batch: {batch_id}", ""]
     for s in siblings:
         lines.append(f"## {s['agent']} — {s['status']}  ({s['id'][:8]})")
@@ -353,7 +358,7 @@ def _render_batch_file(batch_id: str, siblings: list) -> Path | None:
         except OSError:
             content = "_(no output captured — see `playmaker logs " + s["id"][:8] + "`)_"
         lines += ["", content or "_(empty)_", ""]
-    target = Path("/tmp") / f"playmaker-batch-{_batch_slug(batch_id)}.md"
+    target = state.OUTPUTS_DIR / f"batch-{_batch_slug(batch_id)}.md"
     try:
         target.write_text("\n".join(lines), encoding="utf-8")
         return target
