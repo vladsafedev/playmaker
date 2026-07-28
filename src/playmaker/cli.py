@@ -311,7 +311,9 @@ def _maybe_finalize_batch(batch_id: str | None) -> None:
     """Fire one summary notification when every session in a batch is terminal.
 
     Cross-process safe: each detached dispatch calls this on completion; only
-    the finisher that wins the O_EXCL sentinel actually notifies.
+    the finisher that wins the claim in state.db actually notifies. The claim
+    also releases the label — dispatching `--batch dash` again tomorrow is a
+    new fan-out with its own summary, not a repeat of this one.
     """
     if not batch_id:
         return
@@ -322,11 +324,7 @@ def _maybe_finalize_batch(batch_id: str | None) -> None:
     if any(s["status"] not in terminal for s in siblings):
         return  # not the last to finish
 
-    sentinel = state.LOGS_DIR / f".batch-{_batch_slug(batch_id)}.done"
-    try:
-        fd = os.open(str(sentinel), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        os.close(fd)
-    except FileExistsError:
+    if not state.claim_batch([s["id"] for s in siblings]):
         return  # another finisher already fired the summary
 
     ok = [s for s in siblings if s["status"] == "done"]
@@ -791,6 +789,9 @@ def kill(
     state.update_session(
         row["id"], status="killed", finished_at=state.now_iso(), exit_code=143
     )
+    # killed is terminal too: if this was the batch's last live session, nobody
+    # else is left to notice the fan-out drained.
+    _maybe_finalize_batch(row.get("batch_id"))
     console.print(f"[magenta]killed[/magenta] {row['id']} (pid {pid})")
 
 

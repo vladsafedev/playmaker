@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A batch label is a name you reuse, so the summary now belongs to the
+  fan-out rather than the label.** `--batch dashboard` twice used to mean one
+  batch forever: the second fan-out never pinged at all, because exactly-once
+  was guarded by an `O_EXCL` sentinel in `logs/` that nothing ever removed —
+  and with the sentinel gone it would have counted yesterday's sessions too,
+  `4/4 done · codex ✓ · claude ✓ · codex ✓ · agy ✓` for a fan-out of two, with
+  the stale outputs pasted into the combined `/tmp` file. The claim now lives in
+  `state.db` as a `batch_notified` column: `list_batch` returns the sessions not
+  yet reported, and the finisher that wins the claim releases the label for the
+  next fan-out. Cross-process safety is unchanged — the loser's `UPDATE` finds
+  its set already claimed, rolls back and stays quiet.
+
+- **`playmaker kill` drains the batch it empties.** `killed` is terminal like
+  `done` and `failed`, but `kill` never finalised, so killing a fan-out's last
+  live session left nobody to notice the batch had drained: no summary, ever.
+
 ## [0.6.0] - 2026-07-27
 
 ### Added

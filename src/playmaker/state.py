@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     parent_id TEXT,
     pid INTEGER,
     model TEXT,
-    batch_id TEXT
+    batch_id TEXT,
+    batch_notified INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_agent ON sessions(agent);
@@ -78,6 +79,16 @@ def init_db() -> None:
             c.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
         if "batch_id" not in existing_cols:
             c.execute("ALTER TABLE sessions ADD COLUMN batch_id TEXT")
+        if "batch_notified" not in existing_cols:
+            c.execute("ALTER TABLE sessions ADD COLUMN batch_notified INTEGER")
+            # Only on the upgrade run: sessions that finished before this column
+            # existed are history — their summary already fired, or never will.
+            # Left unclaimed they would land inside the next summary for the
+            # same label. Sessions still in flight keep theirs.
+            c.execute(
+                "UPDATE sessions SET batch_notified = 1 "
+                "WHERE status IN ('done', 'failed', 'killed')"
+            )
         # Created after migration so it works on pre-existing tables too.
         c.execute("CREATE INDEX IF NOT EXISTS idx_batch ON sessions(batch_id)")
         c.commit()
@@ -121,13 +132,46 @@ def insert_session(
 
 
 def list_batch(batch_id: str) -> list[dict[str, Any]]:
-    """All sessions in a dispatch batch, oldest first."""
+    """The not-yet-summarised sessions of a dispatch batch, oldest first.
+
+    A batch label is a name the user reuses, not a one-off id, so it is the
+    unreported sessions — not every session ever tagged — that make up "the
+    batch" a summary is about.
+    """
     with connect() as c:
         rows = c.execute(
-            "SELECT * FROM sessions WHERE batch_id = ? ORDER BY started_at ASC",
+            "SELECT * FROM sessions "
+            "WHERE batch_id = ? AND batch_notified IS NULL "
+            "ORDER BY started_at ASC",
             (batch_id,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def claim_batch(session_ids: list[str]) -> bool:
+    """Mark these sessions summarised; True if this caller is the one that did.
+
+    Every detached dispatch finalises its batch as it lands, so two of them can
+    see the same drained fan-out. SQLite serialises the write, so the loser
+    finds part of its set already claimed; it rolls back and stays quiet rather
+    than reporting sessions somebody else has already reported. Sessions
+    dispatched into the label after the read are left unclaimed, and become the
+    next fan-out.
+    """
+    if not session_ids:
+        return False
+    placeholders = ", ".join("?" for _ in session_ids)
+    with connect() as c:
+        cur = c.execute(
+            f"UPDATE sessions SET batch_notified = 1 "
+            f"WHERE id IN ({placeholders}) AND batch_notified IS NULL",
+            session_ids,
+        )
+        if cur.rowcount != len(session_ids):
+            c.rollback()
+            return False
+        c.commit()
+        return True
 
 
 def update_session(session_id: str, **fields: Any) -> None:
