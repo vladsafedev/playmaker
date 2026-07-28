@@ -22,6 +22,7 @@ each token only to that vendor's own endpoint:
 | Claude | macOS Keychain entry `Claude Code-credentials` | `api.anthropic.com` |
 | Codex | `~/.codex/auth.json` | `chatgpt.com` |
 | Antigravity | agy's localhost daemon, else `~/.gemini/oauth_creds.json` | `127.0.0.1`, else `daily-cloudcode-pa.googleapis.com` |
+| Z.ai | `~/.local/share/opencode/auth.json`, else `$ZAI_API_KEY` | `api.z.ai` |
 
 Tokens are held in memory for the duration of a probe and are never written to
 disk by playmaker. `~/.playmaker/quotas.json` holds the probe results —
@@ -48,6 +49,7 @@ ahead of time in `~/.playmaker/config.toml`. Defaults as of 0.5:
 | claude | `permission_mode = "acceptEdits"` | free inside the dispatch `--cwd`; claude refuses writes outside it |
 | codex | no flag passed | codex's own sandbox for model-run shell commands |
 | agy | `yolo = true` | none — agy exposes no per-mode permission flag |
+| opencode | `yolo = true` → `--auto` | whatever `permission` says in your own opencode.json; `--auto` approves only what is not explicitly denied |
 | gemini | `--yolo` | none |
 
 Setting `yolo = true` (or the legacy `skip_permissions = true`) removes the

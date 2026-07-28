@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-27
+
+### Added
+
+- **`opencode` agent handler — one lane, ~75 providers.** The ask was z.ai GLM
+  support, but playmaker never talks to a model API: it drives agent CLIs. So
+  rather than teach the claude handler an `ANTHROPIC_BASE_URL` override — which
+  would have *replaced* the Anthropic lane rather than added one — the handler
+  wraps [opencode](https://opencode.ai), whose `--model provider/model` already
+  reaches GLM (`zai-coding-plan/glm-5.2`), local LMStudio/MLX models, and
+  everything else on models.dev. Oneshot via `opencode run --format json`,
+  resume via `-s <id>`; every JSONL event carries `sessionID`, so a detached
+  dispatch records the id from the first line rather than at completion.
+
+  Four behaviours worth knowing. opencode resolves its working directory from
+  `process.env.PWD`, which `subprocess.Popen(cwd=…)` does not update — left
+  alone it ignores `--cwd` and writes into whatever directory the coach was
+  sitting in, so the handler passes `--dir` and corrects `PWD`.
+  opencode ≥1.18 keeps transcripts in SQLite
+  (`opencode.db`), not one file per session, so playmaker writes a pointer at
+  `~/.playmaker/opencode/<id>.session` and reads the `session`/`message`/`part`
+  tables live — which keeps `thread --follow` current rather than frozen.
+  Cost comes from opencode's own per-session accounting rather than the stream,
+  because `run --format json` can exit before its final `step_finish`
+  ([opencode#26855](https://github.com/anomalyco/opencode/issues/26855)).
+  And `[agents.opencode] model` matters more than the usual `--model` default:
+  left unset, opencode falls back to whatever its own `opencode.json` says,
+  which is typically the model you last picked interactively rather than the
+  one you meant to dispatch to.
+
+  Permissions follow agy, for the same reason: `--auto` is opencode's only
+  lever, so a detached run either auto-approves or comes back having done
+  nothing. `yolo` defaults to `true`; narrow it with the `permission` block in
+  your own opencode.json, which `--auto` still honours for denies.
+- **`zai` quota probe** — GLM Coding Plan windows (5-hour, weekly, and the
+  monthly MCP tool pool) from `api.z.ai/api/monitor/usage/quota/limit`, keyed
+  off the credential opencode already wrote to its `auth.json`, so playmaker
+  still stores no secret of its own. Reported as its own provider rather than
+  under `opencode`, because the quota belongs to the plan — an opencode lane
+  pointed at a local model spends nothing here. Degrades to *unsupported*, not
+  an error row, when no Z.ai credential exists.
+
 ## [0.5.1] - 2026-07-27
 
 ### Fixed

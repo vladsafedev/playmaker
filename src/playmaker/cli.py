@@ -116,7 +116,7 @@ def skill_install(
 
 @app.command()
 def dispatch(
-    agent: str = typer.Argument(..., help="agent name (claude|codex|agy|gemini)"),
+    agent: str = typer.Argument(..., help="agent name (claude|codex|agy|gemini|opencode)"),
     prompt: str = typer.Option(..., "--prompt", "-p", help="initial prompt"),
     cwd: Path = typer.Option(
         Path.cwd(),
@@ -131,8 +131,10 @@ def dispatch(
         "--model",
         "-m",
         help="forwarded to the agent CLI's --model (e.g. claude 'opus'/'sonnet', "
-        "agy 'claude-opus-4-6-thinking' — exact names from `agy models`); "
-        "omitted = agent default, which is the safe choice for codex",
+        "agy 'claude-opus-4-6-thinking' — exact names from `agy models`; "
+        "opencode 'provider/model' e.g. 'zai-coding-plan/glm-5.2', from "
+        "`opencode models`); omitted = agent default, which is the safe choice "
+        "for codex",
     ),
     sync: bool = typer.Option(
         False,
@@ -831,10 +833,16 @@ def quotas(
 
 def _render_provider(name: str, info: dict) -> None:
     status = info.get("status")
-    label_color = {"codex": "blue", "claude": "magenta", "agy": "green", "gemini": "cyan"}.get(
-        name, "white"
+    label_color = {
+        "codex": "blue",
+        "claude": "magenta",
+        "agy": "green",
+        "gemini": "cyan",
+        "zai": "yellow",
+    }.get(name, "white")
+    display = {"agy": "Antigravity (agy)", "zai": "Z.ai (GLM, via opencode)"}.get(
+        name, name.capitalize()
     )
-    display = {"agy": "Antigravity (agy)"}.get(name, name.capitalize())
     title = f"[bold {label_color}]{display}[/bold {label_color}]"
     suffix_parts: list[str] = []
     if info.get("account_email"):
@@ -993,6 +1001,28 @@ print_timeout = "60m"
 
 [agents.gemini]
 binary = "gemini"
+
+[agents.opencode]
+binary = "opencode"
+# opencode fronts ~75 providers behind one CLI, so --model is the whole routing
+# story. Names are "provider/model" exactly as `opencode models` prints them,
+# e.g. "zai-coding-plan/glm-5.2" (GLM), "lmstudio/qwen/qwen3-coder-30b" (local).
+#
+# Set this. Left unset, opencode falls back to the default in its own
+# ~/.config/opencode/opencode.json — whatever you last picked interactively,
+# which is often a local model rather than the one you meant to dispatch to.
+# model = "zai-coding-plan/glm-5.2"
+#
+# Like agy, opencode has no per-mode permission flag — only --auto, which
+# auto-approves anything not explicitly denied — so a detached run either
+# auto-approves or comes back having done nothing. Narrow it with the
+# `permission` block in your own opencode.json (edit/bash/webfetch =
+# ask|allow|deny), which --auto still respects for denies.
+yolo = true
+# Forwarded as --agent / --variant when set (variant is provider-specific
+# reasoning effort, e.g. "high").
+# agent = "build"
+# variant = "high"
 """
 
 

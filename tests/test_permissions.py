@@ -110,6 +110,20 @@ def test_agy_yolo_can_be_turned_off(configured) -> None:
     assert config.yolo_enabled("agy", default=True) is False
 
 
+def test_opencode_yolo_defaults_on_for_the_same_reason_as_agy(configured) -> None:
+    # --auto is opencode's only permission lever; without it a detached run can
+    # come back having done nothing.
+    configured({})
+
+    assert config.yolo_enabled("opencode", default=True) is True
+
+
+def test_opencode_yolo_can_be_turned_off(configured) -> None:
+    configured({"agents": {"opencode": {"yolo": False}}})
+
+    assert config.yolo_enabled("opencode", default=True) is False
+
+
 def test_shipped_config_template_is_valid_toml_and_matches_the_defaults() -> None:
     # `playmaker init` writes this verbatim, so a typo here reaches every new
     # user, and a drift from the handler defaults is a documentation lie.
@@ -122,6 +136,10 @@ def test_shipped_config_template_is_valid_toml_and_matches_the_defaults() -> Non
 
     assert cfg["agents"]["claude"]["permission_mode"] == DEFAULT_PERMISSION_MODE
     assert cfg["agents"]["agy"]["yolo"] is True
+    assert cfg["agents"]["opencode"]["yolo"] is True
     assert "yolo" not in cfg["agents"]["claude"]  # the escape hatch stays commented out
     assert "sandbox" not in cfg["agents"]["codex"]
+    # No default model: a shipped "zai-coding-plan/..." would hard-fail model
+    # validation for every new user who has no Z.ai credential.
+    assert "model" not in cfg["agents"]["opencode"]
     assert cfg["notifications"]["editor"]

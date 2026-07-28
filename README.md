@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/playmaker-cli.svg?cacheSeconds=3600)](https://pypi.org/project/playmaker-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Run Claude Code, Codex and Antigravity as parallel sub-agents from one terminal — and spend three separate quotas instead of one.**
+**Run Claude Code, Codex, Antigravity and opencode as parallel sub-agents from one terminal — and spend separate quotas instead of one.**
 
 You stay in your Claude Code session doing the part only you can do. `playmaker`
 fans the rest out to other agent CLIs as detached processes, tracks them,
@@ -47,10 +47,12 @@ in one serial session:
 1. **Wall-clock speed.** A task that decomposes into 3–5 independent
    work-streams (schema, backend, frontend, tests, docs) finishes 2–4× faster
    when each stream runs as its own parallel agent.
-2. **Provider arbitrage.** Codex and Antigravity quotas are entirely separate
-   pools from your Anthropic plan. Every slice you hand them is capacity your
-   main session never spends — and Antigravity's roster includes Claude
-   Sonnet/Opus, so even Claude-quality work can run on Google's pool.
+2. **Provider arbitrage.** Codex, Antigravity and opencode quotas are entirely
+   separate pools from your Anthropic plan. Every slice you hand them is
+   capacity your main session never spends — and Antigravity's roster includes
+   Claude Sonnet/Opus, so even Claude-quality work can run on Google's pool.
+   `opencode` widens this the most: one CLI fronting ~75 providers, from a z.ai
+   GLM coding plan to models running locally on your own machine.
 3. **Bucket arbitrage inside one plan.** Headless `claude -p` draws on the same
    subscription as your interactive session, but per-model weekly buckets are
    separate — dispatching `--model sonnet` spends Sonnet's usually-idle bucket
@@ -107,6 +109,16 @@ The other agents differ, because their CLIs do:
   either auto-approves or comes back having done nothing. It therefore
   defaults to `yolo = true`; layer `sandbox = true` on top for agy's own
   terminal restrictions.
+- **opencode** is the same story: its only lever is `--auto`, so it also
+  defaults to `yolo = true`. The granular control lives in opencode's own
+  config rather than in playmaker — and `--auto` still honours it, because it
+  auto-approves only what you have not explicitly denied:
+
+  ```jsonc
+  // ~/.config/opencode/opencode.json
+  { "permission": { "edit": "allow", "bash": "allow", "webfetch": "deny" } }
+  ```
+
 - **gemini** (legacy) runs with `--yolo`.
 
 ## Install
@@ -143,6 +155,7 @@ playmaker agents          # which agent CLIs are reachable
 | **Claude Code** | `npm i -g @anthropic-ai/claude-code` | `--model sonnet` / `opus` / `haiku` |
 | **Codex CLI** | `npm i -g @openai/codex` | the model roster depends on your plan; omit `--model` to use the account default |
 | **Antigravity (`agy`)** | bundled with [Antigravity](https://antigravity.google) | `--model claude-opus-4-6-thinking` — the roster moves, so read it from `agy models` |
+| **opencode** | `brew install sst/tap/opencode` (or see [opencode.ai](https://opencode.ai)) | `--model provider/model`, e.g. `zai-coding-plan/glm-5.2`; roster from `opencode models`, providers from `opencode auth login` |
 | **Gemini CLI** (legacy) | `npm i -g @google/gemini-cli` | still supported, superseded by `agy` |
 
 At least one is required; `playmaker agents` tells you which it can see.
@@ -206,9 +219,11 @@ flowchart LR
     P --> A1["claude -p<br/>--model sonnet"]
     P --> A2["codex exec"]
     P --> A3["agy -p"]
+    P --> A4["opencode run<br/>-m zai-coding-plan/glm-5.2"]
     A1 --> S[("state.db<br/>outputs/ + logs/")]
     A2 --> S
     A3 --> S
+    A4 --> S
     S -->|"list / thread / summary"| C
     S -.->|"batch drained"| N["one ping"]
 ```
@@ -223,6 +238,7 @@ bookkeeping in between.
 ├── agents/           optional agent profile markdown (claude.md, codex.md, agy.md…)
 ├── outputs/          final output per session — .md, or .json if the agent returned JSON
 ├── logs/             subprocess stdout for detached runs
+├── opencode/         pointer per opencode session (its transcript lives in SQLite)
 └── quotas.json       latest capacity snapshot
 ```
 
@@ -234,6 +250,7 @@ and locates the session file the tool writes locally. Empirically:
 | Claude | `~/.claude/projects/<cwd-with-slashes-as-dashes>/<id>.jsonl` |
 | Codex | `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<thread_id>.jsonl` |
 | Antigravity | `~/.gemini/antigravity-cli/brain/<conversation-id>/.system_generated/logs/transcript_full.jsonl` |
+| opencode | SQLite — `~/.local/share/opencode/opencode.db` (`session` / `message` / `part`); playmaker keeps a pointer at `~/.playmaker/opencode/<id>.session` |
 | Gemini | `~/.gemini/tmp/<cwd-basename>/chats/session-<ts>-<short_id>.{json,jsonl}` |
 
 `thread` and `summary` normalize all of them into the same turn list, so every
@@ -248,6 +265,21 @@ than your workspace, so playmaker prepends a workspace preamble to every agy
 dispatch; and a wrong `--model` is a silent failure on both **codex** (reports
 `turn.failed` while exiting 0) and **agy** (runs its default model instead) —
 playmaker turns both into real errors.
+
+**opencode** deserves its own note, because one CLI is many providers. Models
+are `provider/model` strings from `opencode models`, and if you don't pass
+`--model` opencode falls back to the default in *its* config — often whatever
+you last picked interactively. Set the lane's default once:
+
+```toml
+[agents.opencode]
+model = "zai-coding-plan/glm-5.2"
+```
+
+It also has agy's working-directory problem in a different costume: opencode
+reads `process.env.PWD`, which a subprocess `cwd` does not update, so left
+alone it would ignore `--cwd` and write into the directory *you* were standing
+in. playmaker passes `--dir` and fixes up `PWD`, so `--cwd` means what it says.
 
 ## Notifications
 
@@ -294,11 +326,16 @@ Antigravity (agy)
   Gemini weekly     ███████████████████░ 95% left
   Claude/GPT 5h     ██████████████████░░ 90% left  resets in 2h 05m
   Claude/GPT weekly ██████████████░░░░░░ 70% left  resets in 5d 1h
+
+Z.ai (GLM, via opencode)  Max
+  Session     ████████████████████ 100% left
+  Weekly      ███████████████████░ 95% left   resets in 1d 11h
+  MCP tools   ███████████████████░ 99% left   resets in 25d 11h
 ```
 
 The `Weekly` and `Sonnet` rows above are the point: they are **separate
-buckets**. So is every agy row. Routing a subtask is choosing which of them to
-spend.
+buckets**. So is every agy row, and so is the whole Z.ai block. Routing a
+subtask is choosing which of them to spend.
 
 - **Claude** — OAuth usage API; token from the Claude Code Keychain entry.
 - **Codex** — ChatGPT `wham/usage` API; token from `~/.codex/auth.json`.
@@ -309,6 +346,12 @@ spend.
   `retrieveUserQuota` on the Antigravity backend, which surfaces only coarse
   Gemini buckets and is flagged *daemon offline*. Approach ported from
   [steipete/CodexBar](https://github.com/steipete/CodexBar).
+- **Z.ai** — GLM Coding Plan usage API; key from opencode's
+  `~/.local/share/opencode/auth.json` (or `$ZAI_API_KEY`). Reported as its own
+  provider because the quota belongs to the plan, not to opencode — an opencode
+  lane pointed at a local model spends nothing here. Shows *unsupported* rather
+  than an error when no Z.ai credential exists. `MCP tools` is the monthly
+  web-search/reader pool, not inference.
 
 Reading these at *model* granularity is the point: they are the load-balancing
 input the coach skill uses to route each subtask.

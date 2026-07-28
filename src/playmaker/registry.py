@@ -9,6 +9,7 @@ from playmaker.agents.base import AgentHandler
 from playmaker.agents.claude import ClaudeHandler
 from playmaker.agents.codex import CodexHandler
 from playmaker.agents.gemini import GeminiHandler
+from playmaker.agents.opencode import OpencodeHandler
 from playmaker.state import AGENTS_DIR
 
 _HANDLERS: dict[str, AgentHandler] = {
@@ -16,6 +17,7 @@ _HANDLERS: dict[str, AgentHandler] = {
     "codex": CodexHandler(),
     "agy": AgyHandler(),
     "gemini": GeminiHandler(),
+    "opencode": OpencodeHandler(),
 }
 
 
