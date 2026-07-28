@@ -117,6 +117,44 @@ def test_list_batch_returns_only_that_batch_oldest_first(db: Path) -> None:
     assert state.list_batch("nothing") == []
 
 
+def test_list_batch_forgets_a_fan_out_that_was_already_summarised(db: Path) -> None:
+    # A batch label is reusable, so "the batch" means the fan-out that has not
+    # been reported yet — not every session ever tagged with that label.
+    first = state.insert_session(agent="codex", prompt="a", cwd="/r", batch_id="dash")
+    state.claim_batch([first])
+
+    second = state.insert_session(agent="agy", prompt="b", cwd="/r", batch_id="dash")
+
+    assert [r["id"] for r in state.list_batch("dash")] == [second]
+
+
+def test_claim_batch_lets_exactly_one_caller_win(db: Path) -> None:
+    # Each detached dispatch finalises its own batch as it lands, so two
+    # processes can race to report the same fan-out.
+    ids = [
+        state.insert_session(agent=a, prompt="p", cwd="/r", batch_id="dash")
+        for a in ("codex", "agy")
+    ]
+
+    assert state.claim_batch(ids) is True
+    assert state.claim_batch(ids) is False
+
+
+def test_claim_batch_refuses_a_set_that_is_already_partly_claimed(db: Path) -> None:
+    # A partial overlap means someone else's summary covered these sessions;
+    # reporting them again would double-count.
+    first = state.insert_session(agent="codex", prompt="a", cwd="/r", batch_id="dash")
+    second = state.insert_session(agent="agy", prompt="b", cwd="/r", batch_id="dash")
+    state.claim_batch([first])
+
+    assert state.claim_batch([first, second]) is False
+    assert [r["id"] for r in state.list_batch("dash")] == [second]
+
+
+def test_claim_batch_of_nothing_is_not_a_win(db: Path) -> None:
+    assert state.claim_batch([]) is False
+
+
 def test_init_db_migrates_a_database_without_model_and_batch_columns(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -155,3 +193,43 @@ def test_init_db_migrates_a_database_without_model_and_batch_columns(
     assert row["model"] is None
     assert row["batch_id"] is None
     assert state.insert_session(agent="agy", prompt="p", cwd="/r", batch_id="b")
+
+
+def test_init_db_treats_finished_sessions_as_already_summarised(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Reusing a batch label predates this column, so on the upgrade run every
+    # finished session is history: sweeping it into the next fan-out's summary
+    # would report last week's agents alongside today's.
+    home = tmp_path / ".playmaker"
+    home.mkdir()
+    monkeypatch.setattr(state, "PLAYMAKER_HOME", home)
+    monkeypatch.setattr(state, "DB_PATH", home / "state.db")
+    monkeypatch.setattr(state, "LOGS_DIR", home / "logs")
+    monkeypatch.setattr(state, "OUTPUTS_DIR", home / "outputs")
+    monkeypatch.setattr(state, "AGENTS_DIR", home / "agents")
+    legacy = sqlite3.connect(home / "state.db")
+    legacy.execute(
+        """
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, agent TEXT NOT NULL, agent_session_id TEXT,
+            prompt TEXT NOT NULL, cwd TEXT NOT NULL, files TEXT,
+            status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
+            exit_code INTEGER, cost_usd REAL, duration_seconds REAL,
+            output_path TEXT, session_file_path TEXT, parent_id TEXT, pid INTEGER,
+            model TEXT, batch_id TEXT
+        )
+        """
+    )
+    legacy.executemany(
+        "INSERT INTO sessions (id, agent, prompt, cwd, status, started_at, batch_id) VALUES "
+        "(?, 'codex', 'p', '/repo', ?, '2020-01-01T00:00:00', 'dash')",
+        [("old-done", "done"), ("old-running", "running")],
+    )
+    legacy.commit()
+    legacy.close()
+
+    state.init_db()
+
+    # A batch still in flight when the upgrade lands keeps its summary.
+    assert [r["id"] for r in state.list_batch("dash")] == ["old-running"]
