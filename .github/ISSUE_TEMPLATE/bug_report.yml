@@ -24,6 +24,7 @@ body:
         - codex
         - agy (Antigravity)
         - gemini
+        - opencode
         - not agent-specific
     validations:
       required: true

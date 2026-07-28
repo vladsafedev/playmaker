@@ -1,7 +1,7 @@
 # Contributing to playmaker
 
 Thanks for your interest in improving `playmaker` — the playing-coach CLI that
-dispatches sub-tasks to Claude Code, Codex, and Antigravity.
+dispatches sub-tasks to Claude Code, Codex, Antigravity, and opencode.
 
 ## Project layout
 
@@ -10,7 +10,7 @@ The package lives under `src/` (src-layout, `playmaker` package):
 ```
 src/playmaker/
 ├── cli.py        Typer app — every `playmaker <command>` lives here
-├── agents/       per-agent handlers (claude, codex, agy, gemini) + base Protocol
+├── agents/       per-agent handlers (claude, codex, agy, gemini, opencode) + base Protocol
 ├── registry.py   name → handler lookup, profile discovery
 ├── state.py      SQLite-backed session store (~/.playmaker/state.db)
 ├── quotas.py     per-provider capacity probes

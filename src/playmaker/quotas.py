@@ -7,12 +7,15 @@ All providers go through OAuth Bearer tokens; no WebKit, no PTY.
 - Antigravity (agy): ~/.gemini/oauth_creds.json -> daily-cloudcode-pa.googleapis.com
   loadCodeAssist + retrieveUserQuota (ideType ANTIGRAVITY); Gemini buckets only
 - Gemini (retired locally): same creds -> cloudcode-pa.googleapis.com
+- Z.ai (GLM, dispatched via opencode): API key in opencode's auth.json ->
+  api.z.ai/api/monitor/usage/quota/limit
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import shutil
 import ssl
@@ -892,6 +895,162 @@ def _google_code_assist_probe(base_url: str, ide_type: str) -> dict:
     }
 
 
+# ---- Z.ai (GLM) -------------------------------------------------------------
+
+
+_ZAI_QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit"
+
+# Provider ids opencode files a Z.ai credential under, best first.
+_ZAI_PROVIDER_IDS = ("zai-coding-plan", "zai", "z-ai")
+
+# `unit` is a time-unit enum z.ai does not document. Inferred from the
+# nextResetTime values on a live plan (2026-07): unit 3 + number 5 is the
+# documented 5-hour window; unit 6 + number 1 resets inside a week; unit 5 +
+# number 1 inside a month. Unknown units still render, they just lose the
+# forecast — which is the only thing the span is used for.
+_ZAI_UNIT_SECONDS = {3: 3600, 4: 86400, 5: 30 * 86400, 6: 7 * 86400}
+_ZAI_UNIT_NAMES = {3: "hour", 4: "day", 5: "month", 6: "week"}
+
+# (type, unit, number) -> label. "Session"/"Weekly" deliberately match the
+# claude probe's labels so the two providers read as like-for-like in the table.
+_ZAI_WINDOW_LABELS = {
+    ("TOKENS_LIMIT", 3, 5): "Session",
+    ("TOKENS_LIMIT", 6, 1): "Weekly",
+    ("TIME_LIMIT", 5, 1): "MCP tools",
+}
+
+
+def _zai_load_key() -> str | None:
+    """The Z.ai key opencode already stored; playmaker keeps none of its own."""
+    from playmaker.agents.opencode import data_root
+
+    auth = {}
+    try:
+        auth = json.loads((data_root() / "auth.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        auth = {}
+    if isinstance(auth, dict):
+        for provider_id in _ZAI_PROVIDER_IDS:
+            entry = auth.get(provider_id)
+            if isinstance(entry, dict) and entry.get("key"):
+                return str(entry["key"])
+    # opencode configs that inject the key via {env:...} keep it in the
+    # environment instead of auth.json.
+    for var in ("ZAI_API_KEY", "Z_AI_API_KEY", "ZHIPUAI_API_KEY"):
+        value = os.environ.get(var)
+        if value:
+            return value
+    return None
+
+
+def _zai_window_label(limit_type: object, unit: object, number: object) -> str:
+    known = _ZAI_WINDOW_LABELS.get((limit_type, unit, number))  # type: ignore[arg-type]
+    if known:
+        return known
+    unit_name = _ZAI_UNIT_NAMES.get(unit)  # type: ignore[arg-type]
+    if unit_name and isinstance(number, int):
+        return f"{number} {unit_name}{'' if number == 1 else 's'}"
+    return str(limit_type or "quota").replace("_", " ").capitalize()
+
+
+def zai_probe() -> dict:
+    """GLM Coding Plan quota, for work dispatched through `opencode`.
+
+    Verified response on a live plan (2026-07):
+
+        {"code": 200, "success": true, "msg": "Operation successful",
+         "data": {"level": "max", "limits": [
+            {"type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 0},
+            {"type": "TOKENS_LIMIT", "unit": 6, "number": 1, "percentage": 5,
+             "nextResetTime": 1785339213993},
+            {"type": "TIME_LIMIT", "unit": 5, "number": 1, "usage": 4000,
+             "currentValue": 10, "remaining": 3990, "percentage": 1,
+             "nextResetTime": 1787412813994, "usageDetails": [...]}]}}
+
+    `percentage` is percent *used*, `nextResetTime` is epoch ms and is absent
+    until a window has been touched. TIME_LIMIT is the monthly MCP tool pool
+    (search-prime / web-reader / zread), not inference.
+    """
+    key = _zai_load_key()
+    if not key:
+        return {
+            "status": "unsupported",
+            "reason": (
+                "no Z.ai credential — run `opencode auth login` and pick "
+                "Z.AI Coding Plan, or export ZAI_API_KEY"
+            ),
+        }
+
+    resp = _http_json(
+        _ZAI_QUOTA_URL,
+        headers={
+            # z.ai's monitor API takes the raw key; a Bearer prefix 401s.
+            "Authorization": key,
+            "Accept-Language": "en-US,en",
+            "Content-Type": "application/json",
+        },
+    )
+    if resp.get("success") is False or resp.get("code") not in (None, 200):
+        raise RuntimeError(
+            f"z.ai quota error {resp.get('code')}: {resp.get('msg') or '(no message)'}"
+        )
+
+    data = resp.get("data")
+    data = data if isinstance(data, dict) else {}
+    limits = data.get("limits")
+    if not isinstance(limits, list):
+        return {
+            "status": "unsupported",
+            "reason": f"unrecognised quota payload: {str(resp)[:200]}",
+        }
+
+    now = time.time()
+    windows: list[dict] = []
+    for entry in limits:
+        if not isinstance(entry, dict):
+            continue
+        pct_used = entry.get("percentage")
+        if not isinstance(pct_used, (int, float)):
+            continue
+        unit = entry.get("unit")
+        number = entry.get("number")
+        label = _zai_window_label(entry.get("type"), unit, number)
+
+        reset_iso: str | None = None
+        forecast: str | None = None
+        reset_ms = entry.get("nextResetTime")
+        if isinstance(reset_ms, (int, float)):
+            reset_dt = datetime.fromtimestamp(reset_ms / 1000, UTC)
+            reset_iso = reset_dt.isoformat()
+            span = _ZAI_UNIT_SECONDS.get(unit)  # type: ignore[arg-type]
+            if span and isinstance(number, (int, float)):
+                window_seconds = span * float(number)
+                elapsed = max(0.0, window_seconds - (reset_dt.timestamp() - now))
+                forecast = _forecast_label(float(pct_used), window_seconds, elapsed)
+
+        windows.append(
+            {
+                "name": label,
+                "pct_left": max(0, min(100, int(round(100 - float(pct_used))))),
+                "reset_at_iso": reset_iso,
+                "reset_relative": _format_relative(reset_iso),
+                # Short windows churn too fast to pace — same call the claude
+                # probe makes for its own Session row.
+                "forecast": forecast if label != "Session" else None,
+                "reserve_pct": None,
+            }
+        )
+
+    level = data.get("level")
+    return {
+        "status": "ok",
+        # The monitor API returns no identity, only the plan level.
+        "account_email": None,
+        "tier": str(level).capitalize() if level else None,
+        "windows": windows,
+    }
+
+
 # ---- Aggregator -------------------------------------------------------------
 
 
@@ -901,6 +1060,7 @@ PROBES = {
     "codex": codex_probe,
     "claude": claude_probe,
     "agy": antigravity_probe,
+    "zai": zai_probe,
 }
 
 

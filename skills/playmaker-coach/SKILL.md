@@ -1,11 +1,11 @@
 ---
 name: playmaker-coach
-description: Playing-coach orchestration of Claude/Codex/Antigravity (agy) sub-agents via the `playmaker` CLI and in-session Task sub-agents. Triggered when the user gives a complex multi-component task where decomposition gives >2x parallel speedup (e.g. "build admin dashboard with schema, backend, FE, tests, docs"). NOT triggered for single-file refactor, single bug fix, single component, or simple Q&A — those stay in this thread without delegation.
+description: Playing-coach orchestration of Claude/Codex/Antigravity (agy)/opencode sub-agents via the `playmaker` CLI and in-session Task sub-agents. Triggered when the user gives a complex multi-component task where decomposition gives >2x parallel speedup (e.g. "build admin dashboard with schema, backend, FE, tests, docs"). NOT triggered for single-file refactor, single bug fix, single component, or simple Q&A — those stay in this thread without delegation.
 ---
 
 # playmaker-coach — playing-coach orchestration
 
-Use the `playmaker` CLI as a facade to dispatch sub-tasks to Codex / Antigravity (`agy`) / a sibling Claude, monitor them, read their threads, review their diffs, and feed back. The coach (this thread) does its own portion of the work in parallel.
+Use the `playmaker` CLI as a facade to dispatch sub-tasks to Codex / Antigravity (`agy`) / opencode / a sibling Claude, monitor them, read their threads, review their diffs, and feed back. The coach (this thread) does its own portion of the work in parallel.
 
 > **`agy` (Antigravity CLI)** does not only serve Google models: alongside the Gemini Flash and Pro tiers, `agy models` carries **Claude Sonnet and Opus** and a **GPT-OSS** mid-tier. Opus via agy runs on *Google's* quota pool — top-tier Claude work that does not touch the Anthropic subscription's scarce Opus weekly bucket: `--model claude-opus-4-6-thinking`.
 >
@@ -23,7 +23,7 @@ All Claude work — coach, internal sub-agents, external `claude -p` — draws f
 
 3. **External dispatch — `playmaker dispatch <agent>`.** Separate OS processes, tracked in playmaker (`list`/`watch`/`thread`/`continue`):
    - **`claude -p` (sibling Claude):** same subscription. Its key lever is the model bucket — **Sonnet is a separate weekly bucket from Opus**, usually idle while Opus depletes, so default **`--model sonnet`** to spare the scarce Opus bucket (**`--model haiku`** for trivial mechanical work). It **can write files** — playmaker runs it in `acceptEdits`, so it edits and runs commands freely inside `--cwd` and is refused outside it (see §10). Use it over an internal sub-agent when you want a **tracked, detached work-stream** you can monitor/continue independently of the coach's turn.
-   - **`codex` / `agy`:** each on its own subscription/quota — the right home for **write-heavy** parallel implementation that can leave the Anthropic subscription. `agy` is special: besides Gemini tiers it carries **Claude Sonnet/Opus 4.6 (Thinking)** on Google's pool, so even "must be Claude-quality" work can leave the Anthropic quota.
+   - **`codex` / `agy` / `opencode`:** each on its own subscription/quota — the right home for **write-heavy** parallel implementation that can leave the Anthropic subscription. `agy` is special: besides Gemini tiers it carries **Claude Sonnet/Opus 4.6 (Thinking)** on Google's pool, so even "must be Claude-quality" work can leave the Anthropic quota. `opencode` is the widest lane: one CLI over ~75 providers, addressed as `provider/model` — a GLM coding plan (`zai-coding-plan/glm-5.2`), or a model running locally on this machine, which spends **no** subscription quota at all.
 
 **Routing cheat-sheet for Claude-side work:**
 
@@ -32,8 +32,10 @@ All Claude work — coach, internal sub-agents, external `claude -p` — draws f
 | writes files and the coach integrates the result directly | **internal sub-agent** (Task tool) | in-session, write-capable, returns into context |
 | is an independent stream you'll monitor / continue separately | **external `dispatch claude --model sonnet`** | tracked & detached; Sonnet's own weekly bucket spares Opus |
 | is heavy reasoning only the coach can do | **coach** | top-tier Opus, serial |
-| is write-heavy and can leave Claude | **codex / agy** | their own quotas |
+| is write-heavy and can leave Claude | **codex / agy / opencode** | their own quotas |
 | needs top-tier Claude but the Anthropic Opus weekly is precious | **`dispatch agy --model claude-opus-4-6-thinking`** | Opus quality on Google's pool |
+| is bulk work and every subscription is running low | **`dispatch opencode --model zai-coding-plan/glm-5.2`** | a separate GLM plan, untouched by the others |
+| is mechanical and privacy-sensitive, or all quotas are spent | **`dispatch opencode --model <local provider>/<model>`** | runs on this machine; costs no quota, just wall-clock |
 
 **Sonnet is your cheap parallel Claude worker** — a separate weekly bucket that usually sits idle while Opus depletes. Reach for it (via `dispatch claude --model sonnet`, or by pointing an internal sub-agent at Sonnet) instead of burning Opus on mid-tier work.
 
@@ -61,6 +63,7 @@ playmaker quotas --refresh          # current capacity, broken out per model
 - Claude: two non-coach ways to run it — an **internal sub-agent** (Task tool; in-session, write-capable, result returns to the coach) and an **external `claude -p` dispatch** (tracked, detached stream). Both draw on the subscription; the difference is where results land, not cost. See "Execution lanes". Default external Claude to `--model sonnet` — its weekly bucket is separate from Opus and usually idle, so it spares the scarce coach (Opus) bucket.
 - Antigravity (`agy`): one Google pool split across model families — Gemini Flash tiers for cheap bulk work, Gemini 3.1 Pro for hard Gemini work, **Claude Sonnet/Opus 4.6 (Thinking)** as Anthropic-quality capacity that spends *Google's* quota, GPT-OSS 120B as a spare mid-tier. `playmaker quotas` shows the **full categorized breakdown** — `Gemini 5h` / `Gemini weekly` and `Claude/GPT 5h` / `Claude/GPT weekly`. Two things share a bucket: all Gemini models draw the Gemini bucket, and Claude *and* GPT-OSS share the Claude/GPT bucket. So dispatching Opus 4.6 via agy spends the same `Claude/GPT` bucket as Sonnet or GPT-OSS — watch the `Claude/GPT 5h` window when fanning out several agy-Claude jobs. (This needs agy's local daemon up — normally true when any agy process is running; if `playmaker quotas` tags agy "daemon offline" it fell back to a coarse Gemini-only view.)
 - Codex: top-tier vs lighter modes (where applicable).
+- Z.ai (GLM): shown as its own provider because the plan is what has the quota, not the CLI — `Session` (5h) and `Weekly` windows plus a monthly `MCP tools` pool that only web-search/reader calls touch. It appears whenever `opencode auth login` has a Z.AI credential, and reads *unsupported* when it doesn't. An `opencode` dispatch pointed at a **local** model spends none of it, so local lanes never show up in this table at all.
 
 If `quotas.json` is more than 1h old (or shows errors), say so before relying on the numbers.
 
@@ -159,6 +162,8 @@ Two exceptions to "always pass `--model`":
 - **codex** — its model roster depends on the account plan, and an unavailable name fails the whole dispatch (`codex turn failed: … not supported when using Codex with a ChatGPT account`). Omitting `--model` uses whatever that account actually has, which is usually what you want.
 - **agy** — its own default is a top-tier model, so omitting `--model` on a dispatch meant to be cheap silently spends the expensive bucket. Always pass it here.
 
+**opencode is `provider/model`, and the default is a trap.** Names look like `zai-coding-plan/glm-5.2` or `lmstudio/qwen/qwen3-coder-30b` — **run `opencode models` and copy a line** rather than writing one from memory; playmaker validates against that roster and fails the dispatch on a name it doesn't contain. Omitting `--model` does *not* fall back to something sensible: it uses whatever is set in the user's own `~/.config/opencode/opencode.json`, which is typically the last model they picked interactively — often a small local one. So for opencode, always pass `--model` unless `[agents.opencode] model` is already set in `~/.playmaker/config.toml`.
+
 **agy prompt discipline:** the agy agent's shell lives in a private scratch directory, not the workspace. playmaker automatically prepends a workspace preamble to every agy dispatch, but reinforce it: word file instructions with paths relative to the workspace root or absolute paths, never "in the current directory".
 
 **Bad-model handling (playmaker ≥0.4 does this for you):** a wrong `--model` is the classic silent failure. Codex returns a `turn.failed` while exiting 0 with empty output; agy silently runs its *default* model instead of erroring. playmaker catches both — a codex model/auth failure raises `codex turn failed: …`, and an unknown agy model raises with the valid roster before dispatch. So a dispatch that comes back **failed** with a model message means: fix the `--model` string (for agy, copy it exactly from `agy models`) and re-dispatch. Don't retry the same string.
@@ -230,7 +235,7 @@ If `playmaker dispatch` returns an error (binary missing, auth bad, agent unavai
 Both Claude lanes are on the subscription, so pick by **where the work lives**, not cost:
 - **Coach folds the result in directly → internal sub-agent (Task tool).** In-session, write-capable, returns into context. Default choice for "more Claude."
 - **Independent stream you'll monitor / continue separately → `playmaker dispatch claude --model sonnet`.** Tracked, detached; Sonnet's separate weekly bucket spares Opus.
-- **Work that can leave the Claude family → Codex / agy** (their own quotas).
+- **Work that can leave the Claude family → Codex / agy / opencode** (their own quotas, or none at all for a local model).
 
 If a dispatch comes back with zero file changes, check `playmaker summary <id>`. Two common causes for Claude: the subtask tried to write outside `--cwd` and was refused (re-dispatch with the right `--cwd`), or the run needed a permission the configured mode doesn't grant — a "I need your permission" answer, not a crash. For **agy** specifically, a "done" with no file changes usually means the files landed in agy's private scratch dir (`~/.gemini/antigravity-cli/scratch/`) — the prompt referred to "the current directory" instead of workspace paths; re-dispatch with explicit paths.
 
@@ -244,7 +249,7 @@ If a dispatch comes back with zero file changes, check `playmaker summary <id>`.
 ## Quota awareness
 
 - **Read Claude quota at model granularity:** Sonnet weekly and Opus weekly are **independent buckets**. Coach and internal sub-agents on Opus spend the scarce one; Sonnet usually sits idle. Push mid-tier work to Sonnet (an internal sub-agent set to Sonnet, or `dispatch claude --model sonnet`) to spare Opus.
-- Read quotas at *model* granularity, not *agent* granularity. For agy, the probe reports four windows — `Gemini 5h/weekly` and `Claude/GPT 5h/weekly`; for Codex, top-tier vs lighter modes.
+- Read quotas at *model* granularity, not *agent* granularity. For agy, the probe reports four windows — `Gemini 5h/weekly` and `Claude/GPT 5h/weekly`; for Codex, top-tier vs lighter modes; for opencode, the quota is reported under the **provider** it is pointed at (`Z.ai`), and a local model reports nothing because it spends nothing.
 - Skip a *model* if its `*_left` is below ~10%; reroute the subtask to the same agent with a different model, or to a different agent entirely.
 - If a top-tier `weekly_*_left` is degrading toward the deadline, push as much work as possible to mid- and cheap-tier models on the same provider (which are often nowhere near depleted), instead of switching providers blindly.
 - agy's **5-hour** window is the one that bites during a fan-out: it "smooths aggregate demand", so a burst of agy dispatches drains `Gemini 5h` or `Claude/GPT 5h` well before the weekly. If a 5h window is low, spread the burst or move some slices to Codex/coach.
@@ -269,7 +274,7 @@ playmaker watch                                 # Rich live TUI of sessions
 
 Every command takes `--json` for machine-readable output.
 
-`--model NAME` is forwarded to the agent's native CLI: `claude --model sonnet`, `agy --model claude-opus-4-6-thinking`, `codex -m <whatever that account has>`. Without it the agent CLI uses its own default. Model is stored on the session row, so detached re-runs and `continue` inherit it; `continue --model X` overrides for that one turn.
+`--model NAME` is forwarded to the agent's native CLI: `claude --model sonnet`, `agy --model claude-opus-4-6-thinking`, `codex -m <whatever that account has>`, `opencode -m zai-coding-plan/glm-5.2`. Without it the agent CLI uses its own default. Model is stored on the session row, so detached re-runs and `continue` inherit it; `continue --model X` overrides for that one turn.
 
 **The agy roster is not documented here on purpose** — it changes with Antigravity releases, and so does the spelling convention. Run `agy models` and copy a line. At the time of writing it returns bare slugs in the shape `gemini-3.6-flash-{low,medium,high}`, `gemini-3.1-pro-{low,high}`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium` — but treat that as an example of the *shape*, not a list to copy from.
 
