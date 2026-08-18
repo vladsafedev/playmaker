@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Ollama in the quota table.** `playmaker quotas` now carries an `ollama`
+  provider for work dispatched through `opencode -m ollama/<tag>`. It is an
+  availability signal rather than a quota: `ok` at 100% with the pulled chat
+  models listed when the daemon is up and a completion-capable model is
+  present; `unsupported` — naming the exact `ollama pull` to run — when Ollama
+  is down or holds only embedding models, so an idle daemon with
+  `nomic-embed-text` never reads as free 27B capacity. Models are classified by
+  `/api/show` `capabilities`, not by name. The renderer for the provider
+  shipped in 0.7.2 ahead of the probe.
+
 ## [0.7.2] - 2026-08-18
 
 ### Fixed

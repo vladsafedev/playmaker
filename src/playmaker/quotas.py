@@ -9,6 +9,8 @@ All providers go through OAuth Bearer tokens; no WebKit, no PTY.
 - Gemini (retired locally): same creds -> cloudcode-pa.googleapis.com
 - Z.ai (GLM, dispatched via opencode): API key in opencode's auth.json ->
   api.z.ai/api/monitor/usage/quota/limit
+- Ollama (local, also via opencode): no quota to fetch — localhost:11434
+  /api/tags is an availability probe reporting unmetered capacity
 """
 
 from __future__ import annotations
@@ -1088,6 +1090,120 @@ def zai_probe() -> dict:
     }
 
 
+# ---- Ollama (local, unmetered) ----------------------------------------------
+
+# Ollama's own API, not the OpenAI-compatible /v1 shim that opencode dispatches
+# through: /api/tags is the cheapest liveness check and names what is actually
+# pulled on this machine.
+def _ollama_base_url() -> str:
+    """OLLAMA_HOST as the daemon itself reads it — the scheme is optional."""
+    host = os.environ.get("OLLAMA_HOST", "").strip() or "127.0.0.1:11434"
+    if not host.startswith(("http://", "https://")):
+        host = f"http://{host}"
+    return host.rstrip("/")
+
+
+def _ollama_can_chat(base: str, name: str) -> bool:
+    """True if /api/show lists a text-generation capability for this model.
+
+    Unknown or unreadable capabilities count as chat-capable: an older daemon
+    that predates the field should not hide every model it serves.
+    """
+    try:
+        info = _http_json(
+            f"{base}/api/show", method="POST", body={"model": name}, timeout=3.0
+        )
+    except (urllib.error.URLError, OSError, RuntimeError, json.JSONDecodeError):
+        return True
+    caps = info.get("capabilities")
+    if not isinstance(caps, list):
+        return True
+    return "completion" in caps
+
+
+def ollama_probe() -> dict:
+    """Local inference capacity, dispatched via `opencode -m ollama/<tag>`.
+
+    This is an availability signal, not a quota. Every other provider here
+    reports a bucket that depletes and refills; local Ollama has no bucket —
+    work sent to it costs nothing from any subscription pool. So the honest
+    report is "100% left, never resets", and that is precisely its value to the
+    coach: overflow capacity that absorbs junior-tier fan-out while the metered
+    pools stay reserved for work that needs them.
+
+    Read the ceiling as hardware, not entitlement — and read it as narrow. Fan-out
+    width is whatever OLLAMA_NUM_PARALLEL allows, and every concurrent slot wants
+    its own KV cache out of the same unified memory the weights already sit in, so
+    a 27B q4 on 36GB has room for very few. Treat this as a shallow queue next to
+    the cloud providers' real parallelism, not as equivalent capacity.
+
+    `models` lists what is pulled so the coach routes to a tag that exists rather
+    than guessing one — and the tag decides the engine, not just the weights:
+    Ollama sends GGUF builds to llama.cpp and safetensors builds to MLX, which on
+    Apple Silicon is the faster path.
+    """
+    base = _ollama_base_url()
+    try:
+        # A local daemon answers in milliseconds or not at all; this probe must
+        # never be the slow one in refresh_all.
+        resp = _http_json(f"{base}/api/tags", timeout=3.0)
+    except (urllib.error.URLError, OSError, RuntimeError, json.JSONDecodeError) as exc:
+        if shutil.which("ollama") is None:
+            return {
+                "status": "unsupported",
+                "reason": "ollama not installed — https://ollama.com/download",
+            }
+        return {
+            "status": "unsupported",
+            "reason": (
+                f"ollama daemon unreachable at {base} "
+                f"({type(exc).__name__}) — start it with `ollama serve`"
+            ),
+        }
+
+    pulled = sorted(
+        str(entry.get("name"))
+        for entry in (resp.get("models") or [])
+        if isinstance(entry, dict) and entry.get("name")
+    )
+
+    # Only a model that can *chat* is dispatch capacity. Embedding-only models
+    # (mxbai, nomic, …) live in the same store and would otherwise make an idle
+    # Ollama look like a free 27B — the coach would route work at nothing.
+    # /api/show reports `capabilities` (["completion", "tools", …] vs
+    # ["embedding"]); one local POST per model, milliseconds each.
+    models = [name for name in pulled if _ollama_can_chat(base, name)]
+
+    if not models:
+        return {
+            "status": "unsupported",
+            "reason": (
+                "ollama up, but no chat model pulled — connector is dormant. "
+                "Activate with `ollama pull qwen3.8:27b-mlx` (~18GB, MLX engine); "
+                "the opencode provider and this probe pick it up on the next refresh."
+                + (f" Pulled but embedding-only: {', '.join(pulled)}." if pulled else "")
+            ),
+        }
+
+    return {
+        "status": "ok",
+        "account_email": None,
+        "tier": "unmetered",
+        "windows": [
+            {
+                "name": "Local",
+                "pct_left": 100,
+                "reset_at_iso": None,
+                "reset_relative": None,
+                "forecast": "Unmetered — bounded by memory, not entitlement",
+                "reserve_pct": None,
+            }
+        ],
+        "source": "local",
+        "models": models,
+    }
+
+
 # ---- Aggregator -------------------------------------------------------------
 
 
@@ -1098,6 +1214,7 @@ PROBES = {
     "claude": claude_probe,
     "agy": antigravity_probe,
     "zai": zai_probe,
+    "ollama": ollama_probe,
 }
 
 
