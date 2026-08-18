@@ -612,39 +612,48 @@ def gemini_probe() -> dict:
 _ANTIGRAVITY_QUOTA_SUMMARY_PATH = (
     "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
 )
-_ANTIGRAVITY_PROC_NAMES = ("agy", "language_server")
+# `pgrep -f` regexes over the full command line. The agy one is anchored so a
+# process whose *arguments* merely mention agy — playmaker's own dispatch, with
+# its `--log-file .../playmaker-agy-*.log` — doesn't count as the daemon.
+_ANTIGRAVITY_PROC_PATTERNS = (r"(^|/)agy( |$)", r"language_server")
 
 
 def _antigravity_daemon_ports() -> list[int]:
     """Local TCP ports that a running agy/language_server daemon is listening on."""
     pids: set[int] = set()
-    for name in _ANTIGRAVITY_PROC_NAMES:
+    for pattern in _ANTIGRAVITY_PROC_PATTERNS:
         try:
             proc = subprocess.run(
-                ["pgrep", "-f", name], capture_output=True, text=True, timeout=5
+                ["pgrep", "-f", pattern], capture_output=True, text=True, timeout=5
             )
         except (OSError, subprocess.SubprocessError):
             continue
         for line in proc.stdout.split():
             if line.isdigit():
                 pids.add(int(line))
+    if not pids:
+        return []
+    # `-a` ANDs lsof's selectors. Without it they are ORed, and the listing is
+    # every LISTEN socket on the machine — Steam, chromedriver, whatever else
+    # sits on 127.0.0.1 — so the probe went knocking on strangers' ports.
+    try:
+        proc = subprocess.run(
+            [
+                "lsof", "-nP", "-a",
+                "-p", ",".join(str(pid) for pid in sorted(pids)),
+                "-iTCP", "-sTCP:LISTEN",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
     ports: set[int] = set()
-    for pid in pids:
-        try:
-            proc = subprocess.run(
-                ["lsof", "-nP", "-p", str(pid), "-iTCP", "-sTCP:LISTEN"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-        except (OSError, subprocess.SubprocessError):
-            continue
-        for line in proc.stdout.splitlines():
-            m = re.search(r"127\.0\.0\.1:(\d+)", line)
-            if m:
-                port = int(m.group(1))
-                if port != 5432:  # skip an unrelated Postgres LISTEN
-                    ports.add(port)
+    for line in proc.stdout.splitlines():
+        m = re.search(r"127\.0\.0\.1:(\d+)", line)
+        if m:
+            ports.add(int(m.group(1)))
     return sorted(ports)
 
 
@@ -664,12 +673,19 @@ def _antigravity_local_summary(ports: list[int], timeout: float = 5.0) -> dict |
                 method="POST",
                 headers={"Content-Type": "application/json", "Connect-Protocol-Version": "1"},
             )
+            # Whatever a port says, it only ever disqualifies that port. Not
+            # every refusal is an OSError: a TLS-only listener answers a
+            # plaintext POST with a TLS alert record, which urllib raises as
+            # http.client.BadStatusLine — an HTTPException that used to escape
+            # this loop and sink the whole probe.
             try:
                 with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
-            except (urllib.error.URLError, ssl.SSLError, OSError, json.JSONDecodeError):
+                if not isinstance(data, dict):
+                    continue
+                payload = data.get("response") or data.get("summary") or data
+            except Exception:
                 continue
-            payload = data.get("response") or data.get("summary") or data
             if isinstance(payload, dict) and payload.get("groups"):
                 return payload
     return None
@@ -756,29 +772,36 @@ def antigravity_probe() -> dict:
     back to the OAuth retrieveUserQuota, which only surfaces coarse Gemini daily
     buckets (source: "remote") — the Claude/GPT windows are simply not available
     to a plain OAuth token. The local path needs a running agy/CodexBar daemon.
+
+    The local path is a bonus, so it degrades to remote rather than to an
+    error: whatever goes wrong there — a stray listener, a daemon mid-start,
+    a payload we don't recognise — the user still gets a quota row.
     """
-    ports = _antigravity_daemon_ports()
-    if ports:
-        payload = _antigravity_local_summary(ports)
+    windows: list[dict] = []
+    try:
+        ports = _antigravity_daemon_ports()
+        payload = _antigravity_local_summary(ports) if ports else None
         if payload:
             windows = _antigravity_windows_from_summary(payload)
-            if windows:
-                out = {
-                    "status": "ok",
-                    "account_email": None,
-                    "tier": None,
-                    "windows": windows,
-                    "source": "local",
-                }
-                # Enrich email/tier from the cheap OAuth loadCodeAssist call;
-                # never let that failure sink the rich local windows.
-                try:
-                    meta = _antigravity_account_meta()
-                    out["account_email"] = meta.get("email")
-                    out["tier"] = meta.get("tier")
-                except Exception:
-                    pass
-                return out
+    except Exception:
+        windows = []
+    if windows:
+        out = {
+            "status": "ok",
+            "account_email": None,
+            "tier": None,
+            "windows": windows,
+            "source": "local",
+        }
+        # Enrich email/tier from the cheap OAuth loadCodeAssist call;
+        # never let that failure sink the rich local windows.
+        try:
+            meta = _antigravity_account_meta()
+            out["account_email"] = meta.get("email")
+            out["tier"] = meta.get("tier")
+        except Exception:
+            pass
+        return out
 
     result = _google_code_assist_probe(_ANTIGRAVITY_CLOUDCODE_BASE, "ANTIGRAVITY")
     result["source"] = "remote"

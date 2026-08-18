@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The Antigravity quota probe knocked on every port on the machine, and one
+  of them answered in TLS.** `playmaker quotas` had shown
+  `Antigravity (agy) error: BadStatusLine` for a week: the daemon lookup ran
+  `lsof -p <pid> -iTCP -sTCP:LISTEN` without `-a`, and lsof ORs its selectors
+  unless told otherwise — so "agy's listening sockets" was actually every
+  LISTEN socket on the box (hence the old `!= 5432` Postgres carve-out). The
+  probe then POSTed the quota RPC to Steam, chromedriver, a Logi plugin, …
+  until a TLS-only listener sorted below agy's ports answered a plaintext
+  request with a TLS alert record. urllib raises that as
+  `http.client.BadStatusLine`, which is not an `OSError`, so it escaped the
+  per-port `except`, escaped `antigravity_probe`, and the aggregator recorded
+  the whole provider as an error — with the working local daemon two ports
+  away. lsof now gets `-a` (one call, all pids), the `pgrep` for `agy` is
+  anchored so playmaker's own dispatches with `playmaker-agy-*.log` in their
+  arguments don't count as the daemon, anything a port says only disqualifies
+  that port, and any failure on the local path falls back to the remote
+  Gemini-only probe rather than to `error`. The refresh also stopped spending
+  ~30 s in timeouts on strangers' ports (1.3 s now).
+
 ## [0.7.0] - 2026-08-05
 
 ### Fixed

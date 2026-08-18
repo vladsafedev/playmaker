@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import http.client
+import json
 import sys
 from pathlib import Path
 
@@ -98,3 +100,110 @@ def test_local_summary_returns_none_when_no_port_answers(monkeypatch) -> None:
     monkeypatch.setattr(quotas.urllib.request, "urlopen", boom)
 
     assert quotas._antigravity_local_summary([49999]) is None
+
+
+class _Response:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+def test_local_summary_skips_a_port_that_does_not_speak_http(monkeypatch) -> None:
+    # A TLS-only listener answers a plaintext POST with a TLS alert record;
+    # urllib surfaces that as http.client.BadStatusLine, which is not an
+    # OSError. It disqualifies that port — it must not sink the probe.
+    tls_alert = "\x15\x03\x03\x00\x02\x022"
+
+    def urlopen(req, timeout=None, context=None):
+        if ":50652/" in req.full_url:
+            if req.full_url.startswith("https"):
+                raise TimeoutError("The read operation timed out")
+            raise http.client.BadStatusLine(tls_alert)
+        return _Response(json.dumps({"response": _SUMMARY}).encode())
+
+    monkeypatch.setattr(quotas.urllib.request, "urlopen", urlopen)
+
+    assert quotas._antigravity_local_summary([50652, 51802]) == _SUMMARY
+
+
+def test_local_summary_ignores_a_port_that_answers_non_object_json(monkeypatch) -> None:
+    def urlopen(req, timeout=None, context=None):
+        return _Response(b"[]")
+
+    monkeypatch.setattr(quotas.urllib.request, "urlopen", urlopen)
+
+    assert quotas._antigravity_local_summary([49999]) is None
+
+
+def test_daemon_ports_lists_only_the_daemon_sockets(monkeypatch) -> None:
+    # lsof ORs its selectors unless told otherwise, so `-p PID -iTCP` without
+    # `-a` is every LISTEN socket on the machine — that is how the probe ended
+    # up POSTing to Steam and chromedriver. The lookup must AND them and ask
+    # for exactly the pids pgrep found.
+    calls: list[list[str]] = []
+
+    class _Proc:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+            self.returncode = 0
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[0] == "pgrep":
+            return _Proc("8577\n" if "agy" in cmd[-1] else "")
+        assert cmd[0] == "lsof"
+        return _Proc(
+            "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n"
+            "agy 8577 me 10u IPv4 0x1 0t0 TCP 127.0.0.1:51802 (LISTEN)\n"
+            "agy 8577 me 11u IPv4 0x2 0t0 TCP 127.0.0.1:51803 (LISTEN)\n"
+        )
+
+    monkeypatch.setattr(quotas.subprocess, "run", run)
+
+    assert quotas._antigravity_daemon_ports() == [51802, 51803]
+    lsof = [c for c in calls if c[0] == "lsof"]
+    assert len(lsof) == 1
+    assert "-a" in lsof[0]
+    assert lsof[0][lsof[0].index("-p") + 1] == "8577"
+
+
+def test_daemon_ports_is_empty_without_a_daemon(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    class _Proc:
+        stdout = ""
+        returncode = 1
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        return _Proc()
+
+    monkeypatch.setattr(quotas.subprocess, "run", run)
+
+    assert quotas._antigravity_daemon_ports() == []
+    # No pids → no lsof at all (an unfiltered lsof is the whole-machine listing).
+    assert all(c[0] == "pgrep" for c in calls)
+
+
+def test_antigravity_probe_falls_back_to_remote_when_the_local_path_blows_up(
+    monkeypatch,
+) -> None:
+    def boom():
+        raise http.client.BadStatusLine("\x15\x03\x03\x00\x02\x022")
+
+    monkeypatch.setattr(quotas, "_antigravity_daemon_ports", boom)
+    remote = {"status": "ok", "windows": [{"name": "Flash", "pct_left": 100}]}
+    monkeypatch.setattr(quotas, "_google_code_assist_probe", lambda base_url, ide_type: remote)
+
+    result = quotas.antigravity_probe()
+
+    assert result["status"] == "ok"
+    assert result["source"] == "remote"
