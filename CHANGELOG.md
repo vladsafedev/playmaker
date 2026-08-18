@@ -37,6 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is simply absent from the response on a current plan; nothing to do, it just
   stops appearing.
 
+- **The coach skill named a stale GLM model and lied about where the opencode
+  default lives.** The skill ships in the wheel, so its facts are the coach's
+  facts. It routed bulk work to `zai-coding-plan/glm-5.2` when the plan's
+  current flagship is `glm-5.3`, described the Z.ai quota as token windows plus
+  a monthly `MCP tools` pool (the windows are credits now; the pool is gone),
+  and told the coach that omitting `--model` falls back to whatever
+  `~/.config/opencode/opencode.json` names. That last one sends you looking in
+  the wrong file: opencode keeps the interactively-picked default in its own
+  state, not in that config, so a machine with no `model` key there still
+  resolves to something — and the only way to see what an unqualified dispatch
+  will run is the `providerID`/`modelID` on a past session in `opencode.db`.
+
 - **`--model` for agy validated against the wrong column.** agy 1.1.14 prints
   `agy models` as `<slug>\t<Display Name>` after a `Fetching available
   models...` line; the roster was read as whole lines, so every real slug was
