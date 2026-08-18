@@ -936,7 +936,15 @@ _ZAI_UNIT_NAMES = {3: "hour", 4: "day", 5: "month", 6: "week"}
 
 # (type, unit, number) -> label. "Session"/"Weekly" deliberately match the
 # claude probe's labels so the two providers read as like-for-like in the table.
+#
+# z.ai renamed the inference windows TOKENS_LIMIT -> CREDIT_LIMIT when the plans
+# moved to weekly Credits (observed 2026-08 on a Pro plan; the same account read
+# TOKENS_LIMIT in 2026-07). Both spellings stay mapped: an unrecognised type
+# still renders, but as the bare span ("5 hours"), which breaks the like-for-
+# like reading against the claude rows.
 _ZAI_WINDOW_LABELS = {
+    ("CREDIT_LIMIT", 3, 5): "Session",
+    ("CREDIT_LIMIT", 6, 1): "Weekly",
     ("TOKENS_LIMIT", 3, 5): "Session",
     ("TOKENS_LIMIT", 6, 1): "Weekly",
     ("TIME_LIMIT", 5, 1): "MCP tools",
@@ -979,16 +987,22 @@ def _zai_window_label(limit_type: object, unit: object, number: object) -> str:
 def zai_probe() -> dict:
     """GLM Coding Plan quota, for work dispatched through `opencode`.
 
-    Verified response on a live plan (2026-07):
+    Verified response on a live Pro plan (2026-08):
 
         {"code": 200, "success": true, "msg": "Operation successful",
-         "data": {"level": "max", "limits": [
-            {"type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 0},
-            {"type": "TOKENS_LIMIT", "unit": 6, "number": 1, "percentage": 5,
-             "nextResetTime": 1785339213993},
-            {"type": "TIME_LIMIT", "unit": 5, "number": 1, "usage": 4000,
-             "currentValue": 10, "remaining": 3990, "percentage": 1,
-             "nextResetTime": 1787412813994, "usageDetails": [...]}]}}
+         "data": {"level": "pro", "limits": [
+            {"type": "CREDIT_LIMIT", "unit": 3, "number": 5, "usage": 12000,
+             "currentValue": 21, "remaining": 11978, "percentage": 1,
+             "nextResetTime": 1787084800394},
+            {"type": "CREDIT_LIMIT", "unit": 6, "number": 1, "usage": 60000,
+             "currentValue": 21, "remaining": 59978, "percentage": 1,
+             "nextResetTime": 1787671183998}]}}
+
+    Two things moved since 2026-07: the inference windows are typed
+    CREDIT_LIMIT rather than TOKENS_LIMIT (`usage` is the plan's credit
+    allowance — 12k per 5h / 60k per week on Pro), and the monthly TIME_LIMIT
+    pool for MCP tools no longer appears at all. Older accounts may still send
+    the previous shape, so both are mapped.
 
     `percentage` is percent *used*, `nextResetTime` is epoch ms and is absent
     until a window has been touched. TIME_LIMIT is the monthly MCP tool pool

@@ -163,3 +163,56 @@ def test_the_environment_is_a_fallback_for_env_injected_configs(monkeypatch, tmp
 
     assert result["status"] == "ok"
     assert seen["headers"]["Authorization"] == "sk-from-env"
+
+
+# The same endpoint on a live Pro plan, 2026-08. z.ai renamed the inference
+# windows TOKENS_LIMIT -> CREDIT_LIMIT when plans moved to weekly Credits, and
+# stopped returning the monthly TIME_LIMIT pool altogether.
+_PAYLOAD_CREDITS = {
+    "code": 200,
+    "msg": "Operation successful",
+    "success": True,
+    "data": {
+        "level": "pro",
+        "limits": [
+            {
+                "type": "CREDIT_LIMIT",
+                "unit": 3,
+                "number": 5,
+                "usage": 12000,
+                "currentValue": 21,
+                "remaining": 11978,
+                "percentage": 1,
+                "nextResetTime": 1787084800394,
+            },
+            {
+                "type": "CREDIT_LIMIT",
+                "unit": 6,
+                "number": 1,
+                "usage": 60000,
+                "currentValue": 21,
+                "remaining": 59978,
+                "percentage": 1,
+                "nextResetTime": 1787671183998,
+            },
+        ],
+    },
+}
+
+
+def test_credit_limit_windows_read_like_the_token_ones(monkeypatch, keyed) -> None:
+    """The rename must not demote the rows to bare spans ("5 hours"/"1 week").
+
+    The labels are shared with the claude probe on purpose, so the two providers
+    line up in the table; an unmapped type still renders but loses that.
+    """
+    _respond(monkeypatch, _PAYLOAD_CREDITS)
+
+    result = quotas.zai_probe()
+
+    assert result["status"] == "ok"
+    assert result["tier"] == "Pro"
+    assert [(w["name"], w["pct_left"]) for w in result["windows"]] == [
+        ("Session", 99),
+        ("Weekly", 99),
+    ]

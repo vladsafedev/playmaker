@@ -26,6 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   When the lookup fails, the error now names the executable it actually tried
   and where the setting came from, instead of insisting it is "not on PATH".
 
+- **The Z.ai windows lost their names when z.ai renamed them.** `playmaker
+  quotas` had started printing the GLM rows as `5 hours` and `1 week` instead
+  of `Session` and `Weekly`: the plans moved to weekly Credits and the API now
+  types the inference windows `CREDIT_LIMIT` where it sent `TOKENS_LIMIT` in
+  July, so the label lookup missed and fell back to rendering the bare span.
+  The labels are shared with the claude probe on purpose — the two providers
+  are meant to read like-for-like down the table — so the fallback quietly cost
+  the comparison. Both spellings are mapped now. The monthly `MCP tools` pool
+  is simply absent from the response on a current plan; nothing to do, it just
+  stops appearing.
+
 - **`--model` for agy validated against the wrong column.** agy 1.1.14 prints
   `agy models` as `<slug>\t<Display Name>` after a `Fetching available
   models...` line; the roster was read as whole lines, so every real slug was
