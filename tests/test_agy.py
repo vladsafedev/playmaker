@@ -110,6 +110,34 @@ def test_validate_model_skips_when_roster_unavailable(monkeypatch) -> None:
     handler._validate_model("Anything At All")
 
 
+def test_available_models_takes_the_slug_column(monkeypatch) -> None:
+    # agy 1.1.14 prints a progress line and then `<slug>\t<Display Name>`;
+    # `--model` wants the slug. Older builds printed the bare slug — same
+    # first token, so both shapes parse.
+    import playmaker.agents.agy as agy_mod
+
+    class _Proc:
+        returncode = 0
+        stdout = (
+            "Fetching available models...\n"
+            "gemini-3.7-flash-high\tGemini 3.7 Flash (High)\n"
+            "claude-opus-4-6-thinking\tClaude Opus 4.6 (Thinking)\n"
+            "gpt-oss-120b-medium\n"
+        )
+
+    monkeypatch.setattr(agy_mod.shutil, "which", lambda name: "/usr/local/bin/agy")
+    monkeypatch.setattr(agy_mod.subprocess, "run", lambda *a, **kw: _Proc())
+    AgyHandler.available_models.cache_clear()
+    try:
+        assert AgyHandler.available_models() == (
+            "gemini-3.7-flash-high",
+            "claude-opus-4-6-thinking",
+            "gpt-oss-120b-medium",
+        )
+    finally:
+        AgyHandler.available_models.cache_clear()
+
+
 def test_find_session_file_prefers_full_transcript(tmp_path: Path, monkeypatch) -> None:
     import playmaker.agents.agy as agy_mod
 

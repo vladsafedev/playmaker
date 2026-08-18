@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
-from playmaker.config import agent_setting
+from playmaker.config import agent_binary, agent_setting
 
 CODEX_SESSIONS_ROOT = Path("~/.codex/sessions").expanduser()
 
@@ -44,7 +44,7 @@ class CodexHandler:
     name = "codex"
 
     def is_available(self) -> bool:
-        return shutil.which("codex") is not None
+        return shutil.which(agent_binary("codex")) is not None
 
     def dispatch(
         self,
@@ -62,7 +62,7 @@ class CodexHandler:
             last_msg_path = Path(tmp.name)
 
         cmd = [
-            "codex",
+            agent_binary("codex"),
             "exec",
             "--json",
             "--skip-git-repo-check",
@@ -226,7 +226,7 @@ class CodexHandler:
 
         # `codex exec resume` has no --cd; cwd flows through subprocess.
         cmd = [
-            "codex",
+            agent_binary("codex"),
             "exec",
             "resume",
             "--json",

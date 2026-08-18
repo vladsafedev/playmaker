@@ -37,7 +37,7 @@ import time
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
-from playmaker.config import agent_setting, yolo_enabled
+from playmaker.config import agent_binary, agent_setting, yolo_enabled
 
 AGY_BRAIN_ROOT = Path("~/.gemini/antigravity-cli/brain").expanduser()
 
@@ -51,7 +51,7 @@ class AgyHandler:
     name = "agy"
 
     def is_available(self) -> bool:
-        return shutil.which("agy") is not None
+        return shutil.which(agent_binary("agy")) is not None
 
     @staticmethod
     @functools.lru_cache(maxsize=1)
@@ -63,18 +63,25 @@ class AgyHandler:
         Cached per-process; returns () if the roster can't be read (then we skip
         validation rather than block a dispatch on a probe failure).
         """
-        if shutil.which("agy") is None:
+        if shutil.which(agent_binary("agy")) is None:
             return ()
         try:
             proc = subprocess.run(
-                ["agy", "models"], capture_output=True, text=True, timeout=15
+                [agent_binary("agy"), "models"],
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
         except (OSError, subprocess.SubprocessError):
             return ()
         if proc.returncode != 0:
             return ()
+        # `agy models` output is columnar: "<slug>\t<Display Name>" (older
+        # releases printed the bare slug only) — the slug is the first token.
         return tuple(
-            line.strip() for line in proc.stdout.splitlines() if line.strip()
+            line.split()[0]
+            for line in proc.stdout.splitlines()
+            if line.strip() and not line.startswith("Fetching")
         )
 
     def _validate_model(self, model: str | None) -> None:
@@ -146,7 +153,7 @@ class AgyHandler:
         os.close(fd_log)
         log_path = Path(log_name)
 
-        cmd = ["agy", "-p", full_prompt, "--log-file", str(log_path)]
+        cmd = [agent_binary("agy"), "-p", full_prompt, "--log-file", str(log_path)]
         if conversation_id:
             cmd += ["--conversation", conversation_id]
         # agy has no middle tier: unlike claude there is no per-mode permission

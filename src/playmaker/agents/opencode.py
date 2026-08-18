@@ -36,7 +36,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
-from playmaker.config import agent_setting, yolo_enabled
+from playmaker.config import agent_binary, agent_setting, yolo_enabled
 from playmaker.state import PLAYMAKER_HOME
 
 
@@ -55,7 +55,7 @@ class OpencodeHandler:
     name = "opencode"
 
     def is_available(self) -> bool:
-        return shutil.which("opencode") is not None
+        return shutil.which(agent_binary("opencode")) is not None
 
     @staticmethod
     @functools.lru_cache(maxsize=1)
@@ -67,11 +67,14 @@ class OpencodeHandler:
         per-process; () if the roster can't be read (then validation is skipped
         rather than blocking a dispatch on a probe failure).
         """
-        if shutil.which("opencode") is None:
+        if shutil.which(agent_binary("opencode")) is None:
             return ()
         try:
             proc = subprocess.run(
-                ["opencode", "models"], capture_output=True, text=True, timeout=15
+                [agent_binary("opencode"), "models"],
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
         except (OSError, subprocess.SubprocessError):
             return ()
@@ -157,7 +160,7 @@ class OpencodeHandler:
         # directory from process.env.PWD, which Popen(cwd=…) leaves pointing at
         # the parent. Without it a dispatch writes into whatever directory the
         # coach happened to be in. We set both and let them agree.
-        cmd = ["opencode", "run", "--format", "json", "--dir", str(cwd)]
+        cmd = [agent_binary("opencode"), "run", "--format", "json", "--dir", str(cwd)]
         if session_id:
             cmd += ["-s", session_id]
         if effective_model:

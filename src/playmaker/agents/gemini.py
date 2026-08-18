@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
+from playmaker.config import agent_binary
 
 GEMINI_CHATS_ROOT = Path("~/.gemini/tmp").expanduser()
 
@@ -29,7 +30,7 @@ class GeminiHandler:
     name = "gemini"
 
     def is_available(self) -> bool:
-        return shutil.which("gemini") is not None
+        return shutil.which(agent_binary("gemini")) is not None
 
     def dispatch(
         self,
@@ -48,7 +49,7 @@ class GeminiHandler:
         """
         full_prompt = self._build_prompt(prompt, files or [])
         cmd = [
-            "gemini",
+            agent_binary("gemini"),
             "-p",
             full_prompt,
             "-o",
@@ -150,7 +151,7 @@ class GeminiHandler:
 
         full_prompt = self._build_prompt(prompt, files or [])
         cmd = [
-            "gemini",
+            agent_binary("gemini"),
             "--resume",
             str(index),
             "-p",
@@ -220,7 +221,7 @@ class GeminiHandler:
             "  <N>. <title> (<age>) [<uuid>]"
         """
         proc = subprocess.run(
-            ["gemini", "--list-sessions"],
+            [agent_binary("gemini"), "--list-sessions"],
             cwd=str(cwd),
             capture_output=True,
             text=True,

@@ -282,6 +282,18 @@ reads `process.env.PWD`, which a subprocess `cwd` does not update, so left
 alone it would ignore `--cwd` and write into the directory *you* were standing
 in. playmaker passes `--dir` and fixes up `PWD`, so `--cwd` means what it says.
 
+And it is the agent most likely to need `binary`, which every lane accepts:
+
+```toml
+[agents.opencode]
+binary = "~/.opencode/bin/opencode"
+```
+
+A bare name is resolved on `PATH`; a path is used as-is. opencode installs to
+`~/.opencode/bin`, which reaches `PATH` only via a line in an interactive
+`.zshrc` — so a dispatch from cron, an editor, or the coach can't find it
+otherwise, and playmaker would report the agent as unavailable.
+
 ## Notifications
 
 Every detached dispatch pings when it finishes. With

@@ -17,7 +17,12 @@ import subprocess
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
-from playmaker.config import agent_list_setting, agent_setting, yolo_enabled
+from playmaker.config import (
+    agent_binary,
+    agent_list_setting,
+    agent_setting,
+    yolo_enabled,
+)
 
 # What a sub-agent is allowed to do without a human at the keyboard.
 # Verified against claude 2.x in `-p` mode:
@@ -53,7 +58,7 @@ class ClaudeHandler:
     name = "claude"
 
     def is_available(self) -> bool:
-        return shutil.which("claude") is not None
+        return shutil.which(agent_binary("claude")) is not None
 
     def dispatch(
         self,
@@ -76,7 +81,7 @@ class ClaudeHandler:
         # `--verbose` is required by claude-cli when stream-json is used
         # without partial-messages; without it we get a parse-time refusal.
         cmd = [
-            "claude",
+            agent_binary("claude"),
             "-p",
             "--output-format",
             "stream-json",
@@ -185,7 +190,7 @@ class ClaudeHandler:
     ) -> DispatchResult:
         full_prompt = self._build_prompt(prompt, files or [])
         cmd = [
-            "claude",
+            agent_binary("claude"),
             "-p",
             "--resume",
             agent_session_id,

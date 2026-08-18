@@ -158,7 +158,7 @@ def dispatch(
     state.init_db()
     handler = get_handler(agent)
     if not handler.is_available():
-        err_console.print(f"[red]agent {agent!r} binary not found on PATH[/red]")
+        err_console.print(_unavailable(agent))
         raise typer.Exit(1)
 
     cwd_resolved = cwd.expanduser().resolve()
@@ -414,7 +414,7 @@ def continue_(
 
     handler = get_handler(parent["agent"])
     if not handler.is_available():
-        err_console.print(f"[red]agent {parent['agent']!r} binary not found on PATH[/red]")
+        err_console.print(_unavailable(parent["agent"]))
         raise typer.Exit(1)
 
     cwd_resolved = (cwd or Path(parent["cwd"])).expanduser().resolve()
@@ -845,10 +845,13 @@ def _render_provider(name: str, info: dict) -> None:
         "agy": "green",
         "gemini": "cyan",
         "zai": "yellow",
+        "ollama": "bright_cyan",
     }.get(name, "white")
-    display = {"agy": "Antigravity (agy)", "zai": "Z.ai (GLM, via opencode)"}.get(
-        name, name.capitalize()
-    )
+    display = {
+        "agy": "Antigravity (agy)",
+        "zai": "Z.ai (GLM, via opencode)",
+        "ollama": "Ollama (local, via opencode)",
+    }.get(name, name.capitalize())
     title = f"[bold {label_color}]{display}[/bold {label_color}]"
     suffix_parts: list[str] = []
     if info.get("account_email"):
@@ -895,6 +898,12 @@ def _render_provider(name: str, info: dict) -> None:
         if right_parts:
             line += f"   [dim]{'  ·  '.join(right_parts)}[/dim]"
         console.print(line)
+
+    # A local provider has models where the metered ones have tiers; naming them
+    # saves the coach a round-trip to `ollama list` before it can route here.
+    models = info.get("models")
+    if models:
+        console.print(f"  [dim]models: {', '.join(models)}[/dim]")
 
     # Metered overage pool ("Extra usage" in Claude's UI) — the bucket that
     # holds usage-credit / Agent-SDK spend. monthly_limit/used arrive in cents.
@@ -943,6 +952,19 @@ def agents() -> None:
     console.print(table)
 
 
+def _unavailable(agent: str) -> str:
+    """Why a dispatch is refused, naming the executable we actually looked for.
+
+    Without the name this reads as "not on PATH" even when the config points
+    `binary` at a path that simply does not exist.
+    """
+    from playmaker.config import agent_binary
+
+    executable = agent_binary(agent)
+    hint = "" if executable == agent else f" (agents.{agent}.binary in {state.CONFIG_PATH})"
+    return f"[red]agent {agent!r}: {executable!r} not found{hint}[/red]"
+
+
 def _status_icon(status: str) -> str:
     return {
         "pending": "[yellow]pending[/yellow]",
@@ -965,6 +987,12 @@ editor = "Zed"
 
 # How much each sub-agent may do while nobody is watching. A detached agent
 # cannot answer a permission prompt, so every agent needs *some* answer here.
+#
+# `binary` is the executable playmaker launches for that agent. A bare name is
+# resolved on PATH; an absolute path (~ allowed) is used as-is. Reach for the
+# path form when the CLI installs somewhere only an interactive shell knows
+# about — opencode's ~/.opencode/bin is added by a line in .zshrc, so a cron or
+# editor-spawned dispatch cannot find it otherwise.
 
 [agents.claude]
 binary = "claude"

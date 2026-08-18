@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tomllib
 from functools import lru_cache
 from typing import Any
@@ -22,6 +23,24 @@ def load_config() -> dict[str, Any]:
 def agent_setting(agent: str, key: str, default: Any = None) -> Any:
     """Look up [agents.<agent>] <key>, falling back to `default`."""
     return load_config().get("agents", {}).get(agent, {}).get(key, default)
+
+
+def agent_binary(agent: str) -> str:
+    """The executable to launch for this agent.
+
+    `[agents.<agent>] binary` when set, else the agent's own name. A bare name
+    and an absolute path both work: every call site feeds this to `shutil.which`
+    or straight to `subprocess`, and `which` returns a path containing a
+    separator as-is. `~` is expanded here because these CLIs install under the
+    home directory often enough — opencode lands in ~/.opencode/bin, which only
+    an interactive shell puts on PATH, so a non-interactive dispatch (cron, an
+    editor-spawned run, the coach) cannot find it without this setting.
+    """
+    value = agent_setting(agent, "binary")
+    if value is None:
+        return agent
+    text = os.path.expanduser(str(value).strip())
+    return text or agent
 
 
 def setting(section: str, key: str, default: Any = None) -> Any:

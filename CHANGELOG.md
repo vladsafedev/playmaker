@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`[agents.<name>] binary` was documented, written into every config `init`
+  produced, and read by nothing.** All five handlers hardcoded the executable —
+  `shutil.which("opencode")` for the availability check, `cmd = ["opencode", …]`
+  for the dispatch — so a config pointing at an absolute path or an alternate
+  build changed exactly nothing, and the agent still had to be on `PATH` under
+  its own name. That is the wrong assumption for how these CLIs install:
+  opencode lands in `~/.opencode/bin`, which reaches `PATH` only through a line
+  in an interactive `.zshrc`, so every non-interactive dispatch — cron, an
+  editor-spawned run, the coach itself — reported the agent unavailable unless
+  you'd worked around it with a symlink. The setting is now honoured everywhere
+  an executable is named: `is_available()`, both dispatch and resume, and the
+  roster probes (`agy models`, `opencode models`, `gemini --list-sessions`). A
+  bare name still resolves on `PATH`; an absolute path is used as-is and a
+  leading `~` is expanded, since subprocess does no shell expansion of its own.
+  When the lookup fails, the error now names the executable it actually tried
+  and where the setting came from, instead of insisting it is "not on PATH".
+
+- **`--model` for agy validated against the wrong column.** agy 1.1.14 prints
+  `agy models` as `<slug>\t<Display Name>` after a `Fetching available
+  models...` line; the roster was read as whole lines, so every real slug was
+  rejected as unknown. Only the first token counts now (older builds printed
+  the bare slug — same first token).
+
 ## [0.7.1] - 2026-08-18
 
 ### Fixed
