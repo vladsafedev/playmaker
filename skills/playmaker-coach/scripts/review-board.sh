@@ -13,7 +13,9 @@
 #                                (default: .playmaker/reviews/<wp>/spec.md)
 #   --gate "CMD"                 the acceptance command reviewers must re-run
 #   --impl-agent LANE            lane that implemented the WP; it is excluded from reviewing
-#   --round N                    review round number (default: 1). Round >1 diffs the delta.
+#   --round N                    review round number (default: 1). The diff is always against
+#                                <base-ref>, so a later round is cumulative unless you commit
+#                                round 1 and pass that commit as the base.
 #   --dry-run                    print the prompts and the dispatches, run nothing
 #
 # Reviewer roster comes from the first of these that exists:
@@ -49,7 +51,11 @@ if [[ "${1:-}" == "--collect" ]]; then
       pending=$((pending + 1))
       continue
     fi
-    out=$(playmaker get "$id" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("output") or d.get("final") or "")')
+    out=$(playmaker get "$id" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("output") or d.get("final") or "")') \
+      || { note "! $lane/$lens ($id): could not read the session output — retry --collect"; continue; }
+    # Parse into a temp file and only then publish it: a reviewer that answers in prose must not
+    # leave a zero-byte verdict-*.json behind, or every later --collect chokes on it.
+    tmp="$dir/.verdict-$lane-$lens.partial"
     # tolerate a fenced or prose-wrapped object: take the outermost {...}
     printf '%s' "$out" | python3 -c '
 import json, re, sys
@@ -62,8 +68,9 @@ try:
 except json.JSONDecodeError:
     sys.exit(1)
 json.dump(obj, sys.stdout, indent=2, ensure_ascii=False)
-' > "$dir/verdict-$lane-$lens.json" 2>/dev/null \
-      || { note "! $lane/$lens ($id): did not return the JSON contract — re-prompt once, then drop"; continue; }
+' > "$tmp" 2>/dev/null \
+      || { rm -f "$tmp"; note "! $lane/$lens ($id): did not return the JSON contract — re-prompt once, then drop"; continue; }
+    mv "$tmp" "$dir/verdict-$lane-$lens.json"
     note "✓ $dir/verdict-$lane-$lens.json"
   done < "$dir/sessions.txt"
   [[ $pending -eq 0 ]] || note "$pending reviewer(s) still running"
@@ -75,8 +82,12 @@ import glob, json, os, sys
 d = sys.argv[1]
 rows = []
 for path in sorted(glob.glob(os.path.join(d, "verdict-*.json"))):
-    with open(path) as fh:
-        v = json.load(fh)
+    try:
+        with open(path) as fh:
+            v = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        print(f"  [!] {os.path.basename(path)} is not readable JSON — ignored")
+        continue
     for f in v.get("findings", []):
         if f.get("severity") == "blocking":
             rows.append((v.get("reviewer", os.path.basename(path)), f))
@@ -162,7 +173,13 @@ for entry in "${roster[@]}"; do
     echo "THE DIFF UNDER REVIEW (paths are relative to the repo root, $cwd):"
     echo "  .playmaker/reviews/$wp/$(basename "$patch")"
     echo "Read that patch, and read the files it touches in their current state."
-    [[ "$round" -gt 1 ]] && echo "This is round $round: the patch contains ONLY the delta since the previous round. Do not re-litigate code outside it."
+    if [[ "$round" -gt 1 ]]; then
+      echo "This is round $round. The patch is the work package as it stands now, including the fixes"
+      echo "made after the previous round — it is a diff against $base, not a delta. Check that the"
+      echo "previous findings were actually fixed and whether the fixes introduced new problems;"
+      echo "do not re-open settled points. (For a true delta, commit after round 1 and pass that"
+      echo "commit as the base-ref.)"
+    fi
     echo
     echo "YOUR LENS: $lens"
     case "$lens" in
