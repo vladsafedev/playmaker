@@ -10,3 +10,5 @@ dist/
 build/
 .claude/
 .smoke/
+# review-board.sh writes its patches, prompts and verdicts here
+.playmaker/

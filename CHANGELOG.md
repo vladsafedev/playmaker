@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The coach skill is a protocol plus references, and it ships a review board.**
+  `SKILL.md` was a 315-line monolith that cost 35 KB of context to activate,
+  which is its own argument against activating it. It is now a ~200-line
+  protocol, with the lanes, quota rules, per-agent traps, prompt templates and
+  command surface moved into `references/` and read on demand.
+
+- **`scripts/review-board.sh` — automatic multi-agent review of a work package.**
+  It snapshots the WP's diff, builds one refute-the-implementation prompt per
+  reviewer (distinct lens each: correctness, contracts, risk, conventions),
+  dispatches them `--read-only` under a single `--batch`, and collects their
+  verdicts as JSON with `--collect`. The roster comes from
+  `.playmaker/reviewers.conf` (repo) or `~/.playmaker/reviewers.conf` (global),
+  keyed by risk class, so which lanes review what is configuration rather than
+  something the coach improvises each round. The implementing lane is excluded
+  with `--impl-agent`.
+
+- **Policy overlay.** The coach reads `./.playmaker/policy.md` then
+  `~/.playmaker/policy.md` before planning, and lets them override the skill's
+  defaults — which quotas to spare, which lanes are contended, what juniors may
+  never touch in this repo, which commands are the acceptance gates. Personal
+  routing rules used to survive only as local edits to the installed
+  `SKILL.md`, which made upgrading the bundled skill destructive.
+
 - **Write-task no-change detection.** Every dispatch and continuation now takes
   a before/after working-tree snapshot: git directories compare porcelain
   state plus `HEAD`, while ordinary directories use a bounded mtime walk. A
@@ -18,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and answer-only work.
 
 ### Changed
+
+- **The skill's activation threshold is much lower.** It used to require 3+
+  independent work-streams and a >2x parallel speedup, which read as "not this
+  task" for most real requests; it now activates on any code change spanning
+  more than one file, anything that deserves an independent review pass, or any
+  request with two parallelizable parts — a single reviewed work package is an
+  expected shape, not overhead.
 
 - **`no_changes` is terminal but not success.** It appears as a warning in
   watch and list filtering, pings immediately with the failure sound even in

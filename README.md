@@ -169,12 +169,45 @@ reviewing it is cheap — lives in
 that ships with the package:
 
 ```bash
-playmaker skill install     # ~/.claude/skills/playmaker-coach/SKILL.md
+playmaker skill install     # ~/.claude/skills/playmaker-coach/
 ```
 
-Then give any Claude Code session a multi-component task and it activates:
-proposes a split with per-model quota rationale, waits for your approval, fans
-out, and reviews what comes back.
+Then give any Claude Code session a task that changes code and it activates:
+proposes a split into work packages with per-model quota rationale, waits for
+your approval, fans out, and — this is the second half of the loop — puts every
+resulting diff through a **review board** before it lands.
+
+The skill installs as a directory: `SKILL.md` is the protocol, `references/`
+holds the parts the coach loads on demand, and `scripts/review-board.sh` is the
+review fan-out.
+
+### The review board
+
+Reviewing a diff carefully is the most expensive thing a coach can do with its
+own context, and it has an objective output — findings with evidence. So it is
+delegated too. One command snapshots the work package's diff, hands it to
+independent reviewer agents on different lanes (each with a distinct lens:
+correctness, contracts, risk, conventions), and asks each to *refute* the
+implementation against its acceptance criteria:
+
+```bash
+review-board.sh <wp> <base-ref> --risk normal --gate "npm run typecheck" --impl-agent codex
+review-board.sh --collect <wp>
+```
+
+Reviewers run `--read-only` and return a fixed JSON verdict — severity, file,
+line, and a concrete failure scenario per finding. The coach reads verdicts
+rather than code, arbitrates, and sends a numbered fix list back into the
+implementer's live session with `playmaker continue`. Which lanes review which
+risk class is configuration, in `.playmaker/reviewers.conf`.
+
+### Policy lives outside the skill
+
+Before planning, the coach reads `./.playmaker/policy.md` (repo) and
+`~/.playmaker/policy.md` (personal) and lets them override the skill's defaults
+— which quotas to spare, which lanes are contended, what juniors may never
+touch in this repo, which commands are the acceptance gates. Keep your own
+rules there and `playmaker skill install --force` stays a safe upgrade.
 
 ## Commands
 
