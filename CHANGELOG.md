@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`skill install` copies the whole skill directory.** The bundled skill has
+  outgrown a single file — `references/` the coach reads on demand, `scripts/`
+  it runs — and install only ever copied `SKILL.md`, so none of that reached
+  `~/.claude/skills`. It now walks the bundle, keeps the executable bit on
+  scripts, and deletes nothing the bundle does not own, so `--force` is an
+  upgrade rather than a reset of whatever you keep alongside it.
+
 - **The coach skill is a protocol plus references, and it ships a review board.**
   `SKILL.md` was a 315-line monolith that cost 35 KB of context to activate,
   which is its own argument against activating it. It is now a ~200-line

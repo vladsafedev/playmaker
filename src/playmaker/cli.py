@@ -95,7 +95,8 @@ def skill_install(
     force: bool = typer.Option(False, "--force", help="overwrite an existing copy"),
 ) -> None:
     """Copy the playmaker-coach skill into your Claude Code skills directory."""
-    source = _bundled_skill_dir() / "SKILL.md"
+    source_dir = _bundled_skill_dir()
+    source = source_dir / "SKILL.md"
     if not source.exists():
         err_console.print(f"[red]bundled skill not found at {source}[/red]")
         raise typer.Exit(1)
@@ -103,14 +104,25 @@ def skill_install(
     target_dir = dest.expanduser() / SKILL_NAME
     target = target_dir / "SKILL.md"
     if target.exists() and not force:
-        err_console.print(
-            f"[yellow]{target} already exists[/yellow] — pass --force to overwrite"
-        )
+        err_console.print(f"[yellow]{target} already exists[/yellow] — pass --force to overwrite")
         raise typer.Exit(1)
 
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-    console.print(f"[green]installed[/green] {target}")
+    # The skill is a directory, not a file: SKILL.md holds the protocol, references/ the parts the
+    # coach loads on demand, scripts/ the review fan-out. Copy files in, but never delete anything
+    # already there — a user's own additions alongside the bundle are theirs to keep.
+    written = 0
+    for src in sorted(p for p in source_dir.rglob("*") if p.is_file()):
+        if "__pycache__" in src.parts or src.name == ".DS_Store":
+            continue
+        dst = target_dir / src.relative_to(source_dir)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
+        dst.chmod(src.stat().st_mode & 0o777)  # keep the +x on bundled scripts
+        written += 1
+
+    console.print(f"[green]installed[/green] {target_dir} [dim]({written} files)[/dim]")
+    console.print("  Personal routing rules belong in ~/.playmaker/policy.md, not in SKILL.md —")
+    console.print("  the skill reads it at plan time, so --force never clobbers your policy.")
     console.print("  Start a new Claude Code session and give it a multi-part task.")
 
 

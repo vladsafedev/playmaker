@@ -26,6 +26,27 @@ def test_skill_install_writes_the_skill(tmp_path: Path) -> None:
     assert (tmp_path / SKILL_NAME / "SKILL.md").is_file()
 
 
+def test_skill_install_brings_references_and_scripts(tmp_path: Path) -> None:
+    runner.invoke(app, ["skill", "install", "--dir", str(tmp_path)])
+    installed = tmp_path / SKILL_NAME
+
+    assert (installed / "references" / "review-board.md").is_file()
+    script = installed / "scripts" / "review-board.sh"
+    assert script.is_file()
+    assert script.stat().st_mode & 0o111, "bundled scripts must stay executable"
+
+
+def test_skill_install_force_keeps_files_the_bundle_does_not_own(tmp_path: Path) -> None:
+    runner.invoke(app, ["skill", "install", "--dir", str(tmp_path)])
+    mine = tmp_path / SKILL_NAME / "references" / "my-team-policy.md"
+    mine.write_text("mine", encoding="utf-8")
+
+    result = runner.invoke(app, ["skill", "install", "--dir", str(tmp_path), "--force"])
+
+    assert result.exit_code == 0
+    assert mine.read_text(encoding="utf-8") == "mine"
+
+
 def test_skill_install_refuses_to_clobber_without_force(tmp_path: Path) -> None:
     runner.invoke(app, ["skill", "install", "--dir", str(tmp_path)])
     target = tmp_path / SKILL_NAME / "SKILL.md"
