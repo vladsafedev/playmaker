@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`playmaker quotas` keeps itself fresh.** The snapshot in `quotas.json` is
+  re-probed automatically once it is older than `[quotas] max_age` (default
+  5m), and the header now prints how old the numbers are. A stale table was
+  worse than no table: the coach quotes it when it decides where to send work,
+  and nothing warned that "62% left" was four days old. `--refresh` still
+  probes on demand and `--cached` prints the stored snapshot without probing.
+
 - **`skill install` copies the whole skill directory.** The bundled skill has
   outgrown a single file — `references/` the coach reads on demand, `scripts/`
   it runs — and install only ever copied `SKILL.md`, so none of that reached

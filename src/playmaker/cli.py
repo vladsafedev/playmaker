@@ -8,13 +8,14 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from playmaker import __version__, notify, state, watcher
+from playmaker import __version__, config, notify, state, watcher
 from playmaker.registry import get_handler
 
 app = typer.Typer(
@@ -882,18 +883,74 @@ def watch() -> None:
     watcher.run()
 
 
+DEFAULT_QUOTAS_MAX_AGE = "5m"
+
+
+def _parse_duration(value: object, fallback: float) -> float:
+    """'90s' / '5m' / '1h' / a bare number of seconds -> seconds."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value or "").strip().lower()
+    if not text:
+        return fallback
+    units = {"s": 1, "m": 60, "h": 3600}
+    factor = units.get(text[-1])
+    try:
+        return float(text[:-1]) * factor if factor else float(text)
+    except ValueError:
+        return fallback
+
+
+def _quotas_age_seconds(path: Path) -> float | None:
+    """How old the cached snapshot is, by its own `fetched_at`; None if unreadable."""
+    try:
+        stamp = json.loads(path.read_text(encoding="utf-8")).get("fetched_at")
+        fetched = datetime.fromisoformat(str(stamp))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if fetched.tzinfo is None:
+        fetched = fetched.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - fetched).total_seconds()
+
+
+def _humanize_age(seconds: float) -> str:
+    if seconds < 90:
+        return f"{int(seconds)}s ago"
+    if seconds < 5400:
+        return f"{int(seconds / 60)}m ago"
+    if seconds < 172800:
+        return f"{seconds / 3600:.1f}h ago"
+    return f"{int(seconds / 86400)}d ago"
+
+
 @app.command()
 def quotas(
-    refresh: bool = typer.Option(False, "--refresh", help="re-run probes before printing"),
+    refresh: bool = typer.Option(False, "--refresh", help="probe now, whatever the cache says"),
+    cached: bool = typer.Option(
+        False, "--cached", help="print the stored snapshot without probing, however old it is"
+    ),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Show ~/.playmaker/quotas.json. With --refresh, run probes first."""
+    """Show current capacity per provider and model.
+
+    The snapshot in ~/.playmaker/quotas.json is refreshed automatically once it is
+    older than `[quotas] max_age` (default 5m) — routing decisions made off a stale
+    table are worse than no table at all. `--refresh` probes now; `--cached` never
+    probes.
+    """
     state.init_db()
-    if refresh or not state.QUOTAS_PATH.exists():
+    max_age = _parse_duration(
+        config.setting("quotas", "max_age", DEFAULT_QUOTAS_MAX_AGE),
+        _parse_duration(DEFAULT_QUOTAS_MAX_AGE, 300.0),
+    )
+    age = _quotas_age_seconds(state.QUOTAS_PATH) if state.QUOTAS_PATH.exists() else None
+    stale = age is None or age > max_age
+    if refresh or (stale and not cached):
         from playmaker import quotas as quotas_mod
 
         try:
             quotas_mod.refresh_all(state.QUOTAS_PATH)
+            age = _quotas_age_seconds(state.QUOTAS_PATH)
         except Exception as exc:
             err_console.print(f"[red]quota refresh failed at the top level:[/red] {exc}")
     if not state.QUOTAS_PATH.exists():
@@ -907,7 +964,14 @@ def quotas(
 
     data = json.loads(text)
     fetched = data.get("fetched_at", "?")
-    console.print(f"[dim]fetched: {fetched}[/dim]")
+    age = _quotas_age_seconds(state.QUOTAS_PATH)
+    if age is None:
+        suffix = ""
+    elif age > max_age:
+        suffix = f"  [yellow]({_humanize_age(age)} — stale, probes did not run)[/yellow]"
+    else:
+        suffix = f" [dim]({_humanize_age(age)})[/dim]"
+    console.print(f"[dim]fetched: {fetched}[/dim]{suffix}")
     for name, info in (data.get("providers") or {}).items():
         console.print()
         _render_provider(name, info)
@@ -1079,6 +1143,12 @@ def _change_json_fields(row: dict) -> dict:
 
 _DEFAULT_CONFIG = """\
 # playmaker config
+[quotas]
+# `playmaker quotas` re-probes automatically once the stored snapshot is older
+# than this — a routing decision made off a stale table is worse than no table.
+# Probing costs a few seconds; raise it if you call quotas in a tight loop.
+max_age = "5m"
+
 [notifications]
 on_complete = true
 on_fail = true
