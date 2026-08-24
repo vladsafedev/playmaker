@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Write-task no-change detection.** Every dispatch and continuation now takes
+  a before/after working-tree snapshot: git directories compare porcelain
+  state plus `HEAD`, while ordinary directories use a bounded mtime walk. A
+  successful write task that changed zero paths is stored as `no_changes`,
+  with the count and snapshot hashes available from `get`/`summary` and JSON.
+  `--expect-changes` forces the check; `--read-only` suppresses it for recon
+  and answer-only work.
+
+### Changed
+
+- **`no_changes` is terminal but not success.** It appears as a warning in
+  watch and list filtering, pings immediately with the failure sound even in
+  a batch, and makes the batch report its agent as `⚠ no_changes` rather than
+  counting it among the completed workers.
+
+- **`summary --json` now wraps turns in `summary`.** Snapshot diagnostics share
+  the object with the former bare turn list, so JSON consumers should read
+  `summary` for the messages.
+
 ## [0.8.0] - 2026-08-18
 
 ### Added

@@ -151,6 +151,16 @@ def dispatch(
         "Per-dispatch success pings are suppressed; one summary fires when the "
         "whole batch finishes. Failures still ping immediately.",
     ),
+    expect_changes: bool | None = typer.Option(
+        None,
+        "--expect-changes",
+        help="mark this as a write task even if the prompt heuristic does not",
+    ),
+    read_only: bool | None = typer.Option(
+        None,
+        "--read-only",
+        help="disable the write-task check for recon or answer-only work",
+    ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Run an agent non-interactively. Detached by default — prints session id
@@ -162,6 +172,7 @@ def dispatch(
         raise typer.Exit(1)
 
     cwd_resolved = cwd.expanduser().resolve()
+    explicit_expectation = _expectation_from_flags(expect_changes, read_only)
     sid = state.insert_session(
         agent=agent,
         prompt=prompt,
@@ -170,6 +181,7 @@ def dispatch(
         parent_id=parent,
         model=model,
         batch_id=batch,
+        expect_changes=state.expects_changes(prompt, explicit_expectation),
     )
 
     if sync:
@@ -205,6 +217,8 @@ def _run_dispatch(sid: str) -> None:
     handler = get_handler(row["agent"])
     cwd = Path(row["cwd"])
     files = [Path(p) for p in json.loads(row["files"] or "[]")]
+    before_snapshot = state.take_working_tree_snapshot(cwd)
+    state.update_session(sid, pre_tree_hash=before_snapshot.tree_hash)
 
     def _on_session_started(agent_session_id: str) -> None:
         # Persist the id immediately so other commands (`get`, `thread`) can
@@ -234,6 +248,7 @@ def _run_dispatch(sid: str) -> None:
                 model=model,
             )
     except Exception as exc:
+        before_snapshot.cleanup()
         state.update_session(sid, status="failed", finished_at=state.now_iso(), exit_code=1)
         err_console.print(f"[red]dispatch failed:[/red] {exc}")
         # Failures always ping immediately and loudly (Basso), even inside a
@@ -248,31 +263,51 @@ def _run_dispatch(sid: str) -> None:
         _maybe_finalize_batch(row.get("batch_id"))
         raise typer.Exit(1) from exc
 
-    output_path = _write_output(sid, result.initial_output)
-
-    state.update_session(
-        sid,
-        status="done",
-        finished_at=state.now_iso(),
-        agent_session_id=result.agent_session_id,
-        session_file_path=str(result.session_file) if result.session_file else None,
-        output_path=str(output_path),
-        cost_usd=result.cost_usd,
-        duration_seconds=result.duration_seconds,
-        exit_code=result.exit_code,
-    )
-
-    # In a batch, stay quiet per-dispatch — one summary fires when the whole
-    # batch drains (see _maybe_finalize_batch). Solo dispatches ping here.
-    if not row.get("batch_id"):
-        notify.notify(
-            f"playmaker — {row['agent']} done",
-            _one_line(result.initial_output),
-            sound_name="Blow",
-            open_path=str(output_path),
-            group=f"playmaker-{sid}",
+    try:
+        output_path = _write_output(sid, result.initial_output)
+        after_snapshot = state.take_working_tree_snapshot(cwd, with_marker=False)
+        files_changed = state.count_working_tree_changes(before_snapshot, after_snapshot)
+        final_status = (
+            "no_changes" if files_changed == 0 and bool(row.get("expect_changes")) else "done"
         )
-    _maybe_finalize_batch(row.get("batch_id"))
+
+        state.update_session(
+            sid,
+            status=final_status,
+            finished_at=state.now_iso(),
+            agent_session_id=result.agent_session_id,
+            session_file_path=str(result.session_file) if result.session_file else None,
+            output_path=str(output_path),
+            cost_usd=result.cost_usd,
+            duration_seconds=result.duration_seconds,
+            exit_code=result.exit_code,
+            files_changed=files_changed,
+            post_tree_hash=after_snapshot.tree_hash,
+        )
+
+        if final_status == "no_changes":
+            message = f"done but wrote 0 files in {cwd}"
+            notify.notify(
+                f"playmaker — {row['agent']} {message}",
+                message,
+                sound_name="Basso",
+                open_path=str(output_path),
+                group=f"playmaker-no-changes-{sid}",
+            )
+        # In a batch, stay quiet per-dispatch — one summary fires when the
+        # whole batch drains (see _maybe_finalize_batch). no_changes is an
+        # exception like a failure: it pings immediately and loudly above.
+        elif not row.get("batch_id"):
+            notify.notify(
+                f"playmaker — {row['agent']} done",
+                _one_line(result.initial_output),
+                sound_name="Blow",
+                open_path=str(output_path),
+                group=f"playmaker-{sid}",
+            )
+        _maybe_finalize_batch(row.get("batch_id"))
+    finally:
+        before_snapshot.cleanup()
 
     console.print(f"[dim]session: {sid}  agent_session: {result.agent_session_id}[/dim]")
     typer.echo(result.initial_output)
@@ -320,15 +355,14 @@ def _maybe_finalize_batch(batch_id: str | None) -> None:
     siblings = state.list_batch(batch_id)
     if not siblings:
         return
-    terminal = {"done", "failed", "killed"}
-    if any(s["status"] not in terminal for s in siblings):
+    if any(s["status"] not in state.TERMINAL_STATUSES for s in siblings):
         return  # not the last to finish
 
     if not state.claim_batch([s["id"] for s in siblings]):
         return  # another finisher already fired the summary
 
     ok = [s for s in siblings if s["status"] == "done"]
-    marks = " · ".join(f"{s['agent']} {'✓' if s['status'] == 'done' else '✗'}" for s in siblings)
+    marks = " · ".join(_batch_status_mark(s) for s in siblings)
     combined = _render_batch_file(batch_id, siblings)
     notify.notify(
         "playmaker — batch done",
@@ -337,6 +371,14 @@ def _maybe_finalize_batch(batch_id: str | None) -> None:
         open_path=str(combined) if combined else None,
         group=f"playmaker-batch-{_batch_slug(batch_id)}",
     )
+
+
+def _batch_status_mark(session: dict) -> str:
+    if session["status"] == "done":
+        return f"{session['agent']} ✓"
+    if session["status"] == "no_changes":
+        return f"{session['agent']} ⚠ no_changes"
+    return f"{session['agent']} ✗"
 
 
 def _render_batch_file(batch_id: str, siblings: list) -> Path | None:
@@ -394,6 +436,16 @@ def continue_(
     sync: bool = typer.Option(
         False, "--sync", help="block until done and print final output (default is detached)"
     ),
+    expect_changes: bool | None = typer.Option(
+        None,
+        "--expect-changes",
+        help="mark this follow-up as a write task",
+    ),
+    read_only: bool | None = typer.Option(
+        None,
+        "--read-only",
+        help="disable the write-task check for this follow-up",
+    ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Resume a previous agent session with a follow-up prompt — preserves the
@@ -419,6 +471,13 @@ def continue_(
 
     cwd_resolved = (cwd or Path(parent["cwd"])).expanduser().resolve()
     effective_model = model if model is not None else parent.get("model")
+    explicit_expectation = _expectation_from_flags(expect_changes, read_only)
+    inherited_expectation = parent.get("expect_changes")
+    session_expects_changes = (
+        bool(inherited_expectation)
+        if explicit_expectation is None and inherited_expectation is not None
+        else state.expects_changes(prompt, explicit_expectation)
+    )
 
     # New playmaker session that targets the parent's live agent thread.
     sid = state.insert_session(
@@ -428,6 +487,7 @@ def continue_(
         files=[str(f) for f in (files or [])],
         parent_id=parent["id"],
         model=effective_model,
+        expect_changes=session_expects_changes,
     )
     # Pre-populating agent_session_id flips _run_dispatch into resume mode.
     state.update_session(sid, agent_session_id=parent_agent_session_id)
@@ -471,7 +531,9 @@ def continue_(
 
 @app.command("list")
 def list_cmd(
-    status: str | None = typer.Option(None, "--status", help="pending|running|done|failed|killed"),
+    status: str | None = typer.Option(
+        None, "--status", help="pending|running|done|failed|killed|no_changes"
+    ),
     agent: str | None = typer.Option(None, "--agent", help="filter by agent"),
     json_out: bool = typer.Option(False, "--json"),
     limit: int = typer.Option(50, "--limit"),
@@ -519,8 +581,7 @@ def get(
         err_console.print(f"[red]session {session_id!r} not found[/red]")
         raise typer.Exit(1)
     if wait:
-        terminal = {"done", "failed", "killed"}
-        while row["status"] not in terminal:
+        while row["status"] not in state.TERMINAL_STATUSES:
             time.sleep(poll_seconds)
             row = state.get_session(session_id)
             if row is None:
@@ -544,6 +605,7 @@ def get(
         console.print(f"  cost:     ${row['cost_usd']:.4f}")
     if row["session_file_path"]:
         console.print(f"  thread:   {row['session_file_path']}")
+    console.print(f"  {_changes_line(row)}")
     console.print(f"\n[bold]prompt[/bold]\n{row['prompt']}")
     if output:
         console.print("\n[bold]output[/bold]")
@@ -557,9 +619,7 @@ DEFAULT_THREAD_BYTES = 50_000
 def thread(
     session_id: str = typer.Argument(..., help="session id or unique prefix"),
     last: int = typer.Option(5, "--last", help="show last N turns (ignored with --all)"),
-    role: str | None = typer.Option(
-        None, "--role", help="filter to user|assistant|tool"
-    ),
+    role: str | None = typer.Option(None, "--role", help="filter to user|assistant|tool"),
     all_: bool = typer.Option(False, "--all", help="emit the entire thread"),
     include_tools: bool = typer.Option(
         False, "--include-tools", help="include tool_calls and tool_results in output"
@@ -636,8 +696,7 @@ def thread(
     if not follow:
         return
 
-    terminal = {"done", "failed", "killed"}
-    if row["status"] in terminal:
+    if row["status"] in state.TERMINAL_STATUSES:
         return
 
     try:
@@ -648,7 +707,7 @@ def thread(
                 err_console.print(f"[red]session {session_id!r} vanished while following[/red]")
                 raise typer.Exit(1)
             printed_count = _emit_delta(row, printed_count)
-            if row["status"] in terminal:
+            if row["status"] in state.TERMINAL_STATUSES:
                 time.sleep(0.5)
                 final_row = state.get_session(session_id)
                 if final_row is not None:
@@ -671,24 +730,33 @@ def summary(
         # fall back to stored output if session_file is missing
         if row and row.get("output_path") and Path(row["output_path"]).exists():
             txt = Path(row["output_path"]).read_text(encoding="utf-8")
-            typer.echo(txt if not json_out else json.dumps({"output": txt}))
+            if json_out:
+                typer.echo(json.dumps({"output": txt, **_change_json_fields(row)}))
+            else:
+                console.print(_changes_line(row))
+                typer.echo(txt)
             return
         err_console.print(f"[red]session {session_id!r} has no thread to summarize[/red]")
         raise typer.Exit(1)
     handler = get_handler(row["agent"])
     turns = [
-        t for t in handler.parse_session_file(Path(row["session_file_path"]))
+        t
+        for t in handler.parse_session_file(Path(row["session_file_path"]))
         if t.role == "assistant"
     ][-2:]
     if json_out:
         typer.echo(
             json.dumps(
-                [{"role": t.role, "content": t.content} for t in turns],
+                {
+                    "summary": [{"role": t.role, "content": t.content} for t in turns],
+                    **_change_json_fields(row),
+                },
                 indent=2,
                 ensure_ascii=False,
             )
         )
         return
+    console.print(_changes_line(row))
     typer.echo(_render_turns(turns, include_tools=False))
 
 
@@ -720,8 +788,7 @@ def _maybe_truncate(text: str, max_bytes: int) -> str:
         return text
     truncated = raw[:max_bytes].decode("utf-8", errors="ignore")
     return (
-        truncated
-        + f"\n\n[!] truncated at {max_bytes} bytes (full size: {len(raw)}). "
+        truncated + f"\n\n[!] truncated at {max_bytes} bytes (full size: {len(raw)}). "
         "Use --all or higher --max-bytes to see more."
     )
 
@@ -751,13 +818,12 @@ def logs(
     with log_path.open("r", encoding="utf-8", errors="replace") as fh:
         # Print existing content first.
         typer.echo(fh.read(), nl=False)
-        terminal = {"done", "failed", "killed"}
         while True:
             chunk = fh.read()
             if chunk:
                 typer.echo(chunk, nl=False)
             row = state.get_session(row["id"])
-            if row is None or row["status"] in terminal:
+            if row is None or row["status"] in state.TERMINAL_STATUSES:
                 # one final flush
                 tail = fh.read()
                 if tail:
@@ -791,9 +857,7 @@ def kill(
     except PermissionError as exc:
         err_console.print(f"[red]cannot kill pid {pid}: {exc}[/red]")
         raise typer.Exit(1) from exc
-    state.update_session(
-        row["id"], status="killed", finished_at=state.now_iso(), exit_code=143
-    )
+    state.update_session(row["id"], status="killed", finished_at=state.now_iso(), exit_code=143)
     # killed is terminal too: if this was the batch's last live session, nobody
     # else is left to notice the fan-out drained.
     _maybe_finalize_batch(row.get("batch_id"))
@@ -916,8 +980,7 @@ def _render_provider(name: str, info: dict) -> None:
             util = round(used / limit * 100)
         util_str = f"{util}% used" if util is not None else ""
         console.print(
-            f"  [bold]{'Extra usage':<11}[/bold] ${used:.2f} / ${limit:.2f}"
-            f"   [dim]{util_str}[/dim]"
+            f"  [bold]{'Extra usage':<11}[/bold] ${used:.2f} / ${limit:.2f}   [dim]{util_str}[/dim]"
         )
 
 
@@ -970,9 +1033,36 @@ def _status_icon(status: str) -> str:
         "pending": "[yellow]pending[/yellow]",
         "running": "[blue]running[/blue]",
         "done": "[green]done[/green]",
+        "no_changes": "[yellow]⚠ no_changes[/yellow]",
         "failed": "[red]failed[/red]",
         "killed": "[magenta]killed[/magenta]",
     }.get(status, status)
+
+
+def _expectation_from_flags(expect_changes: bool | None, read_only: bool | None) -> bool | None:
+    if expect_changes and read_only:
+        raise typer.BadParameter("--expect-changes and --read-only cannot be used together")
+    if expect_changes:
+        return True
+    if read_only:
+        return False
+    return None
+
+
+def _changes_line(row: dict) -> str:
+    files_changed = row.get("files_changed")
+    if files_changed is None:
+        return "changes: unknown"
+    noun = "file" if files_changed == 1 else "files"
+    suffix = " (⚠ no_changes)" if row.get("status") == "no_changes" else ""
+    return f"changes: {files_changed} {noun}{suffix}"
+
+
+def _change_json_fields(row: dict) -> dict:
+    return {
+        name: row.get(name)
+        for name in ("files_changed", "expect_changes", "pre_tree_hash", "post_tree_hash")
+    }
 
 
 _DEFAULT_CONFIG = """\

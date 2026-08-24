@@ -20,6 +20,16 @@ Empirically (opencode 1.18.5):
   ~/.local/share/opencode). Tables `session` (incl. directory, cost, tokens),
   `message` and `part`, the latter two holding a JSON `data` blob per row. The
   older storage/*.json tree is legacy and no longer written.
+
+Write-capability probe (2026-08-18)
+-----------------------------------
+``playmaker dispatch opencode --model zai-coding-plan/glm-5.3 --cwd
+/tmp/pm-probe --prompt "Create hello.txt containing OK. Reply DONE."``
+
+Result: `hello.txt` containing `OK` was created inside `--cwd`; the session was
+`done` (exit 0, 11 s, $0.00), and its session_file resolved. The adapter's
+`--dir`/PWD write path is sound: the incident was a model/task-scale failure,
+not a permissions or directory bug. No adapter fix is needed; `no_changes` catches it.
 """
 
 from __future__ import annotations

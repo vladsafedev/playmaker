@@ -186,13 +186,14 @@ playmaker dispatch <agent> --prompt "..."     # detached by default
                   [--model NAME]              # forwarded to the agent's own CLI
                   [--cwd DIR]
                   [--files PATH...]
+                  [--expect-changes|--read-only]
                   [--sync]                    # block and print the final answer
                   [--parent ID]               # link lineage to an earlier session
                   [--batch LABEL]             # group a fan-out; one summary ping
 playmaker continue <id> --prompt "..."        # follow-up inside the live session
-                  [--model NAME] [--files PATH...] [--sync]
+                  [--model NAME] [--files PATH...] [--expect-changes|--read-only] [--sync]
 
-playmaker list [--status running|done|failed] [--agent NAME] [--limit N]
+playmaker list [--status running|done|failed|no_changes] [--agent NAME] [--limit N]
 playmaker get <id> [--wait] [--poll SECONDS]
 playmaker summary <id>                        # last 2 assistant messages
 playmaker thread <id> [--last N] [--all] [--role assistant|user|tool]
@@ -205,6 +206,10 @@ playmaker skill install [--dir PATH] [--force]
 
 `dispatch`, `continue`, `list`, `get`, `thread` and `quotas` all take `--json`
 for scripting.
+
+Write-shaped prompts are checked for file changes at completion. A zero-change
+write task becomes `no_changes`; use `--read-only` for recon or answer-only
+work, or `--expect-changes` to force the check for an otherwise ambiguous prompt.
 
 **`continue` vs a fresh `dispatch`.** `continue` sends a follow-up into the
 agent's existing session, so its reasoning, tool history and file context are

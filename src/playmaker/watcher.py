@@ -18,6 +18,7 @@ _ICONS = {
     "pending": "⏳",
     "running": "🔄",
     "done": "✅",
+    "no_changes": "⚠",
     "failed": "❌",
     "killed": "🛑",
 }
@@ -29,7 +30,7 @@ def _build_table() -> Table:
     now = datetime.now(UTC)
     keep = []
     for r in rows:
-        if r["status"] in ("pending", "running"):
+        if r["status"] not in state.TERMINAL_STATUSES:
             keep.append(r)
         elif r["finished_at"]:
             try:
@@ -105,7 +106,7 @@ def _get_activity(row: dict[str, Any]) -> str:
         except Exception:
             return "-"
 
-    if status == "done":
+    if status in ("done", "no_changes"):
         out_path_str = row.get("output_path")
         if not out_path_str:
             return "-"
