@@ -242,6 +242,23 @@ def codex_probe() -> dict:
             raise
 
     rate = usage.get("rate_limit") or {}
+    reserve = _codex_reserve_from_additional(usage) if rate.get("secondary_window") else None
+    windows = _codex_windows(
+        rate, reserve_pct=reserve
+    )
+    spark_windows = _codex_spark_windows(usage)
+
+    return {
+        "status": "ok",
+        "account_email": payload.get("email"),
+        "tier": _humanize_codex_tier(usage.get("plan_type")),
+        "windows": windows,
+        "blocks": [{"name": "Spark", "windows": spark_windows}] if spark_windows else [],
+    }
+
+
+def _codex_windows(rate: dict, *, reserve_pct: int | None = None) -> list[dict]:
+    """Build the standard Session and Weekly rows for a Codex rate-limit block."""
     primary = rate.get("primary_window") or {}
     secondary = rate.get("secondary_window") or {}
 
@@ -266,10 +283,6 @@ def codex_probe() -> dict:
             (win_secs - max(0, (reset_at or 0) - time.time())) if reset_at else 0
         )
         forecast = _forecast_label(used, win_secs, elapsed)
-        # "In reserve" — averaged unused weekly across the additional metered
-        # rate-limits (CodexBar surfaces this so users see they have headroom
-        # in alternative buckets like Codex-Spark).
-        reserve = _codex_reserve_from_additional(usage)
         windows.append(
             {
                 "name": "Weekly",
@@ -277,16 +290,28 @@ def codex_probe() -> dict:
                 "reset_at_iso": _epoch_to_iso(reset_at),
                 "reset_relative": _format_relative(reset_at),
                 "forecast": forecast,
-                "reserve_pct": reserve,
+                "reserve_pct": reserve_pct,
             }
         )
 
-    return {
-        "status": "ok",
-        "account_email": payload.get("email"),
-        "tier": _humanize_codex_tier(usage.get("plan_type")),
-        "windows": windows,
-    }
+    return windows
+
+
+def _codex_spark_windows(usage: dict) -> list[dict]:
+    """Return the Codex-Spark rate-limit rows, if the provider reports them."""
+    extras = usage.get("additional_rate_limits") or []
+    if not isinstance(extras, list):
+        return []
+    for extra in extras:
+        if not isinstance(extra, dict):
+            continue
+        feature = extra.get("metered_feature")
+        limit_name = extra.get("limit_name")
+        if feature == "codex_bengalfox" or (
+            isinstance(limit_name, str) and "spark" in limit_name.lower()
+        ):
+            return _codex_windows(extra.get("rate_limit") or {})
+    return []
 
 
 def _codex_reserve_from_additional(usage: dict) -> int | None:
@@ -472,6 +497,52 @@ def claude_probe() -> dict:
                 "reserve_pct": None,
             }
         )
+
+    scoped_windows: list[dict] = []
+    limits = usage.get("limits")
+    if isinstance(limits, list):
+        for limit in limits:
+            if not isinstance(limit, dict) or limit.get("kind") != "weekly_scoped":
+                continue
+            percent = limit.get("percent")
+            scope = limit.get("scope")
+            model = scope.get("model") if isinstance(scope, dict) else None
+            display_name = model.get("display_name") if isinstance(model, dict) else None
+            if isinstance(percent, bool) or not isinstance(percent, (int, float)):
+                continue
+            if not isinstance(display_name, str):
+                continue
+
+            resets_at = limit.get("resets_at")
+            forecast: str | None = None
+            if isinstance(resets_at, str):
+                try:
+                    reset_dt = datetime.fromisoformat(resets_at.replace("Z", "+00:00"))
+                    remaining = reset_dt.timestamp() - now
+                    elapsed = max(0.0, 7 * 86400 - remaining)
+                    forecast = _forecast_label(float(percent), 7 * 86400, elapsed)
+                except ValueError:
+                    pass
+            scoped_windows.append(
+                {
+                    "name": f"Weekly · {display_name}",
+                    "pct_left": int(round(100 - float(percent))),
+                    "reset_at_iso": resets_at,
+                    "reset_relative": _format_relative(resets_at),
+                    "forecast": forecast,
+                    "reserve_pct": None,
+                }
+            )
+
+    if scoped_windows:
+        weekly_index = next(
+            (index for index, window in enumerate(windows) if window["name"] == "Weekly"),
+            None,
+        )
+        if weekly_index is None:
+            windows.extend(scoped_windows)
+        else:
+            windows[weekly_index + 1 : weekly_index + 1] = scoped_windows
 
     # `extra_usage` is the user's monthly overage allowance — surface only
     # as a top-level field, not as the weekly window's reserve %.

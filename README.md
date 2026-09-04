@@ -364,13 +364,18 @@ stores, no scraping and no browser.
 ```console
 $ playmaker quotas --refresh
 Claude  Max 20x
-  Session     ████████████████░░░░ 80% left   resets in 3h 12m
-  Weekly      ███████████░░░░░░░░░ 55% left   resets in 4d 6h
-  Sonnet      ███████████████████░ 95% left   resets in 4d 6h
+  Session        ████████████████░░░░ 80% left   resets in 3h 12m
+  Weekly         ███████████░░░░░░░░░ 55% left   resets in 4d 6h
+  Weekly · Fable ██████░░░░░░░░░░░░░░ 28% left   resets in 4d 6h
+  Sonnet         ███████████████████░ 95% left   resets in 4d 6h
 
 Codex  Plus
   Session     ██████████████████░░ 90% left   resets in 1h 40m
   Weekly      █████████████░░░░░░░ 65% left   resets in 2d 9h
+
+Codex — Spark
+  Session     ████████████████████ 100% left  resets in 4h 59m
+  Weekly      ██░░░░░░░░░░░░░░░░░░ 8% left    resets in 5d 22h
 
 Antigravity (agy)
   Gemini 5h         ████████████████████ 100% left
@@ -384,12 +389,16 @@ Z.ai (GLM, via opencode)  Max
   MCP tools   ███████████████████░ 99% left   resets in 25d 11h
 ```
 
-The `Weekly` and `Sonnet` rows above are the point: they are **separate
-buckets**. So is every agy row, and so is the whole Z.ai block. Routing a
-subtask is choosing which of them to spend.
+The `Weekly`, `Weekly · Fable` and `Sonnet` rows above are the point: they are
+**separate buckets**. So is the `Codex — Spark` block, every agy row, and the
+whole Z.ai block. Routing a subtask is choosing which of them to spend.
 
 - **Claude** — OAuth usage API; token from the Claude Code Keychain entry.
-- **Codex** — ChatGPT `wham/usage` API; token from `~/.codex/auth.json`.
+  Model-scoped weekly buckets come from the usage API's `limits[]` array and
+  print as `Weekly · <model>`.
+- **Codex** — ChatGPT `wham/usage` API; token from `~/.codex/auth.json`. The
+  Spark model's own 5-hour and weekly windows come from
+  `additional_rate_limits[]` and print as their own `Codex — Spark` block.
 - **Antigravity** — prefers agy's **local daemon**
   (`RetrieveUserQuotaSummary` over its embedded gRPC-web endpoint), which is
   the only source for the full categorized breakdown above. Works whenever any

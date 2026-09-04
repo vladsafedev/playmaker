@@ -13,15 +13,17 @@ the plan instead of quoting the numbers.
 several tiers with independent buckets, and the whole point of pulling quotas is to push work
 *away from* the depleted bucket and *toward* the fresh one.
 
-- **Claude:** the top-tier weekly and the mid-tier weekly are **independent**. The coach and
-  in-session sub-agents spend the top one; the mid tier usually sits idle. Push mid-tier work there
-  instead of burning the scarce bucket.
+- **Claude:** the block shows the account-wide `Weekly` plus one `Weekly · <model>` row per
+  model-scoped bucket (e.g. `Weekly · Fable`). The model-scoped row is the one that empties first
+  during a long coach session — read it, not just `Weekly`.
 - **Antigravity (`agy`):** one Google pool split by family — `Gemini 5h` / `Gemini weekly` and
   `Claude/GPT 5h` / `Claude/GPT weekly`. All Gemini models share the first; Claude *and* GPT-OSS
   share the second. So one Gemini reviewer plus one agy-Claude reviewer costs one hit in each of two
   separate buckets — the cheapest way to buy two independent opinions. Requires agy's local daemon;
   if the table says "daemon offline" it fell back to a coarse Gemini-only view.
-- **Codex:** top-tier versus lighter modes, where the account plan carries them.
+- **Codex:** the main block is the primary Codex window; `Codex — Spark` is a separate block with
+  its own `Session` / `Weekly` rows for the Spark model, the junior Codex lane — route Spark work
+  off that block, not off the main one.
 - **opencode:** the quota belongs to the *plan behind the provider*, not to the CLI — it appears
   under that provider (e.g. a GLM coding plan's session and weekly credit windows) and reads
   unsupported without a credential. A dispatch pointed at a **local** model spends nothing and never

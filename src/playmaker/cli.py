@@ -978,6 +978,25 @@ def quotas(
 
 
 def _render_provider(name: str, info: dict) -> None:
+    def render_windows(windows: list[dict]) -> None:
+        # Adaptive name column so longer categorized labels (e.g. "Claude/GPT
+        # weekly") keep the bars aligned instead of overflowing a fixed width.
+        name_width = max(11, *(len(w["name"]) for w in windows))
+        for window in windows:
+            pct = window.get("pct_left")
+            bar = _bar(pct) if isinstance(pct, int) else " " * 20
+            line = f"  [bold]{window['name']:<{name_width}}[/bold] {bar} {pct}% left"
+            right_parts = []
+            if window.get("reset_relative"):
+                right_parts.append(f"resets in {window['reset_relative']}")
+            if window.get("forecast"):
+                right_parts.append(window["forecast"])
+            if window.get("reserve_pct") is not None:
+                right_parts.append(f"{window['reserve_pct']}% in reserve")
+            if right_parts:
+                line += f"   [dim]{'  ·  '.join(right_parts)}[/dim]"
+            console.print(line)
+
     status = info.get("status")
     label_color = {
         "codex": "blue",
@@ -1017,27 +1036,13 @@ def _render_provider(name: str, info: dict) -> None:
         return
 
     windows = info.get("windows") or []
+    blocks = info.get("blocks") or []
     if not windows:
         console.print("  [dim]no quota windows reported[/dim]")
-        return
-
-    # Adaptive name column so longer categorized labels (e.g. "Claude/GPT
-    # weekly") keep the bars aligned instead of overflowing a fixed width.
-    name_width = max(11, *(len(w["name"]) for w in windows))
-    for w in windows:
-        pct = w.get("pct_left")
-        bar = _bar(pct) if isinstance(pct, int) else " " * 20
-        line = f"  [bold]{w['name']:<{name_width}}[/bold] {bar} {pct}% left"
-        right_parts = []
-        if w.get("reset_relative"):
-            right_parts.append(f"resets in {w['reset_relative']}")
-        if w.get("forecast"):
-            right_parts.append(w["forecast"])
-        if w.get("reserve_pct") is not None:
-            right_parts.append(f"{w['reserve_pct']}% in reserve")
-        if right_parts:
-            line += f"   [dim]{'  ·  '.join(right_parts)}[/dim]"
-        console.print(line)
+        if not blocks:
+            return
+    else:
+        render_windows(windows)
 
     # A local provider has models where the metered ones have tiers; naming them
     # saves the coach a round-trip to `ollama list` before it can route here.
@@ -1058,6 +1063,13 @@ def _render_provider(name: str, info: dict) -> None:
         console.print(
             f"  [bold]{'Extra usage':<11}[/bold] ${used:.2f} / ${limit:.2f}   [dim]{util_str}[/dim]"
         )
+
+    for block in blocks:
+        block_windows = block.get("windows") or []
+        console.print()
+        console.print(f"[bold {label_color}]{display} — {block['name']}[/bold {label_color}]")
+        if block_windows:
+            render_windows(block_windows)
 
 
 def _bar(pct: int, width: int = 20) -> str:
