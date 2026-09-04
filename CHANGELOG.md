@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-09-04
+
+### Added
+
+- **`playmaker quotas` shows the two buckets that actually run out first.**
+  Codex's `additional_rate_limits[]` carries a separate GPT-5.3-Codex-Spark
+  pool with its own 5h and weekly windows, and Anthropic's `limits[]` carries
+  a model-scoped weekly next to the all-models one. Both were in the raw
+  responses and dropped by the probe, so a coach could route a junior WP to
+  Spark while its weekly sat at 4%, or budget a session on the all-models bar
+  while its own model-scoped bucket was the one about to end it. Codex now
+  renders a `Codex — Spark` sub-block and Claude a `Weekly · <model>` row;
+  probes return an additive `blocks` key that `_render_provider` draws for any
+  provider.
+
+### Changed
+
+- **The coach no longer tiers Antigravity's Claude models by name.**
+  `lanes.md` called `agy`'s Claude-Opus "top-tier Claude judgment on Google's
+  pool" and offered it as the reviewer to reach for when the Anthropic bucket
+  is precious. That roster trails Anthropic's releases by a generation, and
+  the name kept pulling real work onto it. The reference now says to tier by
+  the version `agy models` shows, and points the second-strong-reviewer row
+  at Gemini Pro.
+
 ## [0.9.0] - 2026-08-24
 
 ### Added
