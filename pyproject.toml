@@ -1,6 +1,6 @@
 [project]
 name = "playmaker-cli"
-version = "0.10.0"
+version = "0.11.0"
 description = "Playing-coach CLI for orchestrating Claude Code, Codex, Antigravity, Kimi Code and opencode sub-agents in parallel."
 readme = "README.md"
 requires-python = ">=3.11"
