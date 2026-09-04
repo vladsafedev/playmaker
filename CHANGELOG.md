@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`kimi` lane — the Kimi Code CLI as a first-class agent.**
+  `playmaker dispatch kimi -m kimi-code/k3-256k` runs `kimi -p …
+  --output-format stream-json`, tracks the session, resumes with `-S`, and
+  reads the per-cwd `wire.jsonl` for `summary`. K3 is a senior-tier model on a
+  subscription nobody else on the machine draws from, and routing it through
+  opencode would have needed a second credential; the native CLI reuses its
+  own OAuth login.
+
 ## [0.10.0] - 2026-09-04
 
 ### Added

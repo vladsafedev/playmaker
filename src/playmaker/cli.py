@@ -129,7 +129,7 @@ def skill_install(
 
 @app.command()
 def dispatch(
-    agent: str = typer.Argument(..., help="agent name (claude|codex|agy|gemini|opencode)"),
+    agent: str = typer.Argument(..., help="agent name (claude|codex|agy|gemini|kimi|opencode)"),
     prompt: str = typer.Option(..., "--prompt", "-p", help="initial prompt"),
     cwd: Path = typer.Option(
         Path.cwd(),

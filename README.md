@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/playmaker-cli.svg?cacheSeconds=3600)](https://pypi.org/project/playmaker-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Run Claude Code, Codex, Antigravity and opencode as parallel sub-agents from one terminal — and spend separate quotas instead of one.**
+**Run Claude Code, Codex, Antigravity, Kimi Code and opencode as parallel sub-agents from one terminal — and spend separate quotas instead of one.**
 
 You stay in your Claude Code session doing the part only you can do. `playmaker`
 fans the rest out to other agent CLIs as detached processes, tracks them,
@@ -47,10 +47,11 @@ in one serial session:
 1. **Wall-clock speed.** A task that decomposes into 3–5 independent
    work-streams (schema, backend, frontend, tests, docs) finishes 2–4× faster
    when each stream runs as its own parallel agent.
-2. **Provider arbitrage.** Codex, Antigravity and opencode quotas are entirely
-   separate pools from your Anthropic plan. Every slice you hand them is
-   capacity your main session never spends — and Antigravity's roster includes
-   Claude Sonnet/Opus, so even Claude-quality work can run on Google's pool.
+2. **Provider arbitrage.** Codex, Antigravity, Kimi Code and opencode quotas
+   are entirely separate pools from your Anthropic plan. Every slice you hand
+   them is capacity your main session never spends — and Antigravity's roster
+   includes Claude Sonnet/Opus, so even Claude-quality work can run on Google's
+   pool. Kimi Code brings its own subscription with the senior-tier K3.
    `opencode` widens this the most: one CLI fronting ~75 providers, from a z.ai
    GLM coding plan to models running locally on your own machine.
 3. **Bucket arbitrage inside one plan.** Headless `claude -p` draws on the same
@@ -119,6 +120,10 @@ The other agents differ, because their CLIs do:
   { "permission": { "edit": "allow", "bash": "allow", "webfetch": "deny" } }
   ```
 
+- **kimi** has no permission flags at all in headless mode — `kimi -p` refuses
+  `--auto`, `--yolo` and `--plan`, and already runs with auto-approval, so
+  there is no read-only mode below the prompt.
+
 - **gemini** (legacy) runs with `--yolo`.
 
 ## Install
@@ -156,6 +161,7 @@ playmaker agents          # which agent CLIs are reachable
 | **Codex CLI** | `npm i -g @openai/codex` | the model roster depends on your plan; omit `--model` to use the account default |
 | **Antigravity (`agy`)** | bundled with [Antigravity](https://antigravity.google) | `--model claude-opus-4-6-thinking` — the roster moves, so read it from `agy models` |
 | **opencode** | `brew install sst/tap/opencode` (or see [opencode.ai](https://opencode.ai)) | `--model provider/model`, e.g. `zai-coding-plan/glm-5.2`; roster from `opencode models`, providers from `opencode auth login` |
+| **Kimi Code CLI** | `npm i -g @moonshot-ai/kimi-code` | needs Node ≥ 22.19 (a wrapper that pins a newer Node is fine — point `[agents.kimi] binary` at it); `--model kimi-code/k3-256k` — 256k window at half the quota cost of `k3`; log in once with `kimi login --region global`; model ids from `~/.kimi-code/config.toml` |
 | **Gemini CLI** (legacy) | `npm i -g @google/gemini-cli` | still supported, superseded by `agy` |
 
 At least one is required; `playmaker agents` tells you which it can see.
@@ -290,6 +296,7 @@ and locates the session file the tool writes locally. Empirically:
 | Codex | `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<thread_id>.jsonl` |
 | Antigravity | `~/.gemini/antigravity-cli/brain/<conversation-id>/.system_generated/logs/transcript_full.jsonl` |
 | opencode | SQLite — `~/.local/share/opencode/opencode.db` (`session` / `message` / `part`); playmaker keeps a pointer at `~/.playmaker/opencode/<id>.session` |
+| kimi | `~/.kimi-code/sessions/wd_<cwd-basename>_<hash>/session_<id>/agents/main/wire.jsonl` (per-cwd; `KIMI_CODE_HOME` overrides the root) |
 | Gemini | `~/.gemini/tmp/<cwd-basename>/chats/session-<ts>-<short_id>.{json,jsonl}` |
 
 `thread` and `summary` normalize all of them into the same turn list, so every

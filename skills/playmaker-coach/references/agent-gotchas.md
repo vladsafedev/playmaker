@@ -65,6 +65,22 @@ line from `agy models` / `opencode models` rather than typing it.
 - Neither trap applies to **review** dispatches, which write nothing — which makes opencode a
   perfectly good reviewer even where it is a shaky implementer.
 
+## kimi (Kimi Code CLI)
+
+- There is **no read-only mode below the prompt**: `-p` refuses `--auto`, `--yolo` and `--plan`
+  (exit 1) and already runs with auto-approval. Only dispatch work you would run unattended anyway.
+- The session id arrives **only in the trailing `session.resume_hint` line**, so `playmaker list`
+  shows the agent session late — do not conclude a dispatch failed just because the id has not
+  appeared yet.
+- Sessions are **per-cwd**: `kimi session list` from another directory shows nothing. Track the
+  session through playmaker, not through the CLI.
+- The stream carries **no token/cost fields** — there is nothing to budget against mid-run.
+- Exit codes: **exit 1 is non-retryable** (auth, quota, unknown model — "is not configured in
+  config.toml"); **exit 75 is retryable**. Fix the cause on 1, re-dispatch on 75.
+- K3 is **slow on real tickets** — never `--sync` a big WP; dispatch detached and poll.
+- Needs **Node ≥ 22.19** — hence the wrapper binary; point `[agents.kimi] binary` at it.
+- **Always pass `-m kimi-code/k3-256k`** — the CLI default is the weaker K2.7 `kimi-for-coding`.
+
 ## Worktrees
 
 Parallel WPs that touch the same files collide. Give each its own git worktree and dispatch with

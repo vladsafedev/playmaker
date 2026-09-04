@@ -18,8 +18,9 @@ pays. Four lanes:
    (`haiku` for trivial mechanical work). playmaker runs it in `acceptEdits`: it writes freely
    inside `--cwd` and is refused outside it, so keep every path in the prompt inside `--cwd`.
 
-4. **External dispatch — `codex` / `agy` / `opencode`.** Each on its own subscription or plan — the
-   home for write-heavy parallel implementation that can leave the Anthropic subscription.
+4. **External dispatch — `codex` / `agy` / `opencode` / `kimi`.** Each on its own subscription or
+   plan — the home for write-heavy parallel implementation that can leave the Anthropic
+   subscription.
    - **`agy` (Antigravity)** carries more than Google models: alongside Gemini Flash and Pro tiers it
      serves **Claude Sonnet/Opus (Thinking)** and a GPT-OSS tier. Its Claude runs on *Google's*
      pool and spends none of the Anthropic bucket — but that roster has trailed Anthropic's own
@@ -29,6 +30,8 @@ pays. Four lanes:
    - **`opencode`** is the widest lane: one CLI over ~75 providers addressed as `provider/model` — a
      GLM coding plan, or a model running locally on this machine, which spends no subscription quota
      at all.
+   - **`kimi`** runs the Kimi Code CLI on its own subscription: senior tier (K3), native login, no
+     opencode.
 
 **Never write an agy or opencode model name from memory** — run `agy models` / `opencode models` and
 copy a line. Both rosters and their spelling move with releases, and playmaker validates `--model`
