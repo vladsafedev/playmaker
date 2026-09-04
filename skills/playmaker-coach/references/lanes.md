@@ -21,9 +21,11 @@ pays. Four lanes:
 4. **External dispatch — `codex` / `agy` / `opencode`.** Each on its own subscription or plan — the
    home for write-heavy parallel implementation that can leave the Anthropic subscription.
    - **`agy` (Antigravity)** carries more than Google models: alongside Gemini Flash and Pro tiers it
-     serves **Claude Sonnet/Opus (Thinking)** and a GPT-OSS mid tier. Its Claude runs on *Google's*
-     pool — top-tier Claude judgment that spends none of the Anthropic bucket. Note the internal
-     split: all Gemini models share one bucket, Claude and GPT-OSS share another.
+     serves **Claude Sonnet/Opus (Thinking)** and a GPT-OSS tier. Its Claude runs on *Google's*
+     pool and spends none of the Anthropic bucket — but that roster has trailed Anthropic's own
+     releases by a generation (Claude 4.6 on agy while Claude 5 ships on Anthropic), so tier it by
+     the version `agy models` shows, never by the name. Note the internal split: all Gemini models
+     share one bucket, Claude and GPT-OSS share another.
    - **`opencode`** is the widest lane: one CLI over ~75 providers addressed as `provider/model` — a
      GLM coding plan, or a model running locally on this machine, which spends no subscription quota
      at all.
@@ -40,17 +42,17 @@ against the live roster, failing the dispatch on a stale name.
 | is an independent stream to monitor separately | `dispatch claude --model sonnet` | tracked, detached, spares the top bucket |
 | is heavy reasoning only the coach can do | coach | top tier, serial |
 | is write-heavy and can leave Claude | codex / agy / opencode | their own quotas |
-| needs top-tier Claude but the Anthropic bucket is precious | `dispatch agy --model <claude-opus-thinking>` | Claude quality on Google's pool |
+| needs a second strong reviewer without touching the Anthropic bucket | `dispatch agy --model <gemini-pro-high>` | near-senior judgment on an uncontended pool |
 | is bulk work with every subscription low | `dispatch opencode --model <plan>/<model>` | a separate plan, untouched by the others |
 | is mechanical and privacy-sensitive, or all quotas spent | `dispatch opencode --model <local>/<model>` | runs on this machine, costs wall-clock only |
 
 ## Tier-matching
 
-- **Architectural / spec judgment / cross-module integration** → top tier (coach, agy's Claude-Opus
-  or Gemini-Pro-high, top-tier Codex).
+- **Architectural / spec judgment / cross-module integration** → top tier (coach, top-tier Codex,
+  Gemini-Pro-high on agy for review and advice rather than implementation).
 - **Pattern-following implementation, scoped CRUD, mechanical refactor, test scaffolding, writing
-  inside an existing convention** → mid tier (Claude Sonnet, agy's Claude-Sonnet / Gemini-Pro-low,
-  mid-tier Codex). Most delegated implementation lives here.
+  inside an existing convention** → mid tier (Claude Sonnet, Gemini-Pro-low, mid-tier Codex;
+  agy's Claude models only when the roster shows a current version). Most delegated implementation lives here.
 - **Recon, summarization, mechanical loops over many files, normalization** → cheap tier (Flash
   tiers, Haiku, fast Codex modes).
 
