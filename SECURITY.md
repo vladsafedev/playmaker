@@ -23,11 +23,13 @@ each token only to that vendor's own endpoint:
 | Codex | `~/.codex/auth.json` | `chatgpt.com` |
 | Antigravity | agy's localhost daemon, else `~/.gemini/oauth_creds.json` | `127.0.0.1`, else `daily-cloudcode-pa.googleapis.com` |
 | Z.ai | `~/.local/share/opencode/auth.json`, else `$ZAI_API_KEY` | `api.z.ai` |
+| Kimi Code | `~/.kimi-code/credentials/kimi-code-env-*.json` (OAuth token written by the Kimi Code CLI) | `api.kimi.ai`, `auth.kimi.ai` (refresh) |
 
 Tokens are held in memory for the duration of a probe and are never written to
-disk by playmaker. `~/.playmaker/quotas.json` holds the probe results —
-remaining percentages, reset times, and the account email and plan tier the
-provider reported.
+disk by playmaker, except that Kimi Code refreshes an expired OAuth access
+token in the CLI's existing credential file with mode `0600`. `~/.playmaker/quotas.json`
+holds the probe results — remaining percentages, reset times, and the account
+email and plan tier the provider reported.
 
 The OAuth client id/secret literals in `quotas.py` are the ones published in
 the open-source gemini-cli package. They are installed-app credentials, which

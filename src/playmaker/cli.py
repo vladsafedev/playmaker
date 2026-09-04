@@ -1004,11 +1004,13 @@ def _render_provider(name: str, info: dict) -> None:
         "agy": "green",
         "gemini": "cyan",
         "zai": "yellow",
+        "kimi": "cyan",
         "ollama": "bright_cyan",
     }.get(name, "white")
     display = {
         "agy": "Antigravity (agy)",
         "zai": "Z.ai (GLM, via opencode)",
+        "kimi": "Kimi Code",
         "ollama": "Ollama (local, via opencode)",
     }.get(name, name.capitalize())
     title = f"[bold {label_color}]{display}[/bold {label_color}]"

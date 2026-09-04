@@ -419,6 +419,10 @@ whole Z.ai block. Routing a subtask is choosing which of them to spend.
   lane pointed at a local model spends nothing here. Shows *unsupported* rather
   than an error when no Z.ai credential exists. `MCP tools` is the monthly
   web-search/reader pool, not inference.
+- **Kimi Code** — managed usage API; OAuth token from
+  `~/.kimi-code/credentials/kimi-code-env-*.json` (`$KIMI_CODE_HOME` overrides
+  the root). Its 5-hour `Session` and weekly rows are separate percentage
+  buckets; no credential reads as *unsupported* rather than a failed probe.
 
 Reading these at *model* granularity is the point: they are the load-balancing
 input the coach skill uses to route each subtask.

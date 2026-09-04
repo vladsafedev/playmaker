@@ -24,6 +24,9 @@ several tiers with independent buckets, and the whole point of pulling quotas is
 - **Codex:** the main block is the primary Codex window; `Codex — Spark` is a separate block with
   its own `Session` / `Weekly` rows for the Spark model, the junior Codex lane — route Spark work
   off that block, not off the main one.
+- **Kimi Code:** `Session` is its rolling 5-hour bucket and `Weekly` is the subscription's weekly
+  percentage bucket. They are independent of Claude, Codex and the opencode-backed plans, so Kimi
+  is a useful alternate lane when either of those two rows still has headroom.
 - **opencode:** the quota belongs to the *plan behind the provider*, not to the CLI — it appears
   under that provider (e.g. a GLM coding plan's session and weekly credit windows) and reads
   unsupported without a credential. A dispatch pointed at a **local** model spends nothing and never

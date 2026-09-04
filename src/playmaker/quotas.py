@@ -9,6 +9,8 @@ All providers go through OAuth Bearer tokens; no WebKit, no PTY.
 - Gemini (retired locally): same creds -> cloudcode-pa.googleapis.com
 - Z.ai (GLM, dispatched via opencode): API key in opencode's auth.json ->
   api.z.ai/api/monitor/usage/quota/limit
+- Kimi Code: OAuth credential in ~/.kimi-code/credentials ->
+  api.kimi.ai/coding/v1/usages
 - Ollama (local, also via opencode): no quota to fetch — localhost:11434
   /api/tags is an availability probe reporting unmetered capacity
 """
@@ -22,7 +24,9 @@ import re
 import shutil
 import ssl
 import subprocess
+import tempfile
 import time
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -1161,6 +1165,303 @@ def zai_probe() -> dict:
     }
 
 
+# ---- Kimi Code --------------------------------------------------------------
+
+
+_KIMI_CODE_DEFAULT_BASE_URL = "https://api.kimi.ai/coding/v1"
+_KIMI_CODE_DEFAULT_OAUTH_HOST = "https://auth.kimi.ai"
+
+# Public installed-app client id from kimi-code 0.41.0's OAuth bundle. The
+# bundle refreshes at <oauth_host>/api/oauth/token with this form body.
+_KIMI_CODE_OAUTH_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098"
+
+
+def _kimi_code_home() -> Path:
+    configured = os.environ.get("KIMI_CODE_HOME")
+    return Path(configured).expanduser() if configured else Path("~/.kimi-code").expanduser()
+
+
+def _kimi_load_config(home: Path) -> dict:
+    try:
+        config = tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+def _kimi_provider_config(config: dict) -> dict:
+    providers = config.get("providers")
+    if not isinstance(providers, dict):
+        return {}
+    provider = providers.get("managed:kimi-code")
+    return provider if isinstance(provider, dict) else {}
+
+
+def _kimi_runtime_urls(config: dict) -> tuple[str, str]:
+    """Return the configured managed API and OAuth hosts, defaulting global."""
+    provider = _kimi_provider_config(config)
+    base_url = provider.get("base_url") or provider.get("baseUrl")
+    oauth = provider.get("oauth")
+    oauth = oauth if isinstance(oauth, dict) else {}
+    oauth_host = oauth.get("oauth_host") or oauth.get("oauthHost")
+    resolved_base_url = (
+        str(base_url).rstrip("/")
+        if isinstance(base_url, str) and base_url
+        else _KIMI_CODE_DEFAULT_BASE_URL
+    )
+    resolved_oauth_host = (
+        str(oauth_host).rstrip("/")
+        if isinstance(oauth_host, str) and oauth_host
+        else _KIMI_CODE_DEFAULT_OAUTH_HOST
+    )
+    return (
+        resolved_base_url,
+        resolved_oauth_host,
+    )
+
+
+def _kimi_credential_paths(home: Path, config: dict) -> list[Path]:
+    """Prefer this environment's configured OAuth file, then other CLI files."""
+    credentials_dir = home / "credentials"
+    provider = _kimi_provider_config(config)
+    oauth = provider.get("oauth")
+    oauth = oauth if isinstance(oauth, dict) else {}
+    oauth_key = oauth.get("key")
+    configured: list[Path] = []
+    if isinstance(oauth_key, str):
+        name = Path(oauth_key).name
+        if name.startswith("kimi-code-env-"):
+            configured.append(credentials_dir / f"{name}.json")
+
+    try:
+        discovered = sorted(
+            credentials_dir.glob("kimi-code-env-*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        discovered = []
+    return configured + [path for path in discovered if path not in configured]
+
+
+def _kimi_load_credentials() -> tuple[dict, Path, dict] | None:
+    home = _kimi_code_home()
+    config = _kimi_load_config(home)
+    for path in _kimi_credential_paths(home, config):
+        try:
+            credentials = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(credentials, dict) and isinstance(credentials.get("access_token"), str):
+            return credentials, path, config
+    return None
+
+
+def _kimi_save_credentials(path: Path, credentials: dict) -> None:
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            tmp_path.chmod(0o600)
+            tmp.write(json.dumps(credentials, indent=2) + "\n")
+        tmp_path.replace(path)
+    finally:
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def _kimi_refresh(credentials: dict, path: Path, oauth_host: str) -> dict:
+    """Refresh a Kimi CLI OAuth token and persist it to its existing file."""
+    refresh_token = credentials.get("refresh_token")
+    if not isinstance(refresh_token, str) or not refresh_token:
+        raise RuntimeError("no refresh_token in Kimi credential")
+    body = urllib.parse.urlencode(
+        {
+            "client_id": _KIMI_CODE_OAUTH_CLIENT_ID,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        }
+    )
+    response = _http_json(
+        f"{oauth_host.rstrip('/')}/api/oauth/token",
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        body=body,
+    )
+    access_token = response.get("access_token")
+    expires_in = response.get("expires_in")
+    if not isinstance(access_token, str) or not access_token:
+        raise RuntimeError("Kimi token refresh response missing access_token")
+    if not isinstance(expires_in, (int, float)) or expires_in <= 0:
+        raise RuntimeError("Kimi token refresh response missing expires_in")
+
+    refreshed = dict(credentials)
+    refreshed["access_token"] = access_token
+    if isinstance(response.get("refresh_token"), str) and response["refresh_token"]:
+        refreshed["refresh_token"] = response["refresh_token"]
+    refreshed["expires_in"] = int(expires_in)
+    refreshed["expires_at"] = int(time.time()) + int(expires_in)
+    if isinstance(response.get("token_type"), str):
+        refreshed["token_type"] = response["token_type"]
+    if isinstance(response.get("scope"), str):
+        refreshed["scope"] = response["scope"]
+    _kimi_save_credentials(path, refreshed)
+    return refreshed
+
+
+def _humanize_kimi_tier(level: object) -> str | None:
+    if not isinstance(level, str) or not level:
+        return None
+    suffix = level.removeprefix("LEVEL_")
+    return suffix.replace("_", " ").title()
+
+
+def _kimi_window(
+    name: str, detail: dict, *, window_seconds: float, include_forecast: bool
+) -> dict | None:
+    limit = detail.get("limit")
+    remaining = detail.get("remaining")
+    used = detail.get("used")
+    if not isinstance(limit, (int, float, str)):
+        return None
+    try:
+        limit_value = float(limit)
+        if isinstance(remaining, (int, float, str)):
+            remaining_value = float(remaining)
+        elif isinstance(used, (int, float, str)):
+            # The live API omits `remaining` at 0%, while retaining `used`.
+            remaining_value = limit_value - float(used)
+        else:
+            return None
+    except ValueError:
+        return None
+    if limit_value <= 0:
+        return None
+
+    reset_at = detail.get("resetTime")
+    reset_iso = reset_at if isinstance(reset_at, str) else None
+    forecast: str | None = None
+    if include_forecast and reset_iso:
+        try:
+            reset_dt = datetime.fromisoformat(reset_iso.replace("Z", "+00:00"))
+            elapsed = max(0.0, window_seconds - (reset_dt.timestamp() - time.time()))
+            used_pct = max(0.0, min(100.0, 100 - (remaining_value / limit_value * 100)))
+            forecast = _forecast_label(used_pct, window_seconds, elapsed)
+        except ValueError:
+            pass
+    return {
+        "name": name,
+        "pct_left": max(0, min(100, int(round(remaining_value / limit_value * 100)))),
+        "reset_at_iso": reset_iso,
+        "reset_relative": _format_relative(reset_iso),
+        "forecast": forecast,
+        "reserve_pct": None,
+    }
+
+
+def kimi_probe() -> dict:
+    """Kimi Code OAuth usage, as reported by its managed `/usages` endpoint.
+
+    `usage` is the weekly percentage bucket. `limits[]` holds rolling windows;
+    the 300-minute detail is Kimi Code's session quota. The stored access token
+    is intentionally never refreshed by making a chat request: when it is
+    expired, this uses the CLI's documented OAuth refresh request instead.
+    """
+    loaded = _kimi_load_credentials()
+    if loaded is None:
+        return {
+            "status": "unsupported",
+            "reason": "no Kimi Code credential — run `kimi login --region global`",
+        }
+    credentials, credentials_path, config = loaded
+    access_token = credentials.get("access_token")
+    expires_at = credentials.get("expires_at")
+    base_url, oauth_host = _kimi_runtime_urls(config)
+    if not isinstance(access_token, str) or not access_token:
+        return {
+            "status": "unsupported",
+            "reason": "Kimi token expired — run any `kimi` command to refresh it",
+        }
+    if not isinstance(expires_at, (int, float)) or expires_at <= time.time():
+        if (
+            not isinstance(credentials.get("refresh_token"), str)
+            or not credentials["refresh_token"]
+        ):
+            return {
+                "status": "unsupported",
+                "reason": "Kimi token expired — run any `kimi` command to refresh it",
+            }
+        credentials = _kimi_refresh(credentials, credentials_path, oauth_host)
+        access_token = credentials["access_token"]
+
+    try:
+        response = _http_json(
+            f"{base_url.rstrip('/')}/usages",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    except RuntimeError as exc:
+        if "HTTP 401" not in str(exc) or not isinstance(credentials.get("refresh_token"), str):
+            raise
+        credentials = _kimi_refresh(credentials, credentials_path, oauth_host)
+        response = _http_json(
+            f"{base_url.rstrip('/')}/usages",
+            headers={"Authorization": f"Bearer {credentials['access_token']}"},
+        )
+
+    usage = response.get("usage")
+    limits = response.get("limits")
+    user = response.get("user")
+    if not isinstance(usage, dict) or not isinstance(limits, list) or not isinstance(user, dict):
+        return {
+            "status": "unsupported",
+            "reason": f"unrecognised quota payload: {str(response)[:200]}",
+        }
+    membership = user.get("membership")
+
+    session: dict | None = None
+    for limit in limits:
+        if not isinstance(limit, dict):
+            continue
+        window = limit.get("window")
+        detail = limit.get("detail")
+        if (
+            isinstance(window, dict)
+            and window.get("duration") == 300
+            and window.get("timeUnit") == "TIME_UNIT_MINUTE"
+            and isinstance(detail, dict)
+        ):
+            # Session windows churn too quickly for a useful pace forecast,
+            # matching the Claude and Z.ai rows in this table.
+            session = _kimi_window(
+                "Session", detail, window_seconds=5 * 3600, include_forecast=False
+            )
+            break
+    weekly = _kimi_window("Weekly", usage, window_seconds=7 * 86400, include_forecast=True)
+    if session is None or weekly is None:
+        return {
+            "status": "unsupported",
+            "reason": f"unrecognised quota payload: {str(response)[:200]}",
+        }
+
+    level = membership.get("level") if isinstance(membership, dict) else None
+    return {
+        "status": "ok",
+        "account_email": None,
+        "tier": _humanize_kimi_tier(level),
+        "windows": [session, weekly],
+    }
+
+
 # ---- Ollama (local, unmetered) ----------------------------------------------
 
 # Ollama's own API, not the OpenAI-compatible /v1 shim that opencode dispatches
@@ -1285,6 +1586,7 @@ PROBES = {
     "claude": claude_probe,
     "agy": antigravity_probe,
     "zai": zai_probe,
+    "kimi": kimi_probe,
     "ollama": ollama_probe,
 }
 
