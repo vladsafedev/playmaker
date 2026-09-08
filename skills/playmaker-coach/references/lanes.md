@@ -44,7 +44,8 @@ against the live roster, failing the dispatch on a stale name.
 | writes files, coach integrates the result directly | in-session sub-agent | write-capable, returns into context |
 | is an independent stream to monitor separately | `dispatch claude --model sonnet` | tracked, detached, spares the top bucket |
 | is heavy reasoning only the coach can do | coach | top tier, serial |
-| is write-heavy and can leave Claude | codex / agy / opencode | their own quotas |
+| is write-heavy and can leave Claude | codex / agy / opencode / kimi | their own quotas |
+| needs senior judgment on a pool nobody else on the machine draws from | `dispatch kimi -m kimi-code/k3-256k` | K3 on its own subscription; slow, so detached only |
 | needs a second strong reviewer without touching the Anthropic bucket | `dispatch agy --model <gemini-pro-high>` | near-senior judgment on an uncontended pool |
 | is bulk work with every subscription low | `dispatch opencode --model <plan>/<model>` | a separate plan, untouched by the others |
 | is mechanical and privacy-sensitive, or all quotas spent | `dispatch opencode --model <local>/<model>` | runs on this machine, costs wall-clock only |
@@ -52,7 +53,7 @@ against the live roster, failing the dispatch on a stale name.
 ## Tier-matching
 
 - **Architectural / spec judgment / cross-module integration** → top tier (coach, top-tier Codex,
-  Gemini-Pro-high on agy for review and advice rather than implementation).
+  K3 on `kimi`, Gemini-Pro-high on agy for review and advice rather than implementation).
 - **Pattern-following implementation, scoped CRUD, mechanical refactor, test scaffolding, writing
   inside an existing convention** → mid tier (Claude Sonnet, Gemini-Pro-low, mid-tier Codex;
   agy's Claude models only when the roster shows a current version). Most delegated implementation lives here.

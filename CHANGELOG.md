@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The bundled coach skill never named the `kimi` lane.** 0.11.0 made Kimi
+  Code a first-class agent and `references/lanes.md` listed it, but `SKILL.md`
+  — the file the coach reads first, and the description Claude Code matches a
+  request against — still said the workers were Claude, Codex, Antigravity and
+  opencode; the routing cheat-sheet sent write-heavy work that can leave
+  Claude to `codex / agy / opencode` only, and the tier table had no senior
+  seat for K3. A coach following the skill to the letter would never route a
+  WP to the one subscription nobody else on the machine draws from. The
+  description, the lane list, the per-agent-traps pointer, the cheat-sheet
+  and the tier table now name `kimi`; CONTRIBUTING's lane and handler lists
+  too. As with 0.5.1, this release exists because the skill ships inside the
+  wheel — doc fixes are not live until published.
+
 ## [0.12.0] - 2026-09-04
 
 ### Added
