@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`muse` lane — Meta's Muse Code CLI as a first-class agent.**
+  `playmaker dispatch muse` runs `muse exec --json …`, and the session id
+  arrives in the **first** stdout line — unlike kimi, whose id comes last — so
+  `playmaker list` shows it at once. Resume re-runs `muse exec` with
+  `--session-id` in the same cwd, and `summary` reads
+  `${XDG_DATA_HOME:-~/.local/share}/muse/sessions/YYYY/MM/DD/<uuid>/session.jsonl`.
+  Permissions default to Muse's sandbox with approval off and the workspace
+  trusted (`--disable-approval --trust-workspace` — without trust Muse ignores
+  the repo's AGENTS.md), and `[agents.muse]` takes `binary`, `model`,
+  `reasoning_effort`, `yolo`, `trust_workspace`, `sandbox_network` and
+  `permission_profile`. Muse Spark is a senior-tier peer of codex, GLM and K3,
+  on its own `muse login`. No usage/quota API exists, so `playmaker quotas`
+  has no Muse block.
+
 ### Fixed
 
 - **`playmaker quotas` printed `unsupported` for Kimi Code.** By 2026-09-29

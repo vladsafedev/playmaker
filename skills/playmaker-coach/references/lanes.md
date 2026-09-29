@@ -18,9 +18,9 @@ pays. Four lanes:
    (`haiku` for trivial mechanical work). playmaker runs it in `acceptEdits`: it writes freely
    inside `--cwd` and is refused outside it, so keep every path in the prompt inside `--cwd`.
 
-4. **External dispatch — `codex` / `agy` / `opencode` / `kimi`.** Each on its own subscription or
-   plan — the home for write-heavy parallel implementation that can leave the Anthropic
-   subscription.
+4. **External dispatch — `codex` / `agy` / `opencode` / `kimi` / `muse`.** Each on its own
+   subscription or plan — the home for write-heavy parallel implementation that can leave the
+   Anthropic subscription.
    - **`agy` (Antigravity)** carries more than Google models: alongside Gemini Flash and Pro tiers it
      serves **Claude Sonnet/Opus (Thinking)** and a GPT-OSS tier. Its Claude runs on *Google's*
      pool and spends none of the Anthropic bucket — but that roster has trailed Anthropic's own
@@ -32,6 +32,8 @@ pays. Four lanes:
      at all.
    - **`kimi`** runs the Kimi Code CLI on its own subscription: senior tier (K3), native login, no
      opencode.
+   - **`muse`** runs Meta's Muse Code CLI on its own login: senior tier (Muse Spark), sandboxed
+     by default.
 
 **Never write an agy or opencode model name from memory** — run `agy models` / `opencode models` and
 copy a line. Both rosters and their spelling move with releases, and playmaker validates `--model`
@@ -44,16 +46,17 @@ against the live roster, failing the dispatch on a stale name.
 | writes files, coach integrates the result directly | in-session sub-agent | write-capable, returns into context |
 | is an independent stream to monitor separately | `dispatch claude --model sonnet` | tracked, detached, spares the top bucket |
 | is heavy reasoning only the coach can do | coach | top tier, serial |
-| is write-heavy and can leave Claude | codex / agy / opencode / kimi | their own quotas |
-| needs senior judgment on a pool nobody else on the machine draws from | `dispatch kimi -m kimi-code/k3-256k` | K3 on its own subscription; slow, so detached only |
-| needs a second strong reviewer without touching the Anthropic bucket | `dispatch agy --model <gemini-pro-high>` | near-senior judgment on an uncontended pool |
+| is write-heavy and can leave Claude | codex / agy / opencode / kimi / muse | their own quotas |
+| needs senior judgment on a pool nobody else on the machine draws from | `dispatch kimi -m kimi-code/k3-256k` / `dispatch muse` | K3 and Muse Spark on their own subscriptions; K3 is slow, so detached only |
+| needs a second strong reviewer without touching the Anthropic bucket | `dispatch agy --model <gemini-pro-high>` / `dispatch muse` | near-senior judgment on an uncontended pool; Muse Spark is senior |
 | is bulk work with every subscription low | `dispatch opencode --model <plan>/<model>` | a separate plan, untouched by the others |
 | is mechanical and privacy-sensitive, or all quotas spent | `dispatch opencode --model <local>/<model>` | runs on this machine, costs wall-clock only |
 
 ## Tier-matching
 
 - **Architectural / spec judgment / cross-module integration** → top tier (coach, top-tier Codex,
-  K3 on `kimi`, Gemini-Pro-high on agy for review and advice rather than implementation).
+  K3 on `kimi`, Muse Spark on `muse`, Gemini-Pro-high on agy for review and advice rather than
+  implementation).
 - **Pattern-following implementation, scoped CRUD, mechanical refactor, test scaffolding, writing
   inside an existing convention** → mid tier (Claude Sonnet, Gemini-Pro-low, mid-tier Codex;
   agy's Claude models only when the roster shows a current version). Most delegated implementation lives here.

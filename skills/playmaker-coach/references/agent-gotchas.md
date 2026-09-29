@@ -81,6 +81,23 @@ line from `agy models` / `opencode models` rather than typing it.
 - Needs **Node ≥ 22.19** — hence the wrapper binary; point `[agents.kimi] binary` at it.
 - **Always pass `-m kimi-code/k3-256k`** — the CLI default is the weaker K2.7 `kimi-for-coding`.
 
+## muse (Muse Code CLI)
+
+- The default run keeps Muse's **sandbox**: approval off, workspace trusted, writes inside the
+  repo fine — but writes **outside** it are denied, so `uv run pytest` fails initializing
+  `~/.cache/uv` (npm/pnpm caches alike). A WP whose gate needs those caches needs
+  `[agents.muse] yolo = true`.
+- **Without workspace trust Muse ignores the repo's AGENTS.md.** playmaker passes
+  `--trust-workspace` by default; `trust_workspace = false` drops it, and repo rules stop
+  applying.
+- Exit codes: **0** turn completed; **1** run failed (bad model, auth) — the reason is in the
+  terminal event and stderr's last line; **2** usage error; **130/143** SIGINT/SIGTERM.
+- **Resume only from the same cwd** — a `--session-id` elsewhere would need
+  `--allow-workspace-switch`, which playmaker never passes.
+- stderr **always** carries informational lines such as `muse: workspace root: …`, even on
+  success — they are not errors.
+- The stream has **no cost fields** — token usage exists only in the session log on disk.
+
 ## Worktrees
 
 Parallel WPs that touch the same files collide. Give each its own git worktree and dispatch with

@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/playmaker-cli.svg?cacheSeconds=3600)](https://pypi.org/project/playmaker-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Run Claude Code, Codex, Antigravity, Kimi Code and opencode as parallel sub-agents from one terminal — and spend separate quotas instead of one.**
+**Run Claude Code, Codex, Antigravity, Kimi Code, Muse Code and opencode as parallel sub-agents from one terminal — and spend separate quotas instead of one.**
 
 You stay in your Claude Code session doing the part only you can do. `playmaker`
 fans the rest out to other agent CLIs as detached processes, tracks them,
@@ -47,11 +47,13 @@ in one serial session:
 1. **Wall-clock speed.** A task that decomposes into 3–5 independent
    work-streams (schema, backend, frontend, tests, docs) finishes 2–4× faster
    when each stream runs as its own parallel agent.
-2. **Provider arbitrage.** Codex, Antigravity, Kimi Code and opencode quotas
-   are entirely separate pools from your Anthropic plan. Every slice you hand
-   them is capacity your main session never spends — and Antigravity's roster
-   includes Claude Sonnet/Opus, so even Claude-quality work can run on Google's
-   pool. Kimi Code brings its own subscription with the senior-tier K3.
+2. **Provider arbitrage.** Codex, Antigravity, Kimi Code, Muse Code and
+   opencode quotas are entirely separate pools from your Anthropic plan. Every
+   slice you hand them is capacity your main session never spends — and
+   Antigravity's roster includes Claude Sonnet/Opus, so even Claude-quality
+   work can run on Google's pool. Kimi Code brings its own subscription with
+   the senior-tier K3; Muse Code adds Meta's senior-tier Muse Spark on its own
+   login.
    `opencode` widens this the most: one CLI fronting ~75 providers, from a z.ai
    GLM coding plan to models running locally on your own machine.
 3. **Bucket arbitrage inside one plan.** Headless `claude -p` draws on the same
@@ -124,6 +126,11 @@ The other agents differ, because their CLIs do:
   `--auto`, `--yolo` and `--plan`, and already runs with auto-approval, so
   there is no read-only mode below the prompt.
 
+- **muse** runs sandboxed by default with approval off and the workspace
+  trusted (`--disable-approval --trust-workspace`). The sandbox denies writes
+  outside the repo, so `uv run`, npm and similar caches fail inside it — set
+  `yolo = true` if workers must run such gates.
+
 - **gemini** (legacy) runs with `--yolo`.
 
 ## Install
@@ -162,6 +169,7 @@ playmaker agents          # which agent CLIs are reachable
 | **Antigravity (`agy`)** | bundled with [Antigravity](https://antigravity.google) | `--model claude-opus-4-6-thinking` — the roster moves, so read it from `agy models` |
 | **opencode** | `brew install sst/tap/opencode` (or see [opencode.ai](https://opencode.ai)) | `--model provider/model`, e.g. `zai-coding-plan/glm-5.2`; roster from `opencode models`, providers from `opencode auth login` |
 | **Kimi Code CLI** | `npm i -g @moonshot-ai/kimi-code` | needs Node ≥ 22.19 (a wrapper that pins a newer Node is fine — point `[agents.kimi] binary` at it); `--model kimi-code/k3-256k` — 256k window at half the quota cost of `k3`; log in once with `kimi login --region global`; model ids from `~/.kimi-code/config.toml` |
+| **Muse Code CLI** | `curl -fsSL https://dev.meta.ai/install.sh \| sh` | self-updating launcher in `~/.local/bin` (point `[agents.muse] binary` at it if a detached dispatch can't find it); log in once with `muse login` or set `META_API_KEY`; `--model muse-spark-1.3` — omit it and Muse's own default from `~/.config/muse/settings.json` applies |
 | **Gemini CLI** (legacy) | `npm i -g @google/gemini-cli` | still supported, superseded by `agy` |
 
 At least one is required; `playmaker agents` tells you which it can see.
@@ -297,6 +305,7 @@ and locates the session file the tool writes locally. Empirically:
 | Antigravity | `~/.gemini/antigravity-cli/brain/<conversation-id>/.system_generated/logs/transcript_full.jsonl` |
 | opencode | SQLite — `~/.local/share/opencode/opencode.db` (`session` / `message` / `part`); playmaker keeps a pointer at `~/.playmaker/opencode/<id>.session` |
 | kimi | `~/.kimi-code/sessions/wd_<cwd-basename>_<hash>/session_<id>/agents/main/wire.jsonl` (per-cwd; `KIMI_CODE_HOME` overrides the root) |
+| muse | `${XDG_DATA_HOME:-~/.local/share}/muse/sessions/YYYY/MM/DD/<session-uuid>/session.jsonl` (the date directory is the session's creation date; a resume appends to the same file) |
 | Gemini | `~/.gemini/tmp/<cwd-basename>/chats/session-<ts>-<short_id>.{json,jsonl}` |
 
 `thread` and `summary` normalize all of them into the same turn list, so every
@@ -423,6 +432,9 @@ whole Z.ai block. Routing a subtask is choosing which of them to spend.
   `~/.kimi-code/credentials/kimi-code-env-*.json` (`$KIMI_CODE_HOME` overrides
   the root). Its 5-hour `Session` and weekly rows are separate percentage
   buckets; no credential reads as *unsupported* rather than a failed probe.
+- **Muse Code** — no usage or quota API exists (billing is pay-as-you-go or a
+  subscription via accountscenter.meta.com), so `playmaker quotas` has no Muse
+  block.
 
 Reading these at *model* granularity is the point: they are the load-balancing
 input the coach skill uses to route each subtask.
