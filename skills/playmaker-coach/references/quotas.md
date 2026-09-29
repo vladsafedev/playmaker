@@ -19,8 +19,10 @@ several tiers with independent buckets, and the whole point of pulling quotas is
 - **Antigravity (`agy`):** one Google pool split by family — `Gemini 5h` / `Gemini weekly` and
   `Claude/GPT 5h` / `Claude/GPT weekly`. All Gemini models share the first; Claude *and* GPT-OSS
   share the second. So one Gemini reviewer plus one agy-Claude reviewer costs one hit in each of two
-  separate buckets — the cheapest way to buy two independent opinions. Requires agy's local daemon;
-  if the table says "daemon offline" it fell back to a coarse Gemini-only view.
+  separate buckets — the cheapest way to buy two independent opinions. Read off agy's local daemon —
+  playmaker starts a short-lived one itself when none answers. "daemon offline" means it fell back
+  to a coarse Gemini-only view; `unavailable` means neither source answered — the lane still works,
+  so route by the last success and say the numbers are old.
 - **Codex:** the main block is the primary Codex window; `Codex — Spark` is a separate block with
   its own `Session` / `Weekly` rows for the Spark model, the junior Codex lane — route Spark work
   off that block, not off the main one.

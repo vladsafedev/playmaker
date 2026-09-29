@@ -1038,6 +1038,14 @@ def _render_provider(name: str, info: dict) -> None:
     if status == "unsupported":
         console.print(f"  [yellow]unsupported[/yellow]: {info.get('reason', '')}")
         return
+    # The lane works, only its quota source is out of reach — say how to get it back.
+    if status == "unavailable":
+        console.print(f"  [yellow]unavailable[/yellow]: {info.get('reason', '')}")
+        if info.get("hint"):
+            console.print(f"  [dim]hint: {info['hint']}[/dim]")
+        if info.get("last_success"):
+            console.print(f"  [dim]last success: {info['last_success']}[/dim]")
+        return
 
     windows = info.get("windows") or []
     blocks = info.get("blocks") or []
@@ -1047,6 +1055,8 @@ def _render_provider(name: str, info: dict) -> None:
             return
     else:
         render_windows(windows)
+    if info.get("source") == "remote" and info.get("local_error"):
+        console.print(f"  [dim]local daemon: {info['local_error']}[/dim]")
 
     # A local provider has models where the metered ones have tiers; naming them
     # saves the coach a round-trip to `ollama list` before it can route here.

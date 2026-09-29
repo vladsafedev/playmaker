@@ -4,7 +4,9 @@ All providers go through OAuth Bearer tokens; no WebKit, no PTY.
 
 - Codex: ChatGPT JWT in ~/.codex/auth.json -> chatgpt.com/backend-api/wham/usage
 - Claude: macOS Keychain entry "Claude Code-credentials" -> api.anthropic.com/api/oauth/usage
-- Antigravity (agy): ~/.gemini/oauth_creds.json -> daily-cloudcode-pa.googleapis.com
+- Antigravity (agy): agy's localhost language server -> RetrieveUserQuotaSummary
+  (a short-lived headless agy of our own when no running one answers); fallback
+  ~/.gemini/oauth_creds.json -> daily-cloudcode-pa.googleapis.com
   loadCodeAssist + retrieveUserQuota (ideType ANTIGRAVITY); Gemini buckets only
 - Gemini (retired locally): same creds -> cloudcode-pa.googleapis.com
 - Z.ai (GLM, dispatched via opencode): API key in opencode's auth.json ->
@@ -21,7 +23,9 @@ import base64
 import json
 import os
 import re
+import secrets
 import shutil
+import signal
 import ssl
 import subprocess
 import tempfile
@@ -34,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from playmaker import __version__
+from playmaker.config import agent_binary
 
 # OAuth installed-app client credentials shipped with the public gemini-cli
 # npm package — not a private secret (Google publishes them in gemini-cli's
@@ -680,19 +685,31 @@ def gemini_probe() -> dict:
 # The full Antigravity quota — Gemini AND Claude/GPT, each split into a 5-hour
 # and a weekly window (what Antigravity's own UI and CodexBar show) — is NOT
 # available to a plain OAuth token: the remote fetchAvailableModels endpoint
-# 403s. It IS served by agy's embedded localhost language-server daemon, over a
+# 403s, and since 2026-09 retrieveUserQuota answers 403 "no valid license" too.
+# It IS served by the language server embedded in every agy process, over a
 # self-signed-TLS gRPC-web (Connect) endpoint, exactly as CodexBar reads it.
-# agy runs a singleton daemon, so the probe works whenever any agy process (or
-# CodexBar's bounded background agy) is running; we can also spawn a short-lived
-# one ourselves. Approach ported from steipete/CodexBar's AntigravityStatusProbe.
+#
+# Since agy 1.2 that server refuses a request without its CSRF token (401
+# "missing CSRF token"), and an agy someone else started keeps its token to
+# itself. So the probe first asks whatever already listens — a token-less
+# front such as a CodexBar proxy still answers — and otherwise starts a
+# short-lived agy of its own with a token it chose.
+# Approach ported from steipete/CodexBar's AntigravityStatusProbe.
 
 _ANTIGRAVITY_QUOTA_SUMMARY_PATH = (
     "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
 )
+_ANTIGRAVITY_CSRF_HEADER = "x-codeium-csrf-token"
 # `pgrep -f` regexes over the full command line. The agy one is anchored so a
 # process whose *arguments* merely mention agy — playmaker's own dispatch, with
 # its `--log-file .../playmaker-agy-*.log` — doesn't count as the daemon.
-_ANTIGRAVITY_PROC_PATTERNS = (r"(^|/)agy( |$)", r"language_server")
+# `agy-real` is the binary a wrapper script named `agy` execs; started
+# directly, its own name is what argv[0] carries.
+_ANTIGRAVITY_PROC_PATTERNS = (r"(^|/)agy(-real)?( |$)", r"language_server")
+# How long the probe waits on an agy of its own. It usually reports inside two
+# seconds; the first answer after start-up may still be a 500 "not logged into
+# Antigravity" while agy reads the login, so requests are retried until then.
+_ANTIGRAVITY_SPAWN_BUDGET = 12.0
 
 
 def _antigravity_daemon_ports() -> list[int]:
@@ -708,6 +725,11 @@ def _antigravity_daemon_ports() -> list[int]:
         for line in proc.stdout.split():
             if line.isdigit():
                 pids.add(int(line))
+    return _listening_ports(pids)
+
+
+def _listening_ports(pids: set[int] | list[int]) -> list[int]:
+    """127.0.0.1 TCP ports these processes are listening on."""
     if not pids:
         return []
     # `-a` ANDs lsof's selectors. Without it they are ORed, and the listing is
@@ -734,22 +756,23 @@ def _antigravity_daemon_ports() -> list[int]:
     return sorted(ports)
 
 
-def _antigravity_local_summary(ports: list[int], timeout: float = 5.0) -> dict | None:
+def _antigravity_local_summary(
+    ports: list[int], timeout: float = 5.0, token: str | None = None
+) -> dict | None:
     """POST RetrieveUserQuotaSummary to each candidate daemon port; parse the
     first response that carries quota groups. Returns the raw summary dict
-    ({"groups": [...]}) or None if no port answered."""
+    ({"groups": [...]}) or None if no port answered. `token` is the CSRF token
+    of a daemon the probe started itself; others get the request without one."""
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
+    headers = {"Content-Type": "application/json", "Connect-Protocol-Version": "1"}
+    if token:
+        headers[_ANTIGRAVITY_CSRF_HEADER] = token
     for port in ports:
         for scheme in ("https", "http"):
             url = f"{scheme}://127.0.0.1:{port}{_ANTIGRAVITY_QUOTA_SUMMARY_PATH}"
-            req = urllib.request.Request(
-                url,
-                data=b"{}",
-                method="POST",
-                headers={"Content-Type": "application/json", "Connect-Protocol-Version": "1"},
-            )
+            req = urllib.request.Request(url, data=b"{}", method="POST", headers=headers)
             # Whatever a port says, it only ever disqualifies that port. Not
             # every refusal is an OSError: a TLS-only listener answers a
             # plaintext POST with a TLS alert record, which urllib raises as
@@ -766,6 +789,75 @@ def _antigravity_local_summary(ports: list[int], timeout: float = 5.0) -> dict |
             if isinstance(payload, dict) and payload.get("groups"):
                 return payload
     return None
+
+
+def _antigravity_spawned_summary(budget: float = _ANTIGRAVITY_SPAWN_BUDGET) -> dict:
+    """Start a short-lived agy, read RetrieveUserQuotaSummary off it, stop it.
+
+    Headless on purpose: agy's TUI quits at once without a terminal, while
+    stream-json print mode sits waiting on stdin for a turn — one that never
+    comes, so the daemon stays up with no TTY and no request spent. The child
+    leads its own process group and runs in an empty scratch directory, so
+    there is nothing for it to index and nothing left behind. Raises
+    RuntimeError saying why when no summary came back.
+    """
+    binary = shutil.which(agent_binary("agy"))
+    if not binary:
+        raise RuntimeError("agy is not on PATH")
+    token = secrets.token_hex(16)
+    deadline = time.monotonic() + budget
+    with tempfile.TemporaryDirectory(prefix="playmaker-agy-quota-") as cwd:
+        proc = subprocess.Popen(
+            [
+                binary,
+                f"--csrf_token={token}",
+                "--input-format", "stream-json",
+                "--output-format", "stream-json",
+                "-p=",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=cwd,
+            start_new_session=True,
+        )
+        try:
+            while time.monotonic() < deadline:
+                if proc.poll() is not None:
+                    raise RuntimeError(
+                        f"agy exited with code {proc.returncode} before reporting quota"
+                    )
+                ports = _listening_ports([proc.pid])
+                if ports:
+                    left = deadline - time.monotonic()
+                    payload = _antigravity_local_summary(
+                        ports, timeout=max(0.5, min(3.0, left)), token=token
+                    )
+                    if payload:
+                        return payload
+                time.sleep(0.25)
+        finally:
+            _antigravity_stop(proc)
+    raise RuntimeError(f"agy did not report quota within {budget:g}s")
+
+
+def _antigravity_stop(proc: subprocess.Popen) -> None:
+    """Stop an agy the probe started, with whatever it spawned: TERM, then KILL."""
+    if proc.stdin is not None:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=3)
+            return
+        except subprocess.TimeoutExpired:
+            continue
 
 
 # Category / bucket → short window name, and window length for forecasting.
@@ -845,23 +937,31 @@ def antigravity_probe() -> dict:
     """Quota probe for Antigravity (agy).
 
     Prefers agy's local daemon, which reports the full categorized quota —
-    Gemini and Claude/GPT, each split 5-hour vs weekly (source: "local"). Falls
-    back to the OAuth retrieveUserQuota, which only surfaces coarse Gemini daily
-    buckets (source: "remote") — the Claude/GPT windows are simply not available
-    to a plain OAuth token. The local path needs a running agy/CodexBar daemon.
+    Gemini and Claude/GPT, each split 5-hour vs weekly (source: "local"): a
+    running one when it answers, else a short-lived one of our own. Falls back
+    to the OAuth retrieveUserQuota, which only surfaces coarse Gemini daily
+    buckets (source: "remote") — the Claude/GPT windows are simply not
+    available to a plain OAuth token.
 
-    The local path is a bonus, so it degrades to remote rather than to an
-    error: whatever goes wrong there — a stray listener, a daemon mid-start,
-    a payload we don't recognise — the user still gets a quota row.
+    The local path degrades to remote rather than to an error: whatever goes
+    wrong there — a stray listener, a daemon mid-start, a payload we don't
+    recognise — the user may still get a quota row. When the remote refuses
+    the account outright (403 "no valid license") the lane is still usable —
+    agy itself works — so that is "unavailable" with a hint, not an error.
     """
     windows: list[dict] = []
+    local_error: str | None = None
     try:
         ports = _antigravity_daemon_ports()
         payload = _antigravity_local_summary(ports) if ports else None
-        if payload:
-            windows = _antigravity_windows_from_summary(payload)
-    except Exception:
+        if not payload:
+            payload = _antigravity_spawned_summary()
+        windows = _antigravity_windows_from_summary(payload)
+        if not windows:
+            local_error = "the daemon reported no 5h or weekly buckets"
+    except Exception as exc:
         windows = []
+        local_error = str(exc) or type(exc).__name__
     if windows:
         out = {
             "status": "ok",
@@ -880,9 +980,40 @@ def antigravity_probe() -> dict:
             pass
         return out
 
-    result = _google_code_assist_probe(_ANTIGRAVITY_CLOUDCODE_BASE, "ANTIGRAVITY")
+    try:
+        result = _google_code_assist_probe(_ANTIGRAVITY_CLOUDCODE_BASE, "ANTIGRAVITY")
+    except RuntimeError as exc:
+        if not _antigravity_remote_unlicensed(exc):
+            raise
+        out = {
+            "status": "unavailable",
+            "account_email": None,
+            "tier": None,
+            "windows": [],
+            "reason": (
+                "the remote quota endpoint refuses this account (403, no valid "
+                "license) — agy itself still works; only its local daemon reports quota"
+            ),
+            "hint": (
+                f"the local daemon did not answer ({local_error}); check that `agy` "
+                "starts and is logged in, then `playmaker quotas --refresh`"
+            ),
+            "local_error": local_error,
+        }
+        try:
+            out["account_email"] = _antigravity_account_meta().get("email")
+        except Exception:
+            pass
+        return out
     result["source"] = "remote"
+    result["local_error"] = local_error
     return result
+
+
+def _antigravity_remote_unlicensed(exc: BaseException) -> bool:
+    """The Code Assist backend's 403 for an account it serves no quota to."""
+    text = str(exc)
+    return "HTTP 403" in text and "valid license" in text
 
 
 def _antigravity_account_meta() -> dict:

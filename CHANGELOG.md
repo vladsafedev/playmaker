@@ -34,6 +34,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the API no longer reports. The new `usages` block (`limit_5h`/`limit_7d`
   with `used_ratio`) is not read: on the live account it said 0 while `usage`
   counted 21 used.
+- **`playmaker quotas` printed an error for Antigravity while agy worked.**
+  Two things broke at once. agy 1.2's embedded language server now refuses a
+  request without its CSRF token (401 `missing CSRF token`), and an agy someone
+  else started keeps that token to itself, so the local path found nothing it
+  could read. The remote fallback (`retrieveUserQuota`, ideType ANTIGRAVITY)
+  meanwhile began answering 403 "You do not have a valid license of this
+  product". The probe now starts a short-lived agy of its own when no running
+  one answers — headless (`--input-format stream-json -p=` waits on stdin, so
+  no TTY and no request spent), with a token it chose, in an empty scratch
+  directory, stopped as a process group once the summary is in (about 1.5 s;
+  capped at 12 s) — and reads the full Gemini and Claude/GPT 5h/weekly
+  windows off it. Process discovery also matches `agy-real`, the binary
+  behind an `agy` wrapper. If both sources still fail and the remote says "no
+  valid license", the block reads `unavailable` with a hint and keeps its last
+  success instead of `error`; any other remote failure is still an error. A
+  remote fallback now says why the daemon was missed.
 
 ## [0.12.1] - 2026-09-08
 
