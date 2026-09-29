@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-09-30
+
+### Added
+
+- **`--effort` for the `claude` lane.** `[agents.claude] effort = "xhigh"` or
+  `playmaker dispatch|continue … --effort <low|medium|high|xhigh|max>` is forwarded to
+  Claude Code's own `--effort`, right after `--model`, on dispatch and resume. The flag
+  overrides the config for one run (carried through `PLAYMAKER_CLAUDE_EFFORT`, never
+  persisted); an invalid value fails before any process starts; other lanes accept and
+  ignore it with a note.
+- **Banked limit resets in `playmaker quotas`.** The Codex block shows
+  `Banked resets  N (M usable now)` and each reset's expiry (from
+  `wham/rate-limit-reset-credits`, same bearer token). Claude's reset is not reachable
+  with the CLI token (CodexBar reads it from the web session) and stays out.
+- **The coach's ledger.** `scripts/ledger.py` keeps one JSON line per landed work package
+  in `~/.playmaker/ledger.jsonl` (`add`, `fix`, `escape`, `stats`, `tail`), and
+  `scripts/ledger-hook.py` — a Claude Code `PostToolUse` hook on `Bash` — writes the row
+  on every `git commit` from the WP's review directory, with an optional junior model
+  (`[ledger] junior = "codex:<model>"`) filling the soft fields. Fields, mapping and the
+  settings snippet: `references/ledger.md`.
+- **`--risk seams` in `review-board.sh`.** A one-seat board over the joints between the
+  work packages of one fan-out, after each passed its own board and the global gate.
+
+### Changed
+
+- **The coach skill, 2026-09-30 revision** (`skills/playmaker-coach`): routing is
+  «fit before headroom» (class the WP, then the ledger, then the pool floors, then
+  headroom); map vs. semantic recon; an integration step with a seam review before
+  landing; fixed board columns; a first-minute check on every detached dispatch and no
+  waiting on closed lanes; policy load order is personal, then repo. Reviewer roster
+  lines are an ordered preference list — the script seats exactly 1/2/3/1 for
+  routine/normal/high/seams after skipping the implementer and holds the rest in
+  reserve; fewer than required stops it (`PM_REVIEW_ALLOW_SHORT=1` overrides).
+- **`review-board.sh` protects its artefacts.** Previous verdicts are archived on a new
+  dispatch and ignored by `--collect` when older than the current patch; `--dry-run`
+  no longer truncates `sessions.txt`; untracked files under the review paths are listed
+  with the `git add -N` hint; `board.env` records risk, round and required count;
+  `--collect` marks `failed`/`killed` seats DEAD, parses the last object carrying the
+  contract, and prints `verdicts: k/N` (`BOARD INCOMPLETE` while short). The prompt
+  interpolates the base ref, forbids edits and scratch files inside the tree, tells a
+  seat that cannot run the gate to report it under `unverifiable`, and asks the `risk`
+  lens to falsify the acceptance criteria.
+
+### Fixed
+
+- **`playmaker quotas` no longer refreshes the Claude OAuth token.** The probe shared
+  the keychain entry and the single-use refresh token with the Claude Code CLI, and the
+  race logged the CLI out. The probe now only reads; when the token is expired it lets
+  the CLI refresh it (`[quotas] claude_refresh_via_cli`, default on) or shows
+  `login expired — run: claude auth login`. An outage after a successful refresh is
+  reported as an outage, not as an expired login.
+- **The reset-credits inventory is best-effort**: a failing secondary request no
+  longer sinks the whole Codex block.
+- **The ledger's writers take a lock and rewrites are atomic.** `ledger.py add` (and so
+  the hook) appends under an `flock`; `fix` and `escape` hold the same lock across their
+  read-modify-write and publish through a temp file and `os.replace`, so two coach sessions
+  committing at once cannot lose a row or tear the file; a trailing partial line is skipped
+  by the readers instead of stopping them. `--effort` is validated in the CLI before a
+  detached run spawns.
+
 ## [0.13.0] - 2026-09-30
 
 ### Added
