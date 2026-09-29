@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`playmaker quotas` printed `unsupported` for Kimi Code.** By 2026-09-29
+  the `/usages` endpoint stopped returning the `user` object — and with it
+  `membership.level` — and the probe required it, so a payload whose `usage`
+  and `limits[]` buckets were unchanged was rejected as unrecognised. `user`
+  is now optional (when present it must still be an object), so the Session
+  and Weekly rows render again; the `Kimi Code` header goes without the tier
+  the API no longer reports. The new `usages` block (`limit_5h`/`limit_7d`
+  with `used_ratio`) is not read: on the live account it said 0 while `usage`
+  counted 21 used.
+
 ## [0.12.1] - 2026-09-08
 
 ### Fixed

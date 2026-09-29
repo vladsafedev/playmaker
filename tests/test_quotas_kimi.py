@@ -22,6 +22,13 @@ _PAYLOAD = json.loads(
     '{"user":{"userId":"d9gg8obmrb73tddocqb0","region":"REGION_OVERSEA","membership":{"level":"LEVEL_BASIC"},"businessId":""},"usage":{"limit":"100","used":"1","remaining":"99","resetTime":"2026-09-11T14:50:20.391966Z"},"limits":[{"window":{"duration":300,"timeUnit":"TIME_UNIT_MINUTE"},"detail":{"limit":"100","used":"3","remaining":"97","resetTime":"2026-09-04T19:50:20.391966Z"}}],"parallel":{"limit":"10"},"totalQuota":{},"authentication":{"method":"METHOD_ACCESS_TOKEN","scope":"FEATURE_CODING"},"subType":"TYPE_PURCHASE","domain":"DOMAIN_NEXUS","version":"GOODS_VERSION_V1"}'
 )
 
+# Captured verbatim from the same account, 2026-09-29. `user` (and with it the
+# plan level) is gone, a `usages` block appeared beside the unchanged buckets,
+# and the idle session detail carries `remaining` without `used`.
+_PAYLOAD_NO_USER = json.loads(
+    '{"usage":{"limit":"100","used":"21","remaining":"79","resetTime":"2026-10-06T10:27:16.237028Z"},"limits":[{"window":{"duration":300,"timeUnit":"TIME_UNIT_MINUTE"},"detail":{"limit":"100","remaining":"100","resetTime":"2026-09-29T21:27:16.237028Z"}}],"usages":{"limit_5h":{"used_ratio":0,"reset_time":"2026-09-29T21:27:15Z"},"limit_7d":{"used_ratio":0,"reset_time":"2026-10-06T10:27:15Z"}}}'
+)
+
 
 @pytest.fixture
 def credential(monkeypatch, tmp_path) -> Path:
@@ -80,6 +87,20 @@ def test_usage_is_normalized_to_session_and_weekly(monkeypatch, credential) -> N
         ("Session", 97),
         ("Weekly", 99),
     ]
+
+
+def test_a_payload_without_user_still_reads_session_and_weekly(monkeypatch, credential) -> None:
+    _respond(monkeypatch, _PAYLOAD_NO_USER)
+
+    result = quotas.kimi_probe()
+
+    assert result["status"] == "ok"
+    assert result["tier"] is None
+    session, weekly = result["windows"]
+    assert (session["name"], session["pct_left"]) == ("Session", 100)
+    assert session["reset_at_iso"] == "2026-09-29T21:27:16.237028Z"
+    assert (weekly["name"], weekly["pct_left"]) == ("Weekly", 79)
+    assert weekly["reset_at_iso"] == "2026-10-06T10:27:16.237028Z"
 
 
 def test_usage_endpoint_and_bearer_token_follow_the_managed_config(monkeypatch, credential) -> None:

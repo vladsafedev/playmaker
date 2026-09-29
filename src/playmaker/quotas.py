@@ -1373,7 +1373,9 @@ def kimi_probe() -> dict:
     """Kimi Code OAuth usage, as reported by its managed `/usages` endpoint.
 
     `usage` is the weekly percentage bucket. `limits[]` holds rolling windows;
-    the 300-minute detail is Kimi Code's session quota. The stored access token
+    the 300-minute detail is Kimi Code's session quota. The newer `usages`
+    block (`limit_5h`/`limit_7d` with `used_ratio`) is not read: on the live
+    account it reported 0 while `usage` counted 21 used. The stored access token
     is intentionally never refreshed by making a chat request: when it is
     expired, this uses the CLI's documented OAuth refresh request instead.
     """
@@ -1420,7 +1422,9 @@ def kimi_probe() -> dict:
 
     usage = response.get("usage")
     limits = response.get("limits")
-    user = response.get("user")
+    # By 2026-09-29 the endpoint no longer returns `user` (nor its plan
+    # level): the quota buckets are the contract, the tier is optional.
+    user = response.get("user", {})
     if not isinstance(usage, dict) or not isinstance(limits, list) or not isinstance(user, dict):
         return {
             "status": "unsupported",
