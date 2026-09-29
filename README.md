@@ -348,6 +348,16 @@ A bare name is resolved on `PATH`; a path is used as-is. opencode installs to
 `.zshrc` — so a dispatch from cron, an editor, or the coach can't find it
 otherwise, and playmaker would report the agent as unavailable.
 
+**claude** also accepts an effort level — Claude Code's `--effort
+low|medium|high|xhigh|max`, which trades speed for reasoning depth (the
+motivating case: running Opus review boards at `xhigh`). Set the lane default
+once with `effort = "xhigh"` under `[agents.claude]`; `playmaker dispatch
+claude --effort <level>` and `playmaker continue <id> --effort <level>`
+override it for one run without persisting anything. The flag is accepted and
+ignored on every other lane so scripts can pass it uniformly, and when it is
+unset everywhere no `--effort` flag is sent at all — Claude Code's own default
+applies.
+
 ## Notifications
 
 Every detached dispatch pings when it finishes. With

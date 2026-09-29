@@ -12,6 +12,7 @@ Empirically:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -35,6 +36,15 @@ from playmaker.config import (
 # lets a detached run finish its work.
 DEFAULT_PERMISSION_MODE = "acceptEdits"
 
+# Claude Code's `--effort`: reasoning depth vs speed. No default — unset
+# everywhere means the flag is omitted and claude's own default applies.
+VALID_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+# Per-run override channel for `playmaker dispatch/continue --effort`. The CLI
+# sets this for the spawned run only; it is never persisted, so a later
+# `continue` without --effort falls back to the config value below.
+EFFORT_ENV_VAR = "PLAYMAKER_CLAUDE_EFFORT"
+
 
 def permission_args() -> list[str]:
     """Permission flags for a headless run, from [agents.claude] in config.toml."""
@@ -52,6 +62,34 @@ def permission_args() -> list[str]:
     if disallowed:
         args += ["--disallowedTools", ",".join(disallowed)]
     return args
+
+
+def resolve_effort() -> str | None:
+    """Effective effort for this run: per-run override, else config, else none.
+
+    `playmaker dispatch/continue --effort` exports EFFORT_ENV_VAR for the
+    spawned run only (never persisted); without it, `[agents.claude] effort`
+    applies. Raises before any process starts when the value is not one of
+    VALID_EFFORTS — the same fail-fast shape as a bad `--model` elsewhere.
+    """
+    raw = os.environ.get(EFFORT_ENV_VAR)
+    if raw is None:
+        raw = agent_setting("claude", "effort", None)
+    if raw is None:
+        return None
+    value = str(raw).strip()
+    if value not in VALID_EFFORTS:
+        raise RuntimeError(
+            f"claude has no effort {raw!r}; valid efforts: {', '.join(VALID_EFFORTS)} "
+            f"([agents.claude] effort or --effort)"
+        )
+    return value
+
+
+def effort_args() -> list[str]:
+    """`["--effort", value]` when configured, else []. Raises on invalid."""
+    resolved = resolve_effort()
+    return ["--effort", resolved] if resolved is not None else []
 
 
 class ClaudeHandler:
@@ -90,6 +128,7 @@ class ClaudeHandler:
         cmd += permission_args()
         if model:
             cmd += ["--model", model]
+        cmd += effort_args()
         cmd.append(full_prompt)
         import time as _time
         t0 = _time.monotonic()
@@ -201,6 +240,7 @@ class ClaudeHandler:
         cmd += permission_args()
         if model:
             cmd += ["--model", model]
+        cmd += effort_args()
         cmd.append(full_prompt)
         proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
         if proc.returncode != 0:

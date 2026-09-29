@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from playmaker import __version__, config, notify, state, watcher
+from playmaker.agents.claude import EFFORT_ENV_VAR
 from playmaker.registry import get_handler
 
 app = typer.Typer(
@@ -127,6 +128,22 @@ def skill_install(
     console.print("  Start a new Claude Code session and give it a multi-part task.")
 
 
+def _apply_effort_override(agent: str, effort: str | None) -> None:
+    """Route `--effort` to the claude lane for this run only.
+
+    The value travels in EFFORT_ENV_VAR, which ClaudeHandler reads before
+    each spawn — nothing is persisted, so a later `continue` without --effort
+    falls back to [agents.claude] effort. Other lanes accept the flag so
+    scripts can pass it uniformly, and ignore it with one stderr line.
+    """
+    if effort is None:
+        return
+    if agent != "claude":
+        err_console.print(f"--effort is forwarded to the claude lane only; ignored for {agent}")
+        return
+    os.environ[EFFORT_ENV_VAR] = effort
+
+
 @app.command()
 def dispatch(
     agent: str = typer.Argument(
@@ -150,6 +167,13 @@ def dispatch(
         "opencode 'provider/model' e.g. 'zai-coding-plan/glm-5.2', from "
         "`opencode models`); omitted = agent default, which is the safe choice "
         "for codex",
+    ),
+    effort: str | None = typer.Option(
+        None,
+        "--effort",
+        help="forwarded to the claude CLI's --effort (low|medium|high|xhigh|max); "
+        "overrides [agents.claude] effort for this run; accepted and ignored "
+        "for other agents",
     ),
     sync: bool = typer.Option(
         False,
@@ -185,6 +209,7 @@ def dispatch(
     if not handler.is_available():
         err_console.print(_unavailable(agent))
         raise typer.Exit(1)
+    _apply_effort_override(agent, effort)
 
     cwd_resolved = cwd.expanduser().resolve()
     explicit_expectation = _expectation_from_flags(expect_changes, read_only)
@@ -448,6 +473,11 @@ def continue_(
         "-m",
         help="override the model for this turn; defaults to the parent session's model",
     ),
+    effort: str | None = typer.Option(
+        None,
+        "--effort",
+        help="override the effort for this turn; defaults to [agents.claude] effort",
+    ),
     sync: bool = typer.Option(
         False, "--sync", help="block until done and print final output (default is detached)"
     ),
@@ -483,6 +513,7 @@ def continue_(
     if not handler.is_available():
         err_console.print(_unavailable(parent["agent"]))
         raise typer.Exit(1)
+    _apply_effort_override(parent["agent"], effort)
 
     cwd_resolved = (cwd or Path(parent["cwd"])).expanduser().resolve()
     effective_model = model if model is not None else parent.get("model")
