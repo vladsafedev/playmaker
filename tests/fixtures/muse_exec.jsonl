@@ -1,0 +1,4 @@
+{"stream":{"kind":"session","id":"01a0eefe-6295-7b70-8f74-9465c5210290"},"payload_type":"runtime.command.accepted","payload":{}}
+{"stream":{"kind":"session","id":"01a0eefe-6295-7b70-8f74-9465c5210290"},"payload_type":"run.output.delta","payload":{"text":"alp"}}
+{"stream":{"kind":"session","id":"01a0eefe-6295-7b70-8f74-9465c5210290"},"payload_type":"tool.result","payload":{"call_id":"call-read","text":"Read README.txt","correlation_facts":{"tool_name":"read_file"}}}
+{"stream":{"kind":"session","id":"01a0eefe-6295-7b70-8f74-9465c5210290"},"payload_type":"run.terminal.completed","payload":{"terminal":"completed","text":"alpha","reason":null}}

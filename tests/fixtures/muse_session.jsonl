@@ -1,0 +1,13 @@
+{"payload_type":"runtime.session.metadata","recorded_at":1790716043983081,"payload":{"kind":"metadata","record":{"workspace_root":"/tmp/musetest"}}}
+{"retained_frame":"session_permission_transaction","children":[]}
+{"payload_type":"noise","payload":{}}
+{"payload_type":"runtime.session","recorded_at":1790716044673957,"payload":{"kind":"run","run_id":"run-1","event":{"kind":"started","prompt":"Read README.txt, then create a file hello.txt containing exactly: hi. Reply with only the first word of README.txt."}}}
+{"payload_type":"runtime.session","recorded_at":1790716051968194,"payload":{"kind":"run","run_id":"run-1","event":{"kind":"assistant_tool_calls_committed","tool_calls":[{"id":"fc-read","call_id":"call-read","name":"read_file","args":"{\"path\":\"README.txt\"}"}]}}}
+{"payload_type":"runtime.session","recorded_at":1790716052056498,"payload":{"kind":"run","run_id":"run-1","event":{"kind":"tool_result_batch_committed","results":[{"tool_call_id":"call-read","text":"Read text file `README.txt`.\n1|alpha beta"}]}}}
+{"payload_type":"runtime.session","recorded_at":1790716056181771,"payload":{"kind":"run","run_id":"run-1","event":{"kind":"assistant_tool_calls_committed","tool_calls":[{"id":"fc-write","call_id":"call-write","name":"write_file","args":"{\"content\":\"hi\",\"path\":\"hello.txt\"}"}]}}}
+{"payload_type":"runtime.session","recorded_at":1790716056306683,"payload":{"kind":"run","run_id":"run-1","event":{"kind":"tool_result_batch_committed","results":[{"tool_call_id":"call-write","text":"wrote 2 bytes to /tmp/musetest/hello.txt"}]}}}
+{"payload_type":"runtime.session","recorded_at":1790716056435161,"payload":{"kind":"run","run_id":"run-1","event":{"kind":"assistant_message_committed","text":"alpha"}}}
+{"payload_type":"runtime.session","recorded_at":1790716067608343,"payload":{"kind":"run","run_id":"run-1","event":{"kind":"terminal","terminal":"completed"}}}
+{"payload_type":"runtime.session","recorded_at":1790716079400475,"payload":{"kind":"run","run_id":"run-2","event":{"kind":"started","prompt":"What is the name of the file you created in this session? Reply with only the file name."}}}
+{"payload_type":"runtime.session","recorded_at":1790716081961694,"payload":{"kind":"run","run_id":"run-2","event":{"kind":"assistant_message_committed","text":"hello.txt"}}}
+{"payload_type":"runtime.session","recorded_at":1790716092583534,"payload":{"kind":"run","run_id":"run-2","event":{"kind":"terminal","terminal":"completed"}}}
