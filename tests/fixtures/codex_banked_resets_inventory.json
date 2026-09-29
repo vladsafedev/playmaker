@@ -1,0 +1,7 @@
+{
+  "available_count": 4,
+  "credits": [
+    {"id": "one", "status": "available", "expires_at": "2030-01-01T00:00:00Z"},
+    {"id": "two", "status": "available", "expires_at": "2030-01-02T00:00:00Z"}
+  ]
+}

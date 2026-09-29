@@ -5,12 +5,14 @@ from __future__ import annotations
 import sys
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import playmaker.quotas as quotas
+from playmaker import cli
 
 # Captured verbatim from api.anthropic.com/api/oauth/usage on a live Max plan.
 _PAYLOAD = {
@@ -195,3 +197,121 @@ def test_scoped_rows_precede_existing_model_window(monkeypatch) -> None:
         "Weekly · Fable",
         "Sonnet",
     ]
+
+
+def test_probe_never_calls_claude_token_endpoint(monkeypatch) -> None:
+    seen: list[str] = []
+
+    def http(url: str, **kwargs) -> dict:
+        seen.append(url)
+        if "oauth/token" in url:
+            raise AssertionError("the Claude probe must not refresh OAuth tokens")
+        return _PAYLOAD
+
+    monkeypatch.setattr(quotas, "_http_json", http)
+    monkeypatch.setattr(
+        quotas,
+        "_claude_load_keychain",
+        lambda: {"accessToken": "tok", "expiresAt": 4_000_000_000_000},
+    )
+    monkeypatch.setattr(quotas, "_claude_email_from_token", lambda token: None)
+
+    assert quotas.claude_probe()["status"] == "ok"
+    assert seen == ["https://api.anthropic.com/api/oauth/usage"]
+
+
+def test_expired_token_delegates_refresh_to_claude_cli(monkeypatch) -> None:
+    keychain_reads = iter(
+        [
+            {"accessToken": "old", "expiresAt": 0},
+            {"accessToken": "new", "expiresAt": 4_000_000_000_000},
+        ]
+    )
+    cli_calls: list[list[str]] = []
+
+    monkeypatch.setattr(quotas, "_claude_load_keychain", lambda: next(keychain_reads))
+    monkeypatch.setattr(quotas, "_claude_email_from_token", lambda token: None)
+    monkeypatch.setattr(quotas, "_http_json", lambda *args, **kwargs: _PAYLOAD)
+    monkeypatch.setattr(quotas.config, "setting", lambda *args, **kwargs: True)
+
+    def run(args, **kwargs):
+        cli_calls.append(args)
+        assert kwargs["stdin"] is subprocess.DEVNULL
+        assert kwargs["stdout"] is subprocess.DEVNULL
+        assert kwargs["stderr"] is subprocess.DEVNULL
+        assert kwargs["timeout"] == 45
+        return SimpleNamespace(returncode=0)
+
+    import subprocess
+
+    monkeypatch.setattr(quotas.subprocess, "run", run)
+
+    assert quotas.claude_probe()["status"] == "ok"
+    assert cli_calls == [
+        ["claude", "-p", "Reply with one word: ok", "--model", "haiku", "--max-turns", "1"]
+    ]
+
+
+@pytest.mark.parametrize("enabled, returncode", [(False, 0), (True, 1)])
+def test_expired_login_renders_hint_without_raising(
+    monkeypatch, enabled: bool, returncode: int
+) -> None:
+    monkeypatch.setattr(
+        quotas,
+        "_claude_load_keychain",
+        lambda: {"accessToken": "old", "expiresAt": 0},
+    )
+    monkeypatch.setattr(quotas.config, "setting", lambda *args, **kwargs: enabled)
+    monkeypatch.setattr(
+        quotas.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=returncode),
+    )
+
+    result = quotas.claude_probe()
+
+    assert result == {
+        "status": "unavailable",
+        "reason": "login expired",
+        "hint": "login expired — run: claude auth login",
+    }
+    with cli.console.capture() as capture:
+        cli._render_provider("claude", result)
+    assert "login expired — run: claude auth login" in capture.get()
+
+
+def test_usage_outage_after_cli_refresh_is_not_reported_as_expired_login(
+    monkeypatch, tmp_path: Path
+) -> None:
+    keychain_reads = iter(
+        [
+            {"accessToken": "old", "expiresAt": 4_000_000_000_000},
+            {"accessToken": "new", "expiresAt": 4_000_000_000_000},
+        ]
+    )
+    fetches = iter(
+        [RuntimeError("usage API: HTTP 401"), RuntimeError("usage API: HTTP 500")]
+    )
+    monkeypatch.setattr(quotas, "_claude_load_keychain", lambda: next(keychain_reads))
+    monkeypatch.setattr(quotas.config, "setting", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        quotas.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0),
+    )
+
+    def fetch(token: str) -> dict:
+        raise next(fetches)
+
+    monkeypatch.setattr(quotas, "_claude_fetch_usage", fetch)
+    monkeypatch.setattr(quotas, "PROBES", {"claude": quotas.claude_probe})
+
+    result = quotas.refresh_all(tmp_path / "quotas.json")["providers"]["claude"]
+
+    assert result["status"] == "error"
+    assert result["error"] == "RuntimeError: usage API: HTTP 500"
+    with cli.console.capture() as capture:
+        cli._render_provider("claude", result)
+    text = capture.get()
+    assert "usage API: HTTP 500" in text
+    assert "claude auth login" not in text

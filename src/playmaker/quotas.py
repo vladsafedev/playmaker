@@ -37,7 +37,7 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
-from playmaker import __version__
+from playmaker import __version__, config
 from playmaker.config import agent_binary
 
 # OAuth installed-app client credentials shipped with the public gemini-cli
@@ -54,7 +54,6 @@ _GEMINI_OAUTH_CLIENT_ID = (
 _GEMINI_OAUTH_CLIENT_SECRET = "GOCSPX-" + "4uHgMPm-1o7Sk-geV6Cu5clXFsxl"
 
 _CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-_CLAUDE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 _USER_AGENT = f"playmaker-cli/{__version__}"
 
@@ -215,6 +214,49 @@ def _codex_fetch_usage(access_token: str, account_id: str | None) -> dict:
     )
 
 
+def _codex_fetch_reset_credits(access_token: str, account_id: str | None) -> dict:
+    """Fetch the optional reset-credit inventory using the normal OAuth token."""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "OpenAI-Beta": "codex-1",
+        "originator": "Codex Desktop",
+    }
+    if account_id:
+        headers["ChatGPT-Account-ID"] = account_id
+    return _http_json(
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
+        headers=headers,
+    )
+
+
+def _codex_banked_resets(usage: dict, access_token: str, account_id: str | None) -> dict | None:
+    credits = usage.get("rate_limit_reset_credits")
+    if not isinstance(credits, dict):
+        return None
+    available = credits.get("available_count")
+    if isinstance(available, bool) or not isinstance(available, int) or available <= 0:
+        return None
+
+    usable = credits.get("applicable_available_count")
+    usable = usable if isinstance(usable, int) and not isinstance(usable, bool) else 0
+    expires: list[str] = []
+    try:
+        inventory = _codex_fetch_reset_credits(access_token, account_id)
+        for credit in inventory.get("credits") or []:
+            if not isinstance(credit, dict) or credit.get("status") != "available":
+                continue
+            relative = _format_relative(credit.get("expires_at"))
+            if relative and relative != "now":
+                expires.append(relative)
+    except Exception:
+        pass
+    return {
+        "available_count": available,
+        "applicable_available_count": usable,
+        "expires": expires,
+    }
+
+
 def codex_probe() -> dict:
     auth = _codex_load_auth()
     tokens = auth.get("tokens") or {}
@@ -262,6 +304,7 @@ def codex_probe() -> dict:
         "account_email": payload.get("email"),
         "tier": _humanize_codex_tier(usage.get("plan_type")),
         "windows": windows,
+        "banked_resets": _codex_banked_resets(usage, access_token, account_id),
         "blocks": [{"name": "Spark", "windows": spark_windows}] if spark_windows else [],
     }
 
@@ -389,57 +432,6 @@ def _claude_load_keychain() -> dict:
     return blob["claudeAiOauth"]
 
 
-def _claude_save_keychain(auth: dict) -> None:
-    blob = json.dumps({"claudeAiOauth": auth})
-    subprocess.run(
-        [
-            "security",
-            "add-generic-password",
-            "-s",
-            "Claude Code-credentials",
-            "-a",
-            subprocess.check_output(["whoami"], text=True).strip(),
-            "-w",
-            blob,
-            "-U",  # update if exists
-        ],
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-
-def _claude_refresh(auth: dict) -> dict:
-    refresh_token = auth.get("refreshToken")
-    if not refresh_token:
-        raise RuntimeError("no refreshToken in claudeAiOauth keychain entry")
-    body = urllib.parse.urlencode(
-        {
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": _CLAUDE_OAUTH_CLIENT_ID,
-        }
-    )
-    resp = _http_json(
-        "https://platform.claude.com/v1/oauth/token",
-        method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        body=body,
-    )
-    auth["accessToken"] = resp["access_token"]
-    if "refresh_token" in resp:
-        auth["refreshToken"] = resp["refresh_token"]
-    if "expires_in" in resp:
-        auth["expiresAt"] = _now_ms() + int(resp["expires_in"]) * 1000
-    try:
-        _claude_save_keychain(auth)
-    except Exception:
-        # Keychain write is best-effort; usage call below will still succeed
-        # using the refreshed in-memory token.
-        pass
-    return auth
-
-
 def _claude_fetch_usage(access_token: str, *, beta: str = "oauth-2025-04-20") -> dict:
     return _http_json(
         "https://api.anthropic.com/api/oauth/usage",
@@ -460,19 +452,67 @@ _CLAUDE_WINDOW_SPEC = [
 ]
 
 
+def _claude_refresh_via_cli() -> bool:
+    if not config.setting("quotas", "claude_refresh_via_cli", True):
+        return False
+    # Claude Code is the single owner of this shared refresh token.
+    # Let it rotate and persist credentials before this read-only probe retries.
+    try:
+        result = subprocess.run(
+            ["claude", "-p", "Reply with one word: ok", "--model", "haiku", "--max-turns", "1"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=45,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def _claude_login_unavailable() -> dict:
+    return {
+        "status": "unavailable",
+        "reason": "login expired",
+        "hint": "login expired — run: claude auth login",
+    }
+
+
 def claude_probe() -> dict:
     auth = _claude_load_keychain()
     expires_at = auth.get("expiresAt")
-    if isinstance(expires_at, (int, float)) and expires_at - _now_ms() < 60_000:
-        auth = _claude_refresh(auth)
+    refreshed_via_cli = False
+    if isinstance(expires_at, (int, float)) and expires_at < _now_ms():
+        if not _claude_refresh_via_cli():
+            return _claude_login_unavailable()
+        refreshed_via_cli = True
+        try:
+            auth = _claude_load_keychain()
+        except (RuntimeError, KeyError, TypeError, ValueError):
+            return _claude_login_unavailable()
 
-    access_token = auth["accessToken"]
+    access_token = auth.get("accessToken")
+    if not isinstance(access_token, str) or not access_token:
+        return _claude_login_unavailable()
     try:
         usage = _claude_fetch_usage(access_token)
     except RuntimeError as e:
         if "HTTP 401" in str(e):
-            auth = _claude_refresh(auth)
-            usage = _claude_fetch_usage(auth["accessToken"])
+            if refreshed_via_cli or not _claude_refresh_via_cli():
+                return _claude_login_unavailable()
+            try:
+                auth = _claude_load_keychain()
+                refreshed_access_token = auth["accessToken"]
+            except (RuntimeError, KeyError, TypeError, ValueError):
+                return _claude_login_unavailable()
+            try:
+                usage = _claude_fetch_usage(refreshed_access_token)
+            except RuntimeError as retry_error:
+                if "HTTP 401" in str(retry_error):
+                    return _claude_login_unavailable()
+                raise
+            access_token = refreshed_access_token
         else:
             raise
 

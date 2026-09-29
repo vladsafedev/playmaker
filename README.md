@@ -419,7 +419,9 @@ The `Weekly`, `Weekly · Fable` and `Sonnet` rows above are the point: they are
 **separate buckets**. So is the `Codex — Spark` block, every agy row, and the
 whole Z.ai block. Routing a subtask is choosing which of them to spend.
 
-- **Claude** — OAuth usage API; token from the Claude Code Keychain entry.
+- **Claude** — OAuth usage API; token from the Claude Code Keychain entry. When
+  it expires, Claude Code itself refreshes it; the quota probe never rotates the
+  shared refresh token.
   Model-scoped weekly buckets come from the usage API's `limits[]` array and
   print as `Weekly · <model>`.
 - **Codex** — ChatGPT `wham/usage` API; token from `~/.codex/auth.json`. The

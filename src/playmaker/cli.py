@@ -1109,6 +1109,15 @@ def _render_provider(name: str, info: dict) -> None:
             f"  [bold]{'Extra usage':<11}[/bold] ${used:.2f} / ${limit:.2f}   [dim]{util_str}[/dim]"
         )
 
+    banked_resets = info.get("banked_resets")
+    if banked_resets and banked_resets.get("available_count", 0) > 0:
+        available = banked_resets["available_count"]
+        usable = banked_resets.get("applicable_available_count", 0)
+        console.print(f"  [bold]Banked resets[/bold]  {available} ({usable} usable now)")
+        expires = banked_resets.get("expires") or []
+        if expires:
+            console.print(f"  [dim]expire in {' · '.join(expires)}[/dim]")
+
     for block in blocks:
         block_windows = block.get("windows") or []
         console.print()

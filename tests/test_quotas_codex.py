@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from copy import deepcopy
 from pathlib import Path
+from urllib.error import URLError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -73,6 +75,8 @@ _PAYLOAD = {
         "applicable_available_count": 0,
     },
 }
+
+_FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _respond(monkeypatch, payload: dict) -> None:
@@ -173,3 +177,83 @@ def test_rendering_draws_spark_as_a_separate_block(monkeypatch) -> None:
             },
         )
     assert "Codex — Spark" not in capture.get()
+
+
+def test_banked_resets_and_expiries_render_from_fixtures(monkeypatch) -> None:
+    usage = json.loads((_FIXTURES / "codex_banked_resets_usage.json").read_text())
+    inventory = json.loads((_FIXTURES / "codex_banked_resets_inventory.json").read_text())
+    seen: list[str] = []
+
+    def http(url: str, **kwargs) -> dict:
+        seen.append(url)
+        return inventory if url.endswith("rate-limit-reset-credits") else usage
+
+    monkeypatch.setattr(quotas, "_http_json", http)
+    monkeypatch.setattr(
+        quotas,
+        "_codex_load_auth",
+        lambda: {"tokens": {"access_token": "tok"}, "account_id": "acct"},
+    )
+    monkeypatch.setattr(quotas, "_format_relative", lambda value: "4d 3h")
+
+    result = quotas.codex_probe()
+
+    assert result["banked_resets"] == {
+        "available_count": 4,
+        "applicable_available_count": 0,
+        "expires": ["4d 3h", "4d 3h"],
+    }
+    assert seen == [
+        "https://chatgpt.com/backend-api/wham/usage",
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
+    ]
+    with cli.console.capture() as capture:
+        cli._render_provider("codex", result)
+    text = capture.get()
+    assert "Banked resets  4 (0 usable now)" in text
+    assert "expire in 4d 3h · 4d 3h" in text
+
+
+def test_banked_resets_are_omitted_when_none_are_available(monkeypatch) -> None:
+    payload = deepcopy(_PAYLOAD)
+    payload["rate_limit_reset_credits"] = {
+        "available_count": 0,
+        "applicable_available_count": 0,
+    }
+    _respond(monkeypatch, payload)
+
+    result = quotas.codex_probe()
+
+    assert result["banked_resets"] is None
+    with cli.console.capture() as capture:
+        cli._render_provider("codex", result)
+    assert "Banked resets" not in capture.get()
+
+
+def test_banked_resets_survive_inventory_network_failure(monkeypatch) -> None:
+    usage = json.loads((_FIXTURES / "codex_banked_resets_usage.json").read_text())
+
+    def http(url: str, **kwargs) -> dict:
+        if url.endswith("rate-limit-reset-credits"):
+            raise URLError("offline")
+        return usage
+
+    monkeypatch.setattr(quotas, "_http_json", http)
+    monkeypatch.setattr(
+        quotas,
+        "_codex_load_auth",
+        lambda: {"tokens": {"access_token": "tok"}, "account_id": "acct"},
+    )
+
+    result = quotas.codex_probe()
+
+    assert result["banked_resets"] == {
+        "available_count": 4,
+        "applicable_available_count": 0,
+        "expires": [],
+    }
+    with cli.console.capture() as capture:
+        cli._render_provider("codex", result)
+    text = capture.get()
+    assert "Banked resets  4 (0 usable now)" in text
+    assert "expire in" not in text
