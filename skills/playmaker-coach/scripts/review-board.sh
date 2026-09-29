@@ -157,6 +157,7 @@ dir="$cwd/.playmaker/reviews/$wp"
 mkdir -p "$dir"
 spec="${spec:-$dir/spec.md}"
 [[ -f "$spec" ]] || die "no WP spec at $spec — write scope, acceptance criteria and the done-condition there first (reviewers cannot refute what was never specified)"
+grep -q '^class:' "$spec" || note "spec has no class: header — the ledger hook will record class=-"
 
 patch="$dir/diff-r$round.patch"
 # shellcheck disable=SC2086 # paths is an intentional word-split pathspec list

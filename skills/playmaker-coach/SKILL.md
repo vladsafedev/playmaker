@@ -200,9 +200,10 @@ Update it at dispatch, at gate, after each review round. On resume, read the boa
 else. It is also what you paste back to the user as the status report.
 
 The columns are fixed — one layout, not one per board: a resumed session and the ledger both parse
-them. At landing or abandonment append the WP's line to the cross-repo ledger,
-`python3 ~/.playmaker/scripts/ledger.py add wp=… class=… impl_lane=… …` (fields: `~/.playmaker/policy.md`,
-«Ledger»). It keeps what board prose loses: class, first-gate pass, blocking findings that survived
+them. At landing, the ledger hook writes the WP's row to the cross-repo ledger on `git commit`; read its
+`[ledger]` line and correct the soft fields with `python3 ~/.playmaker/scripts/ledger.py fix wp=… k=v`.
+When the hook matched nothing, append the row by hand: `python3 ~/.playmaker/scripts/ledger.py add
+wp=… class=… impl_lane=… …` (fields: `~/.playmaker/policy.md`, «Ledger»). It keeps what board prose loses: class, first-gate pass, blocking findings that survived
 adjudication, cycles, wall time — the evidence the routing step reads.
 
 ### 3.9 Failures

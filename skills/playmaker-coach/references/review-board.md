@@ -136,6 +136,18 @@ Write the WP spec to `.playmaker/reviews/<wp-label>/spec.md` first — scope, ac
 the done-condition. The script refuses to run without it, because a reviewer cannot refute what was
 never specified.
 
+A WP's spec.md starts with a three-line header the ledger hook parses mechanically:
+
+```
+class: mechanical|feature|terminal-heavy|repo-recon|architecture|high-risk
+impl: <lane> <model>
+risk: routine|normal|high
+```
+
+`gate: <cmd>` is optional and may precede them. The header feeds the ledger row the PostToolUse hook
+writes at `git commit` (see `references/ledger.md`); a spec without `class:` makes the script warn
+and the ledger record `class=-`.
+
 ```bash
 pm-review <wp-label> <base-ref> [--risk routine|normal|high|seams] [--gate "<cmd>"] \
     [--impl-agent <lane>] [--paths "<glob> <glob>"] [--cwd <dir>] [--round N] [--dry-run]
