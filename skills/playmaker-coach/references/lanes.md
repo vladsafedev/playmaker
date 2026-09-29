@@ -1,3 +1,7 @@
+> **Opus 5 lane — OUT of the review board (owner order 2026-09-08):** `playmaker dispatch claude -m opus` draws the Anthropic all-models weekly — the bucket the coach session falls back to (as Opus) when the Fable weekly runs out — and was eating it fast. It no longer holds the `high` risk seat by default (that was the 2026-09-02 order); `codex` does. Opus is weighted by the Fable weekly instead: while `Weekly · Fable` ≥ 50% it fills the risk seat on `high` boards that Codex implemented, ¼ of that at 25–50%, nothing below 25% or when the all-models weekly is under 50%. Never for implementation or recon, never on `normal`. Table and flip: `~/.playmaker/policy.md`, `~/.playmaker/reviewers.conf`.
+
+> **GEMINI ONLY on agy (owner order 2026-09-02):** never dispatch `claude-*` or `gpt-oss-*` models on the `agy` lane. Want a Claude? Don't dispatch one: the coach session is the Claude, and the Anthropic bucket is out of the board (2026-09-08). See `~/.playmaker/policy.md`.
+
 # Execution lanes — where work runs
 
 All Claude work — coach, in-session sub-agents, external `claude -p` — draws from the **same Claude
@@ -13,27 +17,21 @@ pays. Four lanes:
    Same subscription. Use when the coach folds the result in directly.
 
 3. **External dispatch — `playmaker dispatch claude`.** A tracked, detached stream you can monitor
-   and `continue` independently. Same subscription; the lever is the **model bucket** — the mid tier
-   is a separate weekly bucket from the top tier and usually idle, so default `--model sonnet`
-   (`haiku` for trivial mechanical work). playmaker runs it in `acceptEdits`: it writes freely
+   and `continue` independently. Same subscription, and since September 2026 the same bucket: Sonnet has no
+   separate weekly (`seven_day_sonnet: null`), so this lane spends the coach's own all-models weekly.
+   Default `--model sonnet` (`haiku` for trivial mechanical work), and only when policy allows it. playmaker runs it in `acceptEdits`: it writes freely
    inside `--cwd` and is refused outside it, so keep every path in the prompt inside `--cwd`.
 
-4. **External dispatch — `codex` / `agy` / `opencode` / `kimi` / `muse`.** Each on its own
-   subscription or plan — the home for write-heavy parallel implementation that can leave the
-   Anthropic subscription.
+4. **External dispatch — `codex` / `agy` / `opencode`.** Each on its own subscription or plan — the
+   home for write-heavy parallel implementation that can leave the Anthropic subscription.
    - **`agy` (Antigravity)** carries more than Google models: alongside Gemini Flash and Pro tiers it
-     serves **Claude Sonnet/Opus (Thinking)** and a GPT-OSS tier. Its Claude runs on *Google's*
-     pool and spends none of the Anthropic bucket — but that roster has trailed Anthropic's own
-     releases by a generation (Claude 4.6 on agy while Claude 5 ships on Anthropic), so tier it by
-     the version `agy models` shows, never by the name. Note the internal split: all Gemini models
-     share one bucket, Claude and GPT-OSS share another.
+     serves **Claude Sonnet/Opus (Thinking)** and a GPT-OSS tier. Its Claude runs on *Google's* pool —
+     capable judgment that spends none of the Anthropic bucket, but a generation behind the
+     frontier: treat the whole lane as **middle** (see Model tiers below). Note the internal
+     split: all Gemini models share one bucket, Claude and GPT-OSS share another.
    - **`opencode`** is the widest lane: one CLI over ~75 providers addressed as `provider/model` — a
      GLM coding plan, or a model running locally on this machine, which spends no subscription quota
      at all.
-   - **`kimi`** runs the Kimi Code CLI on its own subscription: senior tier (K3), native login, no
-     opencode.
-   - **`muse`** runs Meta's Muse Code CLI on its own login: senior tier (Muse Spark), sandboxed
-     by default.
 
 **Never write an agy or opencode model name from memory** — run `agy models` / `opencode models` and
 copy a line. Both rosters and their spelling move with releases, and playmaker validates `--model`
@@ -44,28 +42,43 @@ against the live roster, failing the dispatch on a stale name.
 | The work… | Lane | Why |
 |---|---|---|
 | writes files, coach integrates the result directly | in-session sub-agent | write-capable, returns into context |
-| is an independent stream to monitor separately | `dispatch claude --model sonnet` | tracked, detached, spares the top bucket |
+| is an independent stream to monitor separately | `dispatch claude --model sonnet` | tracked, detached — but on the coach's own subscription (Sonnet has no separate bucket): policy says when, and it is rarely |
 | is heavy reasoning only the coach can do | coach | top tier, serial |
-| is write-heavy and can leave Claude | codex / agy / opencode / kimi / muse | their own quotas |
-| needs senior judgment on a pool nobody else on the machine draws from | `dispatch kimi -m kimi-code/k3-256k` / `dispatch muse` | K3 and Muse Spark on their own subscriptions; K3 is slow, so detached only |
-| needs a second strong reviewer without touching the Anthropic bucket | `dispatch agy --model <gemini-pro-high>` / `dispatch muse` | near-senior judgment on an uncontended pool; Muse Spark is senior |
+| is write-heavy and can leave Claude | codex / agy / opencode | their own quotas |
+| wants Claude-flavoured judgment without spending the Anthropic bucket | `dispatch agy --model <claude-opus-thinking>` | middle tier — a generation behind; never the only senior eye |
 | is bulk work with every subscription low | `dispatch opencode --model <plan>/<model>` | a separate plan, untouched by the others |
 | is mechanical and privacy-sensitive, or all quotas spent | `dispatch opencode --model <local>/<model>` | runs on this machine, costs wall-clock only |
 
-## Tier-matching
+## Model tiers — senior / middle / junior
 
-- **Architectural / spec judgment / cross-module integration** → top tier (coach, top-tier Codex,
-  K3 on `kimi`, Muse Spark on `muse`, Gemini-Pro-high on agy for review and advice rather than
-  implementation).
-- **Pattern-following implementation, scoped CRUD, mechanical refactor, test scaffolding, writing
-  inside an existing convention** → mid tier (Claude Sonnet, Gemini-Pro-low, mid-tier Codex;
-  agy's Claude models only when the roster shows a current version). Most delegated implementation lives here.
-- **Recon, summarization, mechanical loops over many files, normalization** → cheap tier (Flash
-  tiers, Haiku, fast Codex modes).
+> **Superseded on this machine by the tier table in `~/.playmaker/policy.md` (owner order
+> 2026-09-04): there is no middle tier there, and `agy` Claude models are junior. The rows below are
+> the skill's generic defaults for a machine without a policy file.
 
-Reserve the most-depleted top-tier model for the lightest role — usually the coach's own
-coordination. If the coach's own weekly is under ~50%, shrink its slice to design decisions and
-final integration only.
+**Judge a lane by the model actually serving it, never by the lane's name.** Model rosters move
+faster than this file; re-derive the table whenever a lane surprises you, and correct it here.
+
+| Tier | What is actually there | Give it |
+|---|---|---|
+| **Senior** | the coach's own session (Fable 5.1, falling back to Opus 5.5); **`codex`** — the real Codex CLI on the ChatGPT plan (`--model` omitted; verify with `codex --version`); **`opencode` / GLM** (`zai-coding-plan/glm-*`) | architecture, spec interpretation, cross-module integration, adjudication, anything irreversible |
+| **Near-senior** | **`agy gemini-3.1-pro-high`** — not quite the three above, but close enough to carry a review lens or a hard WP on its own | the always-on review seat, demanding implementation, deep recon |
+| **Middle** | the rest of `agy` / Antigravity — its **Claude 4.6 / Sonnet 4.6** are a generation behind the frontier despite the name — plus GPT-OSS | well-specified implementation against a ready plan, refactors, CRUD by convention, a second opinion |
+| **Reserve** | `dispatch claude --model sonnet` / `--model opus` — Sonnet 5.5 and Opus 5.5, senior capability on the coach's own subscription | nothing by default: tier is capability, allocation is the policy's call — a seat only on the owner's word |
+| **Junior** | Gemini **Flash** tiers, Codex Spark | mass reading, codebase sweeps, mechanical diffs, tight fix→check loops |
+
+Two traps this table exists to prevent — both have bitten in practice:
+
+1. **A lane serving "Claude Opus" is not necessarily the current Opus.** Antigravity's Claude
+   models trail the frontier by a full generation. Cheap, capable, worth using — but *middle*,
+   not senior. Their verdicts are an input you weigh, not an authority you defer to.
+   Conversely, do **not** file GLM as cheap because it is cheap: it is a senior lane.
+2. **`codex` is the Codex CLI, not a Google model.** The lane name is not evidence of the engine.
+
+**On irreversible work** — deletions, migrations, money paths, auth, public contracts — a middle
+lane may never be the only senior-grade eye. Pair it with `codex`, or adjudicate that hunk yourself.
+
+Match the WP to the tier, then reserve the most-depleted senior model for the lightest role —
+usually the coach's own adjudication — and push volume down to junior lanes.
 
 ## Junior fan-out — where it is safe
 

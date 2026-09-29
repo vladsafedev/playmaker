@@ -13,22 +13,16 @@ the plan instead of quoting the numbers.
 several tiers with independent buckets, and the whole point of pulling quotas is to push work
 *away from* the depleted bucket and *toward* the fresh one.
 
-- **Claude:** the block shows the account-wide `Weekly` plus one `Weekly · <model>` row per
-  model-scoped bucket (e.g. `Weekly · Fable`). The model-scoped row is the one that empties first
-  during a long coach session — read it, not just `Weekly`.
+- **Claude:** two weeklies — the Fable-scoped one (the coach's own session) and the all-models one
+  (Opus, Sonnet, sub-agents: the coach's fallback). Sonnet has had no bucket of its own since
+  September 2026, so `dispatch claude` spends the coordinator's reserve. The probe has answered
+  `invalid_grant` since 2026-09-24 — read `/usage` until the login is renewed.
 - **Antigravity (`agy`):** one Google pool split by family — `Gemini 5h` / `Gemini weekly` and
   `Claude/GPT 5h` / `Claude/GPT weekly`. All Gemini models share the first; Claude *and* GPT-OSS
   share the second. So one Gemini reviewer plus one agy-Claude reviewer costs one hit in each of two
-  separate buckets — the cheapest way to buy two independent opinions. Read off agy's local daemon —
-  playmaker starts a short-lived one itself when none answers. "daemon offline" means it fell back
-  to a coarse Gemini-only view; `unavailable` means neither source answered — the lane still works,
-  so route by the last success and say the numbers are old.
-- **Codex:** the main block is the primary Codex window; `Codex — Spark` is a separate block with
-  its own `Session` / `Weekly` rows for the Spark model, the junior Codex lane — route Spark work
-  off that block, not off the main one.
-- **Kimi Code:** `Session` is its rolling 5-hour bucket and `Weekly` is the subscription's weekly
-  percentage bucket. They are independent of Claude, Codex and the opencode-backed plans, so Kimi
-  is a useful alternate lane when either of those two rows still has headroom.
+  separate buckets — the cheapest way to buy two independent opinions. Requires agy's local daemon;
+  if the table says "daemon offline" it fell back to a coarse Gemini-only view.
+- **Codex:** top-tier versus lighter modes, where the account plan carries them.
 - **opencode:** the quota belongs to the *plan behind the provider*, not to the CLI — it appears
   under that provider (e.g. a GLM coding plan's session and weekly credit windows) and reads
   unsupported without a credential. A dispatch pointed at a **local** model spends nothing and never
@@ -43,17 +37,21 @@ several tiers with independent buckets, and the whole point of pulling quotas is
 - If a top-tier weekly is degrading toward a deadline, push everything possible to the mid and cheap
   tiers of the *same* provider, which are usually nowhere near depleted.
 - State per-model capacity in the plan proposal, so the user can correct the routing.
+- `playmaker quotas --refresh` right before a fan-out on shared pools — the 5-minute cache hides a
+  window another session drained.
 
-## Level-loading — the point of reading the table
+## Level-loading — the tie-breaker, not the objective
 
 Capacity does not roll over. A pool that ends the week at 100% is capacity that was paid for and
-never used, while the coach's own bucket did the work. So the goal is not to *hoard* the pools that
-someone else also draws on — it is to finish the week with every pool drawn down roughly evenly,
-except the one reserved for the coach itself.
+never used, while the coach's own bucket did the work. The objective is accepted work per point of
+scarce quota, with prepaid capacity spent before it resets. Level-loading — every pool drawn down
+roughly evenly by week's end, except the one reserved for the coach — decides between lanes that fit
+a WP equally (policy: fit before headroom). It never puts a WP in a queue behind a closed lane: a
+closed or busy lane is replaced now, not waited for.
 
 Practically, inside a fan-out:
 
-- Sort lanes by remaining headroom and deal work off the top, round-robin. Two WPs in a row should
+- Among the lanes that fit the WP, sort by remaining headroom and deal work off the top, round-robin. Two WPs in a row should
   not go to the same pool while another sits full.
 - Treat a pool that others also use as *shared*, not *forbidden*: give it work at its share of the
   load, and check the 5h window before a burst rather than avoiding it on principle.
