@@ -424,6 +424,8 @@ whole Z.ai block. Routing a subtask is choosing which of them to spend.
   shared refresh token.
   Model-scoped weekly buckets come from the usage API's `limits[]` array and
   print as `Weekly · <model>`.
+  `[quotas] claude_refresh_via_cli` defaults to `true`; set it to `false` to
+  report `login expired — run: claude auth login` without spawning `claude`.
 - **Codex** — ChatGPT `wham/usage` API; token from `~/.codex/auth.json`. The
   Spark model's own 5-hour and weekly windows come from
   `additional_rate_limits[]` and print as their own `Codex — Spark` block.

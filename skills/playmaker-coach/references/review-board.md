@@ -141,7 +141,7 @@ A WP's spec.md starts with a three-line header the ledger hook parses mechanical
 ```
 class: mechanical|feature|terminal-heavy|repo-recon|architecture|high-risk
 impl: <lane> <model>
-risk: routine|normal|high
+risk: routine|normal|high|seams
 ```
 
 `gate: <cmd>` is optional and may precede them. The header feeds the ledger row the PostToolUse hook

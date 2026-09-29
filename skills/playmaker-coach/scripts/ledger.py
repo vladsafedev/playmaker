@@ -13,6 +13,7 @@ Lists are comma-separated on the command line.
 """
 import collections
 import datetime
+import fcntl
 import json
 import os
 import pathlib
@@ -21,6 +22,8 @@ import sys
 
 DEFAULT_LEDGER = pathlib.Path.home() / ".playmaker" / "ledger.jsonl"
 LEDGER = pathlib.Path(os.environ.get("PM_LEDGER", DEFAULT_LEDGER))
+LOCK = LEDGER.with_name(LEDGER.name + ".lock")
+TMP = LEDGER.with_name(LEDGER.name + ".tmp")
 FIELDS = ["date", "repo", "wp", "class", "risk", "impl_lane", "impl_model", "gate_first_pass",
           "reviewers", "blocking_r1", "blocking_accepted", "blocking_rejected", "cycles", "rounds",
           "wall_min", "quota_note", "outcome", "commit", "note", "escaped_from"]
@@ -63,19 +66,37 @@ def rows():
     if not LEDGER.exists():
         return []
     out = []
-    for i, line in enumerate(LEDGER.read_text().splitlines(), 1):
-        line = line.strip()
+    contents = LEDGER.read_text()
+    lines = contents.splitlines(keepends=True)
+    for i, raw_line in enumerate(lines, 1):
+        is_trailing_fragment = i == len(lines) and not raw_line.endswith(("\n", "\r"))
+        line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         try:
             out.append(json.loads(line))
         except json.JSONDecodeError:
+            if is_trailing_fragment:
+                print(f"ledger: {LEDGER}:{i} trailing partial line skipped", file=sys.stderr)
+                continue
             die(f"{LEDGER}:{i} is not JSON")
     return out
 
 
 def write_all(items):
-    LEDGER.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in items))
+    with TMP.open("w") as fh:
+        fh.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in items))
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(TMP, LEDGER)
+
+
+def writer_lock():
+    """Hold the ledger's inter-process writer lock for one mutation."""
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    lock_fh = LOCK.open("a")
+    fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+    return lock_fh
 
 
 def normalize(d):
@@ -114,9 +135,14 @@ def cmd_add(argv):
     d.setdefault("outcome", "open")
     d.setdefault("risk", "-")
     row = normalize(d)
-    LEDGER.parent.mkdir(parents=True, exist_ok=True)
-    with LEDGER.open("a") as fh:
-        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    with writer_lock() as lock_fh:
+        try:
+            with LEDGER.open("a") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+        finally:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
     print(f"ledger: +1 → {LEDGER} "
           f"({row['repo']}/{row['wp']} {row['class']} {row['impl_lane']} {row['outcome']})")
 
@@ -131,19 +157,23 @@ def cmd_fix(argv):
     for k in d:
         if k not in FIELDS:
             die(f"unknown field {k!r}")
-    items = rows()
-    hit = [r for r in items if r["wp"] == sel["wp"]
-           and ("repo" not in sel or r.get("repo") == sel["repo"])
-           and ("commit" not in sel or r.get("commit") == sel["commit"])]
-    if not hit:
-        die(f"no row matching {sel}")
-    r = hit[-1]
-    merged = dict(r)
-    merged.update(d)
-    row = normalize(merged)
-    r.clear()
-    r.update(row)
-    write_all(items)
+    with writer_lock() as lock_fh:
+        try:
+            items = rows()
+            hit = [r for r in items if r["wp"] == sel["wp"]
+                   and ("repo" not in sel or r.get("repo") == sel["repo"])
+                   and ("commit" not in sel or r.get("commit") == sel["commit"])]
+            if not hit:
+                die(f"no row matching {sel}")
+            r = hit[-1]
+            merged = dict(r)
+            merged.update(d)
+            row = normalize(merged)
+            r.clear()
+            r.update(row)
+            write_all(items)
+        finally:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
     print(f"ledger: fixed {r['repo']}/{r['wp']} commit={r['commit']} ({', '.join(sorted(d))})")
 
 
@@ -151,15 +181,19 @@ def cmd_escape(argv):
     d = kv(argv)
     if "wp" not in d or "commit" not in d:
         die("wp= and commit= are required")
-    items = rows()
-    hit = [r for r in items
-           if r["wp"] == d["wp"] and r.get("repo", "-") in (d.get("repo", r.get("repo")),)]
-    if not hit:
-        die(f"no row for wp={d['wp']!r}")
-    r = hit[-1]
-    r.setdefault("escaped_from", [])
-    r["escaped_from"].append(d["commit"] + (f" ({d['note']})" if d.get("note") else ""))
-    write_all(items)
+    with writer_lock() as lock_fh:
+        try:
+            items = rows()
+            hit = [r for r in items
+                   if r["wp"] == d["wp"] and r.get("repo", "-") in (d.get("repo", r.get("repo")),)]
+            if not hit:
+                die(f"no row for wp={d['wp']!r}")
+            r = hit[-1]
+            r.setdefault("escaped_from", [])
+            r["escaped_from"].append(d["commit"] + (f" ({d['note']})" if d.get("note") else ""))
+            write_all(items)
+        finally:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
     print(f"ledger: {r['repo']}/{r['wp']} escaped_from += {d['commit']}")
 
 

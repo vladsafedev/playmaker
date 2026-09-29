@@ -21,7 +21,7 @@ under `.playmaker/reviews/` whose `diff-r*.patch` file list overlaps the commit'
 | Field | Source |
 |---|---|
 | `date`, `repo`, `wp`, `commit`, `outcome` | today, toplevel basename, review-dir name, short sha, `landed` |
-| `class`, `impl_lane`, `impl_model`, `risk` | spec.md header `class:` / `impl: <lane> <model>` / `risk:` (see review-board.md); risk may also come from a pre-header spec title ("… risk high") or `board.env`; else `-` |
+| `class`, `impl_lane`, `impl_model`, `risk` | spec.md header `class:` / `impl: <lane> <model>` / `risk:` (`routine|normal|high|seams`; see review-board.md); risk may also come from a pre-header spec title ("… risk high") or `board.env`; else `-` |
 | `reviewers` | union of lanes over `sessions.txt` and every archived `sessions.txt`, short form (`kimi-k3`, `glm-5.3`, `agy-gemini-pro`, `codex`, `muse`, `claude-opus`) |
 | `rounds` | number of `diff-r*.patch` |
 | `cycles` | number of `fix-r<N>.md` with N ≥ 1 |

@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from playmaker import __version__, config, notify, state, watcher
-from playmaker.agents.claude import EFFORT_ENV_VAR
+from playmaker.agents.claude import EFFORT_ENV_VAR, VALID_EFFORTS
 from playmaker.registry import get_handler
 
 app = typer.Typer(
@@ -141,6 +141,12 @@ def _apply_effort_override(agent: str, effort: str | None) -> None:
     if agent != "claude":
         err_console.print(f"--effort is forwarded to the claude lane only; ignored for {agent}")
         return
+    if effort not in VALID_EFFORTS:
+        err_console.print(
+            f"claude has no effort {effort!r}; valid efforts: {', '.join(VALID_EFFORTS)} "
+            "([agents.claude] effort or --effort)"
+        )
+        raise typer.Exit(2)
     os.environ[EFFORT_ENV_VAR] = effort
 
 

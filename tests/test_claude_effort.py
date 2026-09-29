@@ -238,6 +238,25 @@ def test_apply_override_without_flag_changes_nothing(capsys) -> None:
     assert capsys.readouterr().err == ""
 
 
+def test_dispatch_rejects_invalid_effort_before_creating_detached_session(
+    db, monkeypatch, tmp_path
+) -> None:
+    class AvailableClaude:
+        def is_available(self) -> bool:
+            return True
+
+    monkeypatch.setattr(cli, "get_handler", lambda agent: AvailableClaude())
+
+    result = runner.invoke(
+        cli.app,
+        ["dispatch", "claude", "--prompt", "p", "--cwd", str(tmp_path), "--effort", "bogus"],
+    )
+
+    assert result.exit_code == 2
+    assert "claude has no effort 'bogus'; valid efforts:" in result.output
+    assert state.list_sessions() == []
+
+
 # ---- end-to-end through the CLI ---------------------------------------------
 
 
