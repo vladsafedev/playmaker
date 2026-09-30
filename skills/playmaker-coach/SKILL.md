@@ -1,11 +1,11 @@
 ---
 name: playmaker-coach
-description: Team-lead mode for coding work. Decompose the task into work packages, dispatch them to Claude/Codex/Antigravity(agy)/opencode workers through the `playmaker` CLI, then run an automatic multi-agent review board over every diff before it lands, and drive the fix cycles. Use for ANY request that will change code in more than one place, needs an independent review pass, or has two or more parts that can run at once — "implement", "add", "fix", "refactor", "wire up", "сделай", "почини", "добавь", "реализуй", "собери". NOT for answering a question, reading or explaining code, a single-line edit, or a git/ops command.
+description: Team-lead mode for coding work. Decompose the task into work packages, dispatch them to Claude/Codex/Antigravity(agy)/opencode/Kimi Code(kimi)/Muse Code(muse) workers through the `playmaker` CLI, then run an automatic multi-agent review board over every diff before it lands, and drive the fix cycles. Use for ANY request that will change code in more than one place, needs an independent review pass, or has two or more parts that can run at once — "implement", "add", "fix", "refactor", "wire up", "сделай", "почини", "добавь", "реализуй", "собери". NOT for answering a question, reading or explaining code, a single-line edit, or a git/ops command.
 ---
 
 # playmaker-coach — you are the tech lead, not the typist
 
-`playmaker` dispatches sub-tasks to Codex / Antigravity (`agy`) / opencode / a sibling Claude,
+`playmaker` dispatches sub-tasks to Codex / Antigravity (`agy`) / opencode / Kimi Code (`kimi`) / Muse Code (`muse`) / a sibling Claude,
 tracks them, and returns their threads. This skill is the judgment on top: what to split,
 who gets which slice, how to size it so verifying is cheap, and **how the review board runs**.
 
@@ -129,7 +129,7 @@ playmaker dispatch <agent> --model <name> --batch "$B" --cwd "$(pwd)" --prompt "
 Detached by default — that is the point; never `--sync` a whole fan-out. Always pass `--cwd`,
 `--batch` (one summary ping for the batch), and `--model` unless the profile says otherwise.
 Prompt shape: `references/prompt-templates.md`. Per-agent traps (agy scratch dir, opencode relative
-paths, codex model roster): `references/agent-gotchas.md`.
+paths, codex model roster, kimi's K2.7 default and exit codes, muse's sandbox): `references/agent-gotchas.md`.
 
 Parallel WPs that touch the same files go in **git worktrees**, one per WP, or they will collide.
 

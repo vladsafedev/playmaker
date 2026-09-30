@@ -22,7 +22,7 @@ pays. Four lanes:
    Default `--model sonnet` (`haiku` for trivial mechanical work), and only when policy allows it. playmaker runs it in `acceptEdits`: it writes freely
    inside `--cwd` and is refused outside it, so keep every path in the prompt inside `--cwd`.
 
-4. **External dispatch — `codex` / `agy` / `opencode`.** Each on its own subscription or plan — the
+4. **External dispatch — `codex` / `agy` / `opencode` / `kimi` / `muse`.** Each on its own subscription or plan — the
    home for write-heavy parallel implementation that can leave the Anthropic subscription.
    - **`agy` (Antigravity)** carries more than Google models: alongside Gemini Flash and Pro tiers it
      serves **Claude Sonnet/Opus (Thinking)** and a GPT-OSS tier. Its Claude runs on *Google's* pool —
@@ -32,6 +32,10 @@ pays. Four lanes:
    - **`opencode`** is the widest lane: one CLI over ~75 providers addressed as `provider/model` — a
      GLM coding plan, or a model running locally on this machine, which spends no subscription quota
      at all.
+   - **`kimi`** runs the Kimi Code CLI on its own subscription: senior tier (K3), native login, not
+     via opencode.
+   - **`muse`** runs Meta's Muse Code CLI on its own login: senior tier (Muse Spark), sandboxed
+     by default.
 
 **Never write an agy or opencode model name from memory** — run `agy models` / `opencode models` and
 copy a line. Both rosters and their spelling move with releases, and playmaker validates `--model`
@@ -44,7 +48,9 @@ against the live roster, failing the dispatch on a stale name.
 | writes files, coach integrates the result directly | in-session sub-agent | write-capable, returns into context |
 | is an independent stream to monitor separately | `dispatch claude --model sonnet` | tracked, detached — but on the coach's own subscription (Sonnet has no separate bucket): policy says when, and it is rarely |
 | is heavy reasoning only the coach can do | coach | top tier, serial |
-| is write-heavy and can leave Claude | codex / agy / opencode | their own quotas |
+| is write-heavy and can leave Claude | codex / agy / opencode / kimi / muse | their own quotas |
+| needs senior judgment on a pool nobody else on the machine draws from | `dispatch kimi -m kimi-code/k3-256k` / `dispatch muse` | K3 and Muse Spark on their own subscriptions; K3 is slow, so detached only |
+| needs a second strong reviewer without touching the Anthropic bucket | `dispatch agy --model <gemini-pro-high>` / `dispatch muse` | near-senior judgment on an uncontended pool; Muse Spark is senior |
 | wants Claude-flavoured judgment without spending the Anthropic bucket | `dispatch agy --model <claude-opus-thinking>` | middle tier — a generation behind; never the only senior eye |
 | is bulk work with every subscription low | `dispatch opencode --model <plan>/<model>` | a separate plan, untouched by the others |
 | is mechanical and privacy-sensitive, or all quotas spent | `dispatch opencode --model <local>/<model>` | runs on this machine, costs wall-clock only |
@@ -60,7 +66,7 @@ faster than this file; re-derive the table whenever a lane surprises you, and co
 
 | Tier | What is actually there | Give it |
 |---|---|---|
-| **Senior** | the coach's own session (Fable 5.1, falling back to Opus 5.5); **`codex`** — the real Codex CLI on the ChatGPT plan (`--model` omitted; verify with `codex --version`); **`opencode` / GLM** (`zai-coding-plan/glm-*`) | architecture, spec interpretation, cross-module integration, adjudication, anything irreversible |
+| **Senior** | the coach's own session (Fable 5.1, falling back to Opus 5.5); **`codex`** — the real Codex CLI on the ChatGPT plan (`--model` omitted; verify with `codex --version`); **`opencode` / GLM** (`zai-coding-plan/glm-*`); **`kimi`** — Kimi K3 via `kimi -m kimi-code/k3-256k`; **`muse`** — Muse Spark via `muse` | architecture, spec interpretation, cross-module integration, adjudication, anything irreversible |
 | **Near-senior** | **`agy gemini-3.1-pro-high`** — not quite the three above, but close enough to carry a review lens or a hard WP on its own | the always-on review seat, demanding implementation, deep recon |
 | **Middle** | the rest of `agy` / Antigravity — its **Claude 4.6 / Sonnet 4.6** are a generation behind the frontier despite the name — plus GPT-OSS | well-specified implementation against a ready plan, refactors, CRUD by convention, a second opinion |
 | **Reserve** | `dispatch claude --model sonnet` / `--model opus` — Sonnet 5.5 and Opus 5.5, senior capability on the coach's own subscription | nothing by default: tier is capability, allocation is the policy's call — a seat only on the owner's word |
