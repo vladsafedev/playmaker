@@ -446,9 +446,18 @@ whole Z.ai block. Routing a subtask is choosing which of them to spend.
   `~/.kimi-code/credentials/kimi-code-env-*.json` (`$KIMI_CODE_HOME` overrides
   the root). Its 5-hour `Session` and weekly rows are separate percentage
   buckets; no credential reads as *unsupported* rather than a failed probe.
-- **Muse Code** — no usage or quota API exists (billing is pay-as-you-go or a
-  subscription via accountscenter.meta.com), so `playmaker quotas` has no Muse
-  block.
+- **Muse Code** — the same call the `muse` CLI uses to mint its inference key
+  (`POST api.meta.ai/muse-code/key`) also reports subscription usage; the
+  minted key and the payment fields in the response are discarded, nothing is
+  written back. The login is read-only: an inline `providers.meta.access_token`
+  in `~/.config/muse/auth.json` (`$MUSE_AUTH_PATH` / `$XDG_CONFIG_HOME`
+  respected), else the macOS Keychain item `ai.meta.dev.credentials` via
+  `security find-generic-password` — the first Keychain read can raise a macOS
+  "allow access" dialog, and "Always Allow" makes later probes silent. Shows
+  `Muse Code  <plan name>` with `Session` (the 5-hour window) and `Weekly` as
+  separate percentage buckets with reset times; Meta omits usage while the
+  5-hour window is idle, and the block then shows the plan with a note instead
+  of bars. No login reads as *skipped* rather than a failed probe.
 
 Reading these at *model* granularity is the point: they are the load-balancing
 input the coach skill uses to route each subtask.

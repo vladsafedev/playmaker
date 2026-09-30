@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Muse Code usage in `playmaker quotas`.** The table now reads the Muse
+  CLI's own key-mint call (`POST api.meta.ai/muse-code/key` — the one the
+  CLI itself uses to mint its inference key, which also reports subscription
+  usage) and shows the plan's rolling 5-hour `Session` and `Weekly` buckets
+  beside the other provider pools.
+
+### Fixed
+
+- **The docs said Meta exposes no usage API for Muse Code — wrong.** 0.13.0's
+  README and CHANGELOG claimed no usage or quota API exists, so `playmaker
+  quotas` shipped with no Muse block; the CLI's own key-mint call reports it.
+
 ## [0.14.0] - 2026-09-30
 
 ### Added

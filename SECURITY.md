@@ -24,10 +24,14 @@ each token only to that vendor's own endpoint:
 | Antigravity | agy's localhost daemon, else `~/.gemini/oauth_creds.json` | `127.0.0.1`, else `daily-cloudcode-pa.googleapis.com` |
 | Z.ai | `~/.local/share/opencode/auth.json`, else `$ZAI_API_KEY` | `api.z.ai` |
 | Kimi Code | `~/.kimi-code/credentials/kimi-code-env-*.json` (OAuth token written by the Kimi Code CLI) | `api.kimi.ai`, `auth.kimi.ai` (refresh) |
+| Muse Code | `~/.config/muse/auth.json` (inline `providers.meta.access_token`), else macOS Keychain entry `ai.meta.dev.credentials` (login written by the Muse CLI) | `api.meta.ai` |
 
 Tokens are held in memory for the duration of a probe and are never written to
 disk by playmaker, except that Kimi Code refreshes an expired OAuth access
-token in the CLI's existing credential file with mode `0600`. `~/.playmaker/quotas.json`
+token in the CLI's existing credential file with mode `0600`. The Muse Code
+probe stays read-only: the login token is never refreshed, and the inference
+key that endpoint mints alongside the usage is discarded — never logged,
+stored, or written back. `~/.playmaker/quotas.json`
 holds the probe results — remaining percentages, reset times, and the account
 email and plan tier the provider reported.
 

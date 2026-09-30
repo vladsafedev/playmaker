@@ -27,6 +27,13 @@ several tiers with independent buckets, and the whole point of pulling quotas is
   under that provider (e.g. a GLM coding plan's session and weekly credit windows) and reads
   unsupported without a credential. A dispatch pointed at a **local** model spends nothing and never
   appears in the table.
+- **Muse Code:** two buckets — `Session` (the rolling 5-hour window) and `Weekly`, both
+  percentage-based. Meta omits usage while the 5-hour window is idle: the block then shows the plan
+  name with a note instead of bars (weekly stays unknown until the next prompt spends something),
+  so no bars does not mean no quota. The credential is the CLI's own login, read-only — inline in
+  `~/.config/muse/auth.json`, else the macOS Keychain item `ai.meta.dev.credentials` via
+  `security`; the first Keychain read can raise a macOS "allow access" dialog, and "Always Allow"
+  makes later probes silent.
 
 ## Rules
 
