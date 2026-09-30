@@ -1044,12 +1044,14 @@ def _render_provider(name: str, info: dict) -> None:
         "gemini": "cyan",
         "zai": "yellow",
         "kimi": "cyan",
+        "muse": "bright_blue",
         "ollama": "bright_cyan",
     }.get(name, "white")
     display = {
         "agy": "Antigravity (agy)",
         "zai": "Z.ai (GLM, via opencode)",
         "kimi": "Kimi Code",
+        "muse": "Muse Code",
         "ollama": "Ollama (local, via opencode)",
     }.get(name, name.capitalize())
     title = f"[bold {label_color}]{display}[/bold {label_color}]"
@@ -1086,12 +1088,18 @@ def _render_provider(name: str, info: dict) -> None:
 
     windows = info.get("windows") or []
     blocks = info.get("blocks") or []
+    note = info.get("note") if status == "ok" else None
     if not windows:
-        console.print("  [dim]no quota windows reported[/dim]")
+        if note:
+            console.print(f"  [dim]{note}[/dim]")
+        else:
+            console.print("  [dim]no quota windows reported[/dim]")
         if not blocks:
             return
     else:
         render_windows(windows)
+        if note:
+            console.print(f"  [dim]{note}[/dim]")
     if info.get("source") == "remote" and info.get("local_error"):
         console.print(f"  [dim]local daemon: {info['local_error']}[/dim]")
 

@@ -1,0 +1,22 @@
+{
+  "api_key": "<redacted>",
+  "base_url": "https://api.meta.ai/v1",
+  "has_payment_method": false,
+  "require_payment": false,
+  "is_subs_active": true,
+  "can_subscribe": false,
+  "show_subs_upsell": true,
+  "user_full_name": "<redacted>",
+  "user_email": "<redacted>",
+  "user_avatar_url": "<redacted>",
+  "payment_method": "<redacted>",
+  "action_url": null,
+  "subs_tier_id": "27681631238169137",
+  "subs_tier_name": "Muse Code Power Usage",
+  "is_subs_upgrade_available": false,
+  "subs_usage": {
+    "window": {"used_percent": 0, "window_duration_mins": 300, "resets_at": 1790775892},
+    "weekly": {"used_percent": 3, "resets_at": 1791158400},
+    "tier": "27681631238169137"
+  }
+}

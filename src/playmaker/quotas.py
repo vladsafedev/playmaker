@@ -13,6 +13,8 @@ All providers go through OAuth Bearer tokens; no WebKit, no PTY.
   api.z.ai/api/monitor/usage/quota/limit
 - Kimi Code: OAuth credential in ~/.kimi-code/credentials ->
   api.kimi.ai/coding/v1/usages
+- Muse Code: device-code token (auth.json inline or macOS Keychain) ->
+  api.meta.ai/muse-code/key, which also reports the subscription windows
 - Ollama (local, also via opencode): no quota to fetch — localhost:11434
   /api/tags is an availability probe reporting unmetered capacity
 """
@@ -28,6 +30,7 @@ import shutil
 import signal
 import ssl
 import subprocess
+import sys
 import tempfile
 import time
 import tomllib
@@ -1637,6 +1640,266 @@ def kimi_probe() -> dict:
     }
 
 
+# ---- Muse Code --------------------------------------------------------------
+
+_MUSE_KEY_URL = "https://api.meta.ai/muse-code/key"
+_MUSE_KEYCHAIN_SERVICE = "ai.meta.dev.credentials"
+_MUSE_KEYCHAIN_ACCOUNT = "meta"
+
+# The 5-hour window goes quiet while idle — Meta omits subs_usage entirely, so
+# the probe says so instead of inventing a 0% bar.
+_MUSE_IDLE_NOTE = (
+    "5-hour window idle — Meta reports no usage until the next prompt; weekly unknown"
+)
+
+
+def _muse_auth_path() -> Path:
+    """$MUSE_AUTH_PATH, else $XDG_CONFIG_HOME/muse/auth.json, else the default."""
+    configured = os.environ.get("MUSE_AUTH_PATH")
+    if configured:
+        return Path(configured).expanduser()
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg).expanduser() / "muse" / "auth.json"
+    return Path("~/.config/muse/auth.json").expanduser()
+
+
+def _muse_inline_token() -> str | None:
+    """The device-code token when auth.json carries it inline, else None."""
+    try:
+        auth = json.loads(_muse_auth_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(auth, dict):
+        return None
+    providers = auth.get("providers")
+    if not isinstance(providers, dict):
+        return None
+    meta = providers.get("meta")
+    if not isinstance(meta, dict):
+        return None
+    token = meta.get("access_token")
+    return token if isinstance(token, str) and token else None
+
+
+_MUSE_KEYCHAIN_TIMEOUT_ERROR = (
+    "Muse Code Keychain read timed out — allow `security` "
+    "access in the macOS dialog or run `muse login`"
+)
+_MUSE_KEYCHAIN_DENIED_ERROR = (
+    "Muse Code Keychain read was denied or failed — allow `security` access "
+    "to ai.meta.dev.credentials, or run `muse login`"
+)
+
+
+def _muse_keychain_token() -> str | None:
+    """The device-code token from the macOS Keychain, else None when no login.
+
+    macOS only: other platforms return None without invoking `security`.
+    Read-only: an existence check first (no secret, so no Allow dialog), then
+    the `-w` read with a generous timeout — the first read can sit behind a
+    macOS "allow access" dialog for seconds. None when the item does not
+    exist (clean non-zero exit) or `security` is missing; a RuntimeError
+    carrying no secret when it exists but cannot be read.
+    """
+    if sys.platform != "darwin":
+        return None
+    base = [
+        "security",
+        "find-generic-password",
+        "-s",
+        _MUSE_KEYCHAIN_SERVICE,
+        "-a",
+        _MUSE_KEYCHAIN_ACCOUNT,
+    ]
+    try:
+        exists = subprocess.run(base, capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(_MUSE_KEYCHAIN_TIMEOUT_ERROR) from exc
+    except FileNotFoundError:
+        return None
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(_MUSE_KEYCHAIN_DENIED_ERROR) from exc
+    if exists.returncode != 0:
+        return None
+    try:
+        proc = subprocess.run([*base, "-w"], capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(_MUSE_KEYCHAIN_TIMEOUT_ERROR) from exc
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            f"Muse Code Keychain read failed ({type(exc).__name__}) — allow "
+            "`security` access or run `muse login`"
+        ) from exc
+    if proc.returncode != 0:
+        raise RuntimeError(_MUSE_KEYCHAIN_DENIED_ERROR)
+    try:
+        secret = json.loads(proc.stdout.strip())
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Muse Code Keychain entry is not JSON — run `muse login`") from exc
+    if not isinstance(secret, dict):
+        raise RuntimeError("Muse Code Keychain entry is not JSON — run `muse login`")
+    token = secret.get("access_token")
+    if not isinstance(token, str) or not token:
+        raise RuntimeError(
+            "Muse Code Keychain entry has no access_token — run `muse login`"
+        )
+    return token
+
+
+def _muse_load_token() -> str | None:
+    """The Muse device-code token, or None when no login exists anywhere."""
+    inline = _muse_inline_token()
+    if inline and inline.startswith("dca:"):
+        return inline
+    token = _muse_keychain_token() or inline
+    if token is None:
+        return None
+    if not token.startswith("dca:"):
+        raise RuntimeError("Muse Code needs a device-code login — run `muse login`")
+    return token
+
+
+def _muse_short_detail(text: str) -> str | None:
+    """At most a short detail/title string from an error payload, else None."""
+    for key in ("detail", "title"):
+        match = re.search(rf'"{key}"\s*:\s*"([^"]{{1,120}})"', text)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _muse_http_error(exc: Exception) -> dict:
+    """Map a failed key-mint request to a status-error result (no body echo)."""
+    code: int | None = None
+    match = re.search(r"HTTP (\d{3})", str(exc))
+    if match:
+        code = int(match.group(1))
+    if code in (401, 403):
+        return {
+            "status": "error",
+            "error": "Muse Code login was rejected — run `muse login`",
+        }
+    if code == 429:
+        return {
+            "status": "error",
+            "error": "Muse Code rate limited (HTTP 429) — try again later",
+        }
+    if code is not None:
+        message = f"Muse Code API returned HTTP {code}"
+        detail = _muse_short_detail(str(exc))
+        if detail:
+            message += f" — {detail}"
+        return {"status": "error", "error": message}
+    return {"status": "error", "error": "Muse Code API request failed"}
+
+
+def _muse_window(
+    name: str, used_percent: object, resets_at: object, window_seconds: float
+) -> dict | None:
+    """A Session/Weekly row from a subs_usage entry, or None when malformed."""
+    if isinstance(used_percent, bool) or not isinstance(used_percent, (int, float)):
+        return None
+    if isinstance(resets_at, bool) or not isinstance(resets_at, (int, float)):
+        return None
+    used = max(0.0, float(used_percent))
+    reset_ts = float(resets_at)
+    if reset_ts > 1e12:  # epoch millis, just in case
+        reset_ts /= 1000.0
+    reset_iso = _epoch_to_iso(resets_at)
+    elapsed = max(0.0, window_seconds - (reset_ts - time.time()))
+    return {
+        "name": name,
+        "pct_left": max(0, min(100, int(round(100 - used)))),
+        "reset_at_iso": reset_iso,
+        "reset_relative": _format_relative(reset_iso),
+        "forecast": _forecast_label(used, window_seconds, elapsed),
+        "reserve_pct": None,
+    }
+
+
+def muse_probe() -> dict:
+    """Muse Code subscription usage, minted the way the `muse` CLI does it.
+
+    POSTs the device-code token from auth.json (or the macOS Keychain) to the
+    muse-code key endpoint — the same call CodexBar's Muse provider makes on
+    every refresh. Read-only: the token is never refreshed and nothing is
+    written back; the minted `api_key` inference key is discarded at once.
+    """
+    try:
+        token = _muse_load_token()
+    except RuntimeError as exc:
+        return {"status": "error", "error": str(exc)}
+    if token is None:
+        return {
+            "status": "unsupported",
+            "reason": "no Muse Code credential — run `muse login`",
+        }
+
+    try:
+        resp = _http_json(
+            _MUSE_KEY_URL,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "x-api-version": "1.0.0",
+                "Content-Type": "application/json",
+                "User-Agent": f"playmaker/{__version__}",
+            },
+            body={},
+            timeout=15.0,
+        )
+    except Exception as exc:
+        return _muse_http_error(exc)
+    if not isinstance(resp, dict):
+        return {"status": "error", "error": "unexpected Muse usage payload"}
+    resp.pop("api_key", None)  # minted inference key: never stored, never logged
+    if resp.get("require_payment") is True:
+        return {
+            "status": "error",
+            "error": "billing incomplete — add a payment method at https://dev.meta.ai",
+        }
+    if resp.get("is_subs_active") is False:
+        return {
+            "status": "unsupported",
+            "reason": "pay-as-you-go account — no subscription windows",
+        }
+    email = resp.get("user_email")
+    tier = resp.get("subs_tier_name")
+    base = {
+        "account_email": email if isinstance(email, str) else None,
+        "tier": tier if isinstance(tier, str) else None,
+    }
+    subs_usage = resp.get("subs_usage")
+    if subs_usage is None:
+        return {"status": "ok", **base, "windows": [], "note": _MUSE_IDLE_NOTE}
+    if not isinstance(subs_usage, dict):
+        return {"status": "error", "error": "unexpected Muse usage payload"}
+    window = subs_usage.get("window")
+    weekly = subs_usage.get("weekly")
+    if not isinstance(window, dict) or not isinstance(weekly, dict):
+        return {"status": "error", "error": "unexpected Muse usage payload"}
+    duration = window.get("window_duration_mins")
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or duration <= 0
+    ):
+        return {"status": "error", "error": "unexpected Muse usage payload"}
+    session = _muse_window(
+        "Session",
+        window.get("used_percent"),
+        window.get("resets_at"),
+        float(duration) * 60,
+    )
+    week = _muse_window(
+        "Weekly", weekly.get("used_percent"), weekly.get("resets_at"), 7 * 86400
+    )
+    if session is None or week is None:
+        return {"status": "error", "error": "unexpected Muse usage payload"}
+    return {"status": "ok", **base, "windows": [session, week]}
+
+
 # ---- Ollama (local, unmetered) ----------------------------------------------
 
 # Ollama's own API, not the OpenAI-compatible /v1 shim that opencode dispatches
@@ -1762,6 +2025,7 @@ PROBES = {
     "agy": antigravity_probe,
     "zai": zai_probe,
     "kimi": kimi_probe,
+    "muse": muse_probe,
     "ollama": ollama_probe,
 }
 
