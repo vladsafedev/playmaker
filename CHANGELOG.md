@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.14.1] - 2026-09-30
 
 ### Added
 
@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The docs said Meta exposes no usage API for Muse Code — wrong.** 0.13.0's
   README and CHANGELOG claimed no usage or quota API exists, so `playmaker
   quotas` shipped with no Muse block; the CLI's own key-mint call reports it.
+- **The coach skill forgot the `kimi` and `muse` lanes in 0.14.0.** The skill
+  revision was synced from an installed copy that predates both lanes, so
+  every line naming them went: the SKILL.md description and lane list, the
+  external-dispatch list, cheat-sheet rows and senior tier row in
+  `references/lanes.md`, and the `## kimi` / `## muse` sections of
+  `references/agent-gotchas.md`. A coach following the skill never routed to
+  two senior lanes. They are back inside the revision's structure, nothing of
+  the revision removed; the muse section also notes its quota block. As with
+  0.12.1, this ships as a release because the skill lives in the wheel.
 
 ## [0.14.0] - 2026-09-30
 
