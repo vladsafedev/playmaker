@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.3] - 2026-10-02
+
+### Fixed
+
+- **`ledger.py reviewers lens=…` compared each seat only with seats on the
+  same lens.** 0.14.2 dropped the other lenses' verdicts before the
+  comparison, so a blocking finding that another lens also raised counted as
+  unique, and a pass that missed another lens's blocking finding was not
+  counted as a miss (on one repo: Gemini's unique blocking findings read 20
+  filtered against 11 unfiltered). The filter now selects the printed rows
+  only, and the header counts every verdict file scanned.
+
 ## [0.14.2] - 2026-10-02
 
 ### Added
