@@ -5,6 +5,7 @@
   ledger.py fix    wp=<label> [repo=<r>] [commit=<sha>] k=v ...      update the LAST matching row
   ledger.py escape wp=<label> commit=<later-fix> [note=...]          a later fix for a passed board
   ledger.py stats  [class=<c>] [repo=<r>] [since=YYYY-MM-DD]         per lane × class, per reviewer
+  ledger.py reviewers [roots=<d>,...] [since=YYYY-MM-DD] [lens=<l>]  per reviewer × lens
   ledger.py tail   [n=10]                                            last rows, one line each
 
 Unknown fields land as "-". Lives in ~/.playmaker (outside the skill dir, which
@@ -14,6 +15,7 @@ Lists are comma-separated on the command line.
 import collections
 import datetime
 import fcntl
+import hashlib
 import json
 import os
 import pathlib
@@ -125,6 +127,25 @@ def normalize(d):
     return row
 
 
+def reviewer_key(lane, model):
+    m = (model or "").strip()
+    if lane == "agy":
+        if not m or m == "-" or ("gemini" in m and "pro" in m):
+            return "agy-gemini-pro"
+        return "agy-" + m
+    if lane == "opencode":
+        if not m or m == "-" or "glm-5.3" in m:
+            return "glm-5.3"
+        return m.split("/")[-1]
+    if lane == "kimi":
+        return "kimi-k3"
+    if lane == "claude":
+        if not m or m == "-" or "opus" in m:
+            return "opus"
+        return m
+    return lane
+
+
 def cmd_add(argv):
     d = kv(argv)
     for req in ("wp", "class", "impl_lane"):
@@ -214,35 +235,205 @@ def cmd_stats(argv):
         print("ledger: no rows")
         return
     print(f"{len(items)} rows · {LEDGER}\n")
-    print(f"{'impl lane / class':34} {'n':>3} {'gate1st':>7} {'landed':>7} "
+    stuck = [r for r in items
+             if r["outcome"] == "open" and r.get("commit", "-") not in ("-", "")]
+    if stuck:
+        wps = ", ".join(r["wp"] for r in stuck)
+        print(f"! {len(stuck)} open row(s) carry a commit — the hook wrote them and "
+              f"nobody closed them: {wps} … (ledger.py fix wp=… outcome=landed)\n")
+    print(f"{'impl lane / class':34} {'n':>3} {'open':>4} {'gate1st':>7} {'landed':>7} "
           f"{'r1 blk':>7} {'cycles':>7} {'escaped':>7}")
     groups = collections.defaultdict(list)
     for r in items:
         groups[(r["impl_lane"], r["class"])].append(r)
     for (lane, cls), g in sorted(groups.items()):
-        known_gate = [r for r in g if r["gate_first_pass"] in ("y", "n")]
-        blk = [r["blocking_r1"] for r in g if isinstance(r["blocking_r1"], int)]
-        cyc = [r["cycles"] for r in g if isinstance(r["cycles"], int)]
+        closed = [r for r in g if r["outcome"] in ("landed", "abandoned", "escalated")]
+        n_open = sum(r["outcome"] == "open" for r in g)
+        known_gate = [r for r in closed if r["gate_first_pass"] in ("y", "n")]
+        blk = [r["blocking_r1"] for r in closed if isinstance(r["blocking_r1"], int)]
+        cyc = [r["cycles"] for r in closed if isinstance(r["cycles"], int)]
         gate1st = pct(sum(r["gate_first_pass"] == "y" for r in known_gate), len(known_gate))
-        landed = pct(sum(r["outcome"] == "landed" for r in g), len(g))
-        head = f"{lane + ' / ' + cls:34} {len(g):>3} {gate1st:>7} {landed:>7}"
+        landed = pct(sum(r["outcome"] == "landed" for r in closed), len(closed))
+        head = f"{lane + ' / ' + cls:34} {len(g):>3} {n_open:>4} {gate1st:>7} {landed:>7}"
         if blk:
-            print(f"{head} {(sum(blk) / len(blk)):>7.1f}", end="")
+            head += f" {(sum(blk) / len(blk)):>7.1f}"
         else:
-            print(f"{head} {'—':>7}", end="")
+            head += f" {'—':>7}"
         avg_cyc = (sum(cyc) / len(cyc)) if cyc else float("nan")
-        print(f" {avg_cyc:>7.1f} {sum(bool(r.get('escaped_from')) for r in g):>7}")
+        head += f" {avg_cyc:>7.1f} {sum(bool(r.get('escaped_from')) for r in g):>7}"
+        if len(closed) < 5:
+            head += " *"
+        print(head)
+    print("* fewer than 5 closed rows — not enough evidence to remove a lane "
+          "(policy step 3); measure instead")
     print()
     rev = collections.Counter()
-    rev_blk = collections.Counter()
+    rev_known = collections.Counter()
+    rev_pos = collections.Counter()
     for r in items:
+        seats = []
         for name in r["reviewers"]:
-            rev[name] += 1
-            if isinstance(r["blocking_accepted"], int) and r["blocking_accepted"] > 0:
-                rev_blk[name] += 1
-    print(f"{'reviewer (boards sat on)':34} {'n':>3} {'on boards with accepted blocking':>34}")
+            key = reviewer_key(name, "")
+            if key not in seats:
+                seats.append(key)
+        for key in seats:
+            rev[key] += 1
+            if isinstance(r["blocking_accepted"], int):
+                rev_known[key] += 1
+                if r["blocking_accepted"] > 0:
+                    rev_pos[key] += 1
+    head = "reviewer (boards sat on — board-level, not this reviewer's findings)"
+    print(f"{head:34} {'boards':>6} {'acc known':>9} {'acc>0':>6}")
     for name, n in rev.most_common():
-        print(f"{name:34} {n:>3} {rev_blk[name]:>34}")
+        print(f"{name:34} {n:>6} {rev_known[name]:>9} {rev_pos[name]:>6}")
+    repo = repo_name()
+    print(f"per-reviewer findings by lens: ledger.py reviewers  (run in the repo root; "
+          f"default roots = . and ../{repo}-wt)")
+
+
+def verdict_paths(roots):
+    found = []
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            if "node_modules" in dirnames:
+                dirnames.remove("node_modules")
+            for fn in filenames:
+                if fn.startswith("verdict-") and fn.endswith(".json"):
+                    found.append(pathlib.Path(dirpath) / fn)
+    return found
+
+
+def split_verdict_name(fn):
+    rest = fn[len("verdict-"):-len(".json")]
+    toks = rest.split("-")
+    if len(toks) < 2:
+        return None
+    lane, lens = toks[0], toks[1]
+    suffix = ""
+    if len(toks) > 2 and toks[-1].startswith("r") and toks[-1][1:].isdigit():
+        suffix = "-" + toks[-1]
+    return lane, lens, suffix
+
+
+def finding_point(fb):
+    if not isinstance(fb, dict):
+        return None
+    sev = fb.get("severity")
+    if sev not in ("blocking", "major", "minor", "nit"):
+        return None
+    try:
+        line = int(fb.get("line") or 0)
+    except (TypeError, ValueError):
+        line = 0
+    return sev, fb.get("file") or "", line
+
+
+def cmd_reviewers(argv):
+    f = kv(argv)
+    if f.get("roots"):
+        roots = [r.strip() for r in f["roots"].split(",") if r.strip()]
+    else:
+        roots = [str(pathlib.Path.cwd())]
+        wt = str(pathlib.Path.cwd()) + "-wt"
+        if pathlib.Path(wt).is_dir():
+            roots.append(wt)
+    since = f.get("since", "")
+    lens_only = f.get("lens", "")
+    seen = {}
+    skipped = 0
+    for p in verdict_paths(roots):
+        try:
+            raw = p.read_bytes()
+            data = json.loads(raw)
+        except (OSError, ValueError):
+            skipped += 1
+            continue
+        if not isinstance(data, dict):
+            skipped += 1
+            continue
+        if since:
+            try:
+                mtime = datetime.date.fromtimestamp(p.stat().st_mtime).isoformat()
+            except OSError:
+                continue
+            if mtime < since:
+                continue
+        parts = p.parts
+        # the last `.playmaker/reviews` pair — a root may itself sit under a dir named `reviews`
+        ri = next((i + 1 for i in range(len(parts) - 2, -1, -1)
+                   if parts[i] == ".playmaker" and parts[i + 1] == "reviews"), None)
+        if ri is None or ri + 1 >= len(parts) - 1:
+            continue
+        name = split_verdict_name(p.name)
+        if name is None:
+            continue
+        flane, flens, suffix = name
+        parent = p.parent.name
+        round_id = (parent if parent.startswith("archive-") else "final") + suffix
+        key = (parts[ri + 1], round_id, p.name, hashlib.sha256(raw).hexdigest())
+        if key not in seen:
+            seen[key] = (data, parts[ri + 1], round_id, flane, flens)
+    recs = []
+    for data, wp, round_id, flane, flens in seen.values():
+        lens = data.get("lens") or flens
+        if not isinstance(lens, str) or not lens:
+            lens = flens
+        if lens_only and lens != lens_only:
+            continue
+        rv = data.get("reviewer")
+        if isinstance(rv, str) and "/" in rv:
+            model = rv.split("/", 1)[1]
+        else:
+            model = ""
+        finds = data.get("findings")
+        if not isinstance(finds, list):
+            finds = []
+        pts = [pt for pt in (finding_point(fb) for fb in finds) if pt]
+        recs.append({
+            "wp": wp, "round": round_id, "lens": lens,
+            "who": reviewer_key(flane, model),
+            "says_pass": data.get("verdict") in ("pass", "pass_with_nits"),
+            "has_blk": any(s == "blocking" for s, _, _ in pts),
+            "blk": [(fl, ln) for s, fl, ln in pts if s == "blocking"],
+            "sig": [(fl, ln) for s, fl, ln in pts if s in ("blocking", "major")],
+            "major": sum(s == "major" for s, _, _ in pts),
+            "minor": sum(s in ("minor", "nit") for s, _, _ in pts),
+        })
+    print(f"{len(recs)} verdict files · {skipped} skipped · roots {', '.join(roots)}\n")
+    if not recs:
+        print("ledger: no verdicts")
+        return
+    for rc in recs:
+        uniq = 0
+        for fl, ln in rc["blk"]:
+            hit = any(o is not rc and o["wp"] == rc["wp"] and o["round"] == rc["round"]
+                      and fl and fl == ofl and abs(ln - oln) <= 20
+                      for o in recs for ofl, oln in o["sig"])
+            if not hit:
+                uniq += 1
+        rc["unique"] = uniq
+        same = [o for o in recs if o is not rc and o["wp"] == rc["wp"]
+                and o["round"] == rc["round"] and o["has_blk"]]
+        rc["miss_same"] = 1 if rc["says_pass"] and any(o["lens"] == rc["lens"]
+                                                       for o in same) else 0
+        rc["miss_other"] = 1 if rc["says_pass"] and any(o["lens"] != rc["lens"]
+                                                        for o in same) else 0
+    groups = collections.defaultdict(list)
+    for rc in recs:
+        groups[(rc["lens"], rc["who"])].append(rc)
+    print(f"{'lens / reviewer':34} {'verdicts':>8} {'boards':>6} {'with blk':>8} "
+          f"{'blk':>5} {'unique':>6} {'major':>5} {'minor':>5} "
+          f"{'missed same':>11} {'missed other':>12}")
+    for (lens, who), g in sorted(groups.items(), key=lambda it: (it[0][0], -len(it[1]), it[0][1])):
+        line = (f"{lens + ' / ' + who:34} {len(g):>8} {len({r['wp'] for r in g}):>6} "
+                f"{sum(r['has_blk'] for r in g):>8} {sum(len(r['blk']) for r in g):>5} "
+                f"{sum(r['unique'] for r in g):>6} {sum(r['major'] for r in g):>5} "
+                f"{sum(r['minor'] for r in g):>5} {sum(r['miss_same'] for r in g):>11} "
+                f"{sum(r['miss_other'] for r in g):>12}")
+        if len(g) < 5:
+            line += " *"
+        print(line)
+    print("* fewer than 5 verdicts on this lens — a reason to measure, not to judge")
 
 
 def cmd_tail(argv):
@@ -260,5 +451,5 @@ if __name__ == "__main__":
         sys.exit(0)
     cmd, argv = sys.argv[1], sys.argv[2:]
     commands = {"add": cmd_add, "fix": cmd_fix, "escape": cmd_escape,
-                "stats": cmd_stats, "tail": cmd_tail}
+                "stats": cmd_stats, "reviewers": cmd_reviewers, "tail": cmd_tail}
     commands.get(cmd, lambda a: die(f"unknown command {cmd!r}"))(argv)
