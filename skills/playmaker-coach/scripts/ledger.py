@@ -378,8 +378,6 @@ def cmd_reviewers(argv):
         lens = data.get("lens") or flens
         if not isinstance(lens, str) or not lens:
             lens = flens
-        if lens_only and lens != lens_only:
-            continue
         rv = data.get("reviewer")
         if isinstance(rv, str) and "/" in rv:
             model = rv.split("/", 1)[1]
@@ -420,6 +418,9 @@ def cmd_reviewers(argv):
                                                         for o in same) else 0
     groups = collections.defaultdict(list)
     for rc in recs:
+        # filter the printed rows only: unique and missed compare against every seat
+        if lens_only and rc["lens"] != lens_only:
+            continue
         groups[(rc["lens"], rc["who"])].append(rc)
     print(f"{'lens / reviewer':34} {'verdicts':>8} {'boards':>6} {'with blk':>8} "
           f"{'blk':>5} {'unique':>6} {'major':>5} {'minor':>5} "

@@ -312,7 +312,8 @@ def test_reviewers_counts_unique_missed_dedupe_and_skipped(tmp_path: Path) -> No
     assert [(who, lens) for who, lens, _, _ in _reviewer_rows(risk_only.stdout)] == [
         ("muse", "risk")
     ]
-    assert "3 verdict files" in risk_only.stdout.splitlines()[0]
+    # the header counts every file scanned: all of them take part in the comparison
+    assert "12 verdict files" in risk_only.stdout.splitlines()[0]
 
     cwd_run = _run(ledger, "reviewers", cwd=r1)
     assert cwd_run.returncode == 0, cwd_run.stderr
@@ -329,3 +330,27 @@ def test_reviewers_wp_is_the_dir_under_the_last_playmaker_reviews(tmp_path: Path
     assert res.returncode == 0, res.stderr
     rows = _reviewer_rows(res.stdout)
     assert [(who, lens, counts[:2]) for who, lens, counts, _ in rows] == [("codex", "risk", [2, 2])]
+
+
+def test_reviewers_lens_filter_keeps_other_seats_in_the_comparison(tmp_path: Path) -> None:
+    root = tmp_path / "r"
+    base = root / ".playmaker" / "reviews" / "wp-z"
+    _write_verdict(
+        base / "verdict-agy-correctness.json",
+        "agy/gemini-3.1-pro-high",
+        "fail",
+        [_finding("blocking", "f.py", 10)],
+    )
+    _write_verdict(
+        base / "verdict-codex-risk.json", "codex/-", "fail", [_finding("blocking", "f.py", 12)]
+    )
+    _write_verdict(base / "verdict-muse-correctness.json", "muse/-", "pass", [])
+    ledger = tmp_path / "ledger.jsonl"
+    full = _run(ledger, "reviewers", f"roots={root}")
+    only = _run(ledger, "reviewers", f"roots={root}", "lens=correctness")
+    assert full.returncode == 0 and only.returncode == 0, full.stderr + only.stderr
+    want = [r for r in _reviewer_rows(full.stdout) if r[1] == "correctness"]
+    assert _reviewer_rows(only.stdout) == want
+    by_who = {who: counts for who, _, counts, _ in want}
+    assert by_who["agy-gemini-pro"][4] == 0  # codex flagged the same spot: not unique
+    assert by_who["muse"][7:9] == [1, 1]  # missed on the same lens and on another
