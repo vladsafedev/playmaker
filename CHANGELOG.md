@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.2] - 2026-10-02
+
+### Added
+
+- **`ledger.py reviewers` — per-reviewer evidence from the board's own verdict
+  files.** For each lens and reviewer it prints verdicts, boards, verdicts with
+  a blocking finding, blocking findings no other seat raised, and passes on a
+  board where another seat found a blocking issue — on the same lens and on
+  another one. It reads `.playmaker/reviews/<wp>/verdict-*.json` (archived
+  rounds included) under the repo and its `-wt` worktrees; copies of one
+  verdict across worktrees collapse, distinct verdicts never do. Rows under
+  5 verdicts are marked: a reason to measure, not to judge.
+
+### Fixed
+
+- **`ledger.py stats` read a landed lane as failing.** Rows the commit hook
+  writes start as `open`; when nobody closed them, the lane table counted them
+  as not landed — one lane showed 40 % landed with every WP merged, exactly
+  at the policy's lane-removal threshold. Rates now use closed rows only, an
+  `open` column shows the rest, open rows that carry a commit are listed
+  above the table, and groups under 5 closed rows are marked as too thin to
+  remove a lane.
+- **The `stats` reviewer column did not measure the reviewer.** It counted a
+  board for every seat when anyone's blocking finding was accepted on it, and
+  one seat appeared under two names (`agy` / `agy-gemini-pro`, `kimi` /
+  `kimi-k3`, `opencode` / `glm-5.3`). Names are normalized and merged per row;
+  the header says the column is board-level and points to `ledger.py reviewers`.
+
 ## [0.14.1] - 2026-09-30
 
 ### Added
