@@ -13,6 +13,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from playmaker import __version__, config, gate, limits, notify, state, watcher, worktree
@@ -1205,12 +1206,17 @@ def worktree_ls(
         err_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
     items = []
+    wt_base = root.parent / f"{root.name}-wt"
     for path_text, sessions in rows.items():
         path = Path(path_text)
         info = registered.get(path_text, {})
         exists = path.is_dir()
+        try:
+            rel_name = str(path.relative_to(wt_base))
+        except ValueError:
+            rel_name = path.name
         item = {
-            "name": path.name,
+            "name": rel_name,
             "path": path_text,
             "branch": info.get("branch", sessions[-1].get("worktree_branch")),
             "exists": exists,
@@ -1226,14 +1232,23 @@ def worktree_ls(
         typer.echo(json.dumps(items))
         return
     table = Table(show_header=True, header_style="bold")
-    for column in ("name", "path", "branch", "exists", "dirty", "sessions", "last status", "age"):
+    # Name and branch are never ellipsised, even in a narrow terminal: they
+    # keep min_width so the shortened path column takes the squeeze instead.
+    # crop=False keeps full logical lines when the table runs wider than the
+    # console — Rich would otherwise cut them at the console width.
+    name_width = max([len("name"), *(len(item["name"]) for item in items)])
+    branch_width = max([len("branch"), *(len(item["branch"] or "") for item in items)])
+    table.add_column("name", overflow="fold", min_width=name_width)
+    table.add_column("path", overflow="fold")
+    table.add_column("branch", overflow="fold", min_width=branch_width)
+    for column in ("exists", "dirty", "sessions", "last status", "age"):
         table.add_column(column)
     if size:
         table.add_column("size")
     for item in items:
         values = [
             item["name"],
-            item["path"],
+            f"…/{item['name']}",
             item["branch"] or "",
             "y" if item["exists"] else "n",
             "y" if item["dirty"] else "n",
@@ -1244,7 +1259,7 @@ def worktree_ls(
         if size:
             values.append(f"{item.get('size_kb', 0)}K")
         table.add_row(*values)
-    console.print(table)
+    console.print(table, crop=False)
 
 
 @worktree_app.command("rm")
@@ -1258,17 +1273,20 @@ def worktree_rm(
     try:
         root = worktree.repo_root((repo or Path.cwd()).expanduser().resolve())
         path, branch = _resolve_worktree(root, name_or_path)
-        kept_branch = _remove_worktree(root, path, branch, force)
+        kept_reason = _remove_worktree(root, path, branch, force)
         console.print(f"[green]removed[/green] {path}")
-        if kept_branch:
-            console.print(f"[yellow]kept branch {branch}: not merged[/yellow]")
+        if kept_reason:
+            # escape(): git stderr is verbatim text — a "[foo]" in a path is
+            # not Rich markup and must not be swallowed as a style tag.
+            console.print(f"[yellow]kept branch {escape(branch)}: {escape(kept_reason)}[/yellow]")
     except worktree.WorktreeError as exc:
         err_console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
 
 
-def _remove_worktree(root: Path, path: Path, branch: str, force: bool) -> bool:
-    """Remove one worktree; return whether an unmerged branch was retained."""
+def _remove_worktree(root: Path, path: Path, branch: str, force: bool) -> str | None:
+    """Remove one worktree; return None when the branch was deleted, else the
+    reason it was kept (git's stderr, stripped)."""
     sessions = _worktree_rows(root).get(str(path), [])
     if any(s["status"] == "running" for s in sessions):
         raise worktree.WorktreeError("refusing to remove a worktree with running sessions")
@@ -1303,7 +1321,11 @@ def _remove_worktree(root: Path, path: Path, branch: str, force: bool) -> bool:
             delete.stderr.strip() or "git branch delete failed", delete.returncode
         )
     subprocess.run(["git", "-C", str(root), "worktree", "prune"], check=False)
-    return bool(delete.returncode)
+    if delete.returncode:
+        # The branch may be checked out in another worktree rather than
+        # unmerged — surface git's own reason verbatim instead of guessing.
+        return delete.stderr.strip() or "not merged"
+    return None
 
 
 @worktree_app.command("prune-done")
@@ -1346,10 +1368,13 @@ def worktree_prune_done(
             else:
                 try:
                     path, resolved_branch = _resolve_worktree(root, path_text)
-                    kept_branch = _remove_worktree(root, path, resolved_branch, force=False)
+                    kept_reason = _remove_worktree(root, path, resolved_branch, force=False)
                     console.print(f"[green]removed[/green] {path}")
-                    if kept_branch:
-                        console.print(f"[yellow]kept branch {resolved_branch}: not merged[/yellow]")
+                    if kept_reason:
+                        console.print(
+                            f"[yellow]kept branch {escape(resolved_branch)}: "
+                            f"{escape(kept_reason)}[/yellow]"
+                        )
                 except worktree.WorktreeError as exc:
                     skipped = True
                     err_console.print(f"[yellow]skipped {path_text}: {exc}[/yellow]")
@@ -1375,11 +1400,17 @@ def _worktree_rows(root: Path) -> dict[str, list[dict]]:
 
 
 def _resolve_worktree(root: Path, name_or_path: str) -> tuple[Path, str]:
-    candidate = (
-        Path(name_or_path).expanduser().resolve()
-        if "/" in name_or_path
-        else root.parent / f"{root.name}-wt" / name_or_path
-    )
+    """Map a worktree argument to its registered path and branch.
+
+    An absolute path, or one starting with ./ ../ or ~, resolves as a path;
+    anything else is a name under <repo>-wt/ — the same layout
+    worktree.prepare creates, so slashed names such as a/b keep working no
+    matter the cwd.
+    """
+    if Path(name_or_path).is_absolute() or name_or_path.startswith(("./", "../", "~")):
+        candidate = Path(name_or_path).expanduser().resolve()
+    else:
+        candidate = root.parent / f"{root.name}-wt" / name_or_path
     for item in worktree.list_worktrees(root):
         if Path(item["path"]).resolve() == candidate.resolve():
             branch = item.get("branch", "").removeprefix("refs/heads/")

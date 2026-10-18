@@ -202,6 +202,124 @@ def test_worktree_ls_and_rm_refusals_and_force(db: Path, tmp_path: Path) -> None
     assert not path.exists()
 
 
+def test_worktree_rm_slashed_name_resolves_under_wt_dir(
+    db: Path, tmp_path: Path, monkeypatch
+) -> None:
+    root = _repo(tmp_path)
+    wt_path = _session_for_worktree(root, "a/b")
+    assert wt_path.is_dir()
+    # Run from a cwd where a/b does not exist: the argument must still resolve
+    # as a name under <repo>-wt/, not as a path relative to cwd.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert not (elsewhere / "a").exists()
+
+    result = runner.invoke(cli.app, ["worktree", "rm", "a/b", "--repo", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert not wt_path.exists()
+
+
+def test_worktree_rm_kept_branch_shows_git_stderr(db: Path, tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    path = _session_for_worktree(root, "demo")
+    # Check out the same branch in a second worktree: `git branch -d` then
+    # refuses for a reason other than "not merged". The holder path contains
+    # "[foo]", which Rich would swallow as a markup tag if not escaped.
+    second = tmp_path / "[foo]"
+    dup = subprocess.run(
+        ["git", "-C", str(root), "worktree", "add", "--force", str(second), "wp/demo"],
+        text=True,
+        capture_output=True,
+    )
+    assert dup.returncode == 0, dup.stderr
+
+    result = runner.invoke(cli.app, ["worktree", "rm", "demo", "--repo", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert not path.exists()
+    # Rich wraps the long line at the console width — flatten it first.
+    flat = result.output.replace("\n", "")
+    assert "kept branch wp/demo:" in flat
+    assert "cannot delete branch" in flat.lower()
+    assert str(second) in flat
+
+
+def test_prune_done_kept_branch_shows_git_stderr(db: Path, tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    path = _session_for_worktree(root, "demo")
+    # Same "[foo]" holder as the rm test: guards the prune-done escape.
+    second = tmp_path / "[foo]"
+    dup = subprocess.run(
+        ["git", "-C", str(root), "worktree", "add", "--force", str(second), "wp/demo"],
+        text=True,
+        capture_output=True,
+    )
+    assert dup.returncode == 0, dup.stderr
+
+    result = runner.invoke(
+        cli.app, ["worktree", "prune-done", "--repo", str(root), "--into", "HEAD"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert not path.exists()
+    # Rich wraps the long line at the console width — flatten it first.
+    flat = result.output.replace("\n", "")
+    assert "kept branch wp/demo:" in flat
+    assert "cannot delete branch" in flat.lower()
+    assert str(second) in flat
+
+
+def test_worktree_ls_json_reports_path_dirty_and_age(db: Path, tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    path = _session_for_worktree(root, "demo")
+
+    listed = runner.invoke(cli.app, ["worktree", "ls", "--repo", str(root), "--json"])
+    assert listed.exit_code == 0, listed.output
+    (item,) = json.loads(listed.output)
+    assert item["path"] == str(path)
+    assert item["dirty"] is False
+    assert isinstance(item["age"], (str, int, float)) and str(item["age"]).strip() != ""
+
+    (path / "untracked").write_text("x", encoding="utf-8")
+    relisted = runner.invoke(cli.app, ["worktree", "ls", "--repo", str(root), "--json"])
+    assert relisted.exit_code == 0, relisted.output
+    (reitem,) = json.loads(relisted.output)
+    assert reitem["dirty"] is True
+
+
+def test_worktree_ls_narrow_keeps_full_name_and_branch(
+    db: Path, tmp_path: Path, monkeypatch
+) -> None:
+    root = _repo(tmp_path)
+    # Longer than 30 chars: at width 60 the old table ellipsised name and
+    # branch, so only the min_width fix keeps them whole.
+    name = "narrow-table-regression-0123456789"
+    assert len(name) > 30 and len(f"wp/{name}") > 30
+    _session_for_worktree(root, name)
+    monkeypatch.setenv("COLUMNS", "60")
+
+    result = runner.invoke(cli.app, ["worktree", "ls", "--repo", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert name in result.output
+    assert f"wp/{name}" in result.output
+
+
+def test_worktree_ls_shows_slashed_name_relative(db: Path, tmp_path: Path) -> None:
+    # Default width: nothing folds, so the shortened path is asserted whole.
+    root = _repo(tmp_path)
+    wt_path = _session_for_worktree(root, "a/b")
+
+    result = runner.invoke(cli.app, ["worktree", "ls", "--repo", str(root)])
+
+    assert result.exit_code == 0, result.output
+    assert "a/b" in result.output
+    assert "…/a/b" in result.output
+    assert str(wt_path) not in result.output
+
+
 def test_prune_done_removes_merged_and_leaves_unmerged(db: Path, tmp_path: Path) -> None:
     root = _repo(tmp_path)
     merged = _session_for_worktree(root, "merged")
