@@ -146,7 +146,8 @@ probe: a quota or auth refusal finishes in seconds as `failed`, pings nobody, an
 a slow worker. Give every dispatch a deadline (recon 15 minutes; a WP by its size) and on expiry
 check the process is alive (`playmaker logs <id>`, its RSS) before waiting longer. Never wait for a
 closed lane. At landing run `playmaker worktree rm NAME`; after a fan-out run `playmaker worktree
-prune-done`. The team once accumulated 37 worktrees; cleanup is part of landing.
+prune-done`. The team once accumulated 37 worktrees (2026-10-13, ≈30 GB with full `node_modules`); cleanup is part of landing.
+
 
 ### 3.6 Prove it on disk before you believe it
 
