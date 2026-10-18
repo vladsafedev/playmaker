@@ -77,6 +77,23 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_batch ON events(batch_id);
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
+CREATE TABLE IF NOT EXISTS queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    prompt TEXT NOT NULL,
+    cwd TEXT,
+    files TEXT,
+    gate_cmd TEXT,
+    model TEXT,
+    expect_changes INTEGER,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    delivered_as TEXT,
+    note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_queue_thread_status ON queue(thread_id, status);
 """
 
 
@@ -109,6 +126,9 @@ def init_db() -> None:
         c.executescript(SCHEMA)
         # Migration: pre-existing databases may lack newer columns.
         existing_cols = {row["name"] for row in c.execute("PRAGMA table_info(sessions)")}
+        queue_cols = {row["name"] for row in c.execute("PRAGMA table_info(queue)")}
+        if "cwd" not in queue_cols:
+            c.execute("ALTER TABLE queue ADD COLUMN cwd TEXT")
         if "model" not in existing_cols:
             c.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
         if "batch_id" not in existing_cols:
@@ -363,6 +383,44 @@ def get_session(session_id: str) -> dict[str, Any] | None:
             (session_id, f"{session_id}%"),
         ).fetchone()
     return dict(row) if row else None
+
+
+def thread_root(session_id: str) -> str:
+    """Return the root id for a session's parent chain."""
+    row = get_session(session_id)
+    if row is None:
+        raise ValueError(f"session {session_id!r} not found")
+    seen: set[str] = set()
+    while row.get("parent_id"):
+        if row["id"] in seen:
+            break
+        seen.add(row["id"])
+        parent = get_session(row["parent_id"])
+        if parent is None:
+            break
+        row = parent
+    return row["id"]
+
+
+def thread_sessions(root_id: str) -> list[dict[str, Any]]:
+    """Return every session reachable from a thread root, oldest first."""
+    with connect() as c:
+        rows = c.execute("SELECT * FROM sessions ORDER BY started_at ASC").fetchall()
+    all_rows = [dict(r) for r in rows]
+    by_parent: dict[str, list[dict[str, Any]]] = {}
+    for row in all_rows:
+        if row.get("parent_id"):
+            by_parent.setdefault(row["parent_id"], []).append(row)
+    found: list[dict[str, Any]] = []
+    todo = [root_id]
+    while todo:
+        current = todo.pop(0)
+        row = next((r for r in all_rows if r["id"] == current), None)
+        if row is None:
+            continue
+        found.append(row)
+        todo.extend(child["id"] for child in by_parent.get(current, []))
+    return found
 
 
 def list_sessions(

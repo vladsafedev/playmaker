@@ -17,6 +17,9 @@ from rich.table import Table
 
 from playmaker import __version__, config, gate, limits, notify, state, watcher, worktree
 from playmaker import events as events_mod
+from playmaker import (
+    queue as queue_mod,
+)
 from playmaker.agents.claude import EFFORT_ENV_VAR, VALID_EFFORTS
 from playmaker.registry import get_handler
 
@@ -73,6 +76,8 @@ app.add_typer(skill_app, name="skill")
 
 worktree_app = typer.Typer(help="Inspect and remove dispatch worktrees.", no_args_is_help=True)
 app.add_typer(worktree_app, name="worktree")
+queue_app = typer.Typer(help="Manage per-thread follow-up work.", no_args_is_help=True)
+app.add_typer(queue_app, name="queue")
 
 SKILL_NAME = "playmaker-coach"
 
@@ -246,8 +251,7 @@ def _max_active() -> int:
 def _parallel_refusal(exc: state.LimitExceeded, max_active: int) -> str:
     """The max_parallel refusal: running ids (8 chars), agents, ages, --force hint."""
     lines = [
-        f"max_parallel={max_active} reached: "
-        f"{len(exc.running_ids)} session(s) running or pending"
+        f"max_parallel={max_active} reached: {len(exc.running_ids)} session(s) running or pending"
     ]
     for sid in exc.running_ids:
         row = state.get_session(sid) or {}
@@ -487,6 +491,9 @@ def _run_dispatch(sid: str, *, can_fallback: bool = False) -> None:
         if can_fallback:
             _maybe_fallback(sid, row, reason)
         _maybe_finalize_batch(row.get("batch_id"))
+        root = state.thread_root(sid)
+        if queue_mod.queued_count(root):
+            state.add_event(sid, "queue_blocked", detail={"thread_id": root, "reason": reason})
         raise typer.Exit(1) from exc
 
     try:
@@ -554,6 +561,9 @@ def _run_dispatch(sid: str, *, can_fallback: bool = False) -> None:
                 group=f"playmaker-{sid}",
             )
         _maybe_finalize_batch(row.get("batch_id"))
+        # This is intentionally after gate/event persistence: a queue child sees
+        # a completely finished parent, even when the gate itself failed.
+        queue_mod.deliver_next(state.thread_root(sid), sid, _spawn_detached)
     finally:
         before_snapshot.cleanup()
 
@@ -782,6 +792,10 @@ def continue_(
         help="disable the write-task check for this follow-up",
     ),
     gate_cmd: str | None = typer.Option(None, "--gate", help="command to run after this follow-up"),
+    after: bool = typer.Option(False, "--after", help="queue this follow-up even if idle"),
+    now: bool = typer.Option(
+        False, "--now", help="attempt an immediate resume even if the thread is live"
+    ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Resume a previous agent session with a follow-up prompt — preserves the
@@ -789,17 +803,16 @@ def continue_(
     feedback; only fall back to a fresh `dispatch` if context is stale."""
     state.init_db()
     prompt = _resolve_prompt(prompt, prompt_file)
+    if after and now:
+        err_console.print("[red]--after and --now cannot be used together[/red]")
+        raise typer.Exit(2)
     parent = state.get_session(session_id)
     if parent is None:
         err_console.print(f"[red]session {session_id!r} not found[/red]")
         raise typer.Exit(1)
-    parent_agent_session_id = parent.get("agent_session_id")
-    if not parent_agent_session_id:
-        err_console.print(
-            f"[red]parent session {parent['id'][:8]} has no agent_session_id yet "
-            f"(status={parent['status']}); cannot resume[/red]"
-        )
-        raise typer.Exit(1)
+    root = state.thread_root(parent["id"])
+    thread_rows = state.thread_sessions(root)
+    live = any(item["status"] in {"pending", "running"} for item in thread_rows)
 
     handler = get_handler(parent["agent"])
     if not handler.is_available():
@@ -818,6 +831,38 @@ def continue_(
         if explicit_expectation is None and inherited_expectation is not None
         else state.expects_changes(prompt, explicit_expectation)
     )
+    if after or (live and not now):
+        if sync:
+            err_console.print("[red]cannot --sync a queued follow-up[/red]")
+            raise typer.Exit(2)
+        root_row = state.get_session(root) or parent
+        item = queue_mod.enqueue(
+            root,
+            prompt,
+            cwd=str(cwd_resolved) if cwd is not None else None,
+            files=[str(f) for f in (files or [])],
+            gate_cmd=gate_cmd if gate_cmd is not None else root_row.get("gate_cmd"),
+            model=effective_model,
+            expect_changes=session_expects_changes,
+        )
+        if json_out:
+            typer.echo(json.dumps({"queued": True, "item": item["id"], "thread_id": root}))
+        else:
+            console.print(
+                f"queued #{item['id']} in thread {root[:8]} — delivered when the worker finishes"
+            )
+        return
+    parent_agent_session_id = parent.get("agent_session_id")
+    if not parent_agent_session_id:
+        err_console.print(
+            f"[red]parent session {parent['id'][:8]} has no agent_session_id yet "
+            f"(status={parent['status']}); cannot resume[/red]"
+        )
+        raise typer.Exit(1) from None
+    if live and now:
+        err_console.print(
+            "[yellow]warning: a live codex thread may refuse a second writer[/yellow]"
+        )
     parent_worktree = parent.get("worktree_path")
     inherits_worktree = bool(parent_worktree) and cwd_resolved.is_relative_to(Path(parent_worktree))
 
@@ -866,6 +911,200 @@ def continue_(
             f"[dim]session: {sid}  pid: {pid}  "
             f"resumes {parent['agent']} thread {parent_agent_session_id[:8]}  (detached)[/dim]"
         )
+
+
+def _queue_event(item: dict, kind: str) -> None:
+    state.add_event(item["thread_id"], kind, detail={"item": item["id"]})
+
+
+@queue_app.command("ls")
+def queue_ls(
+    thread: str | None = typer.Option(None, "--thread"),
+    all_: bool = typer.Option(False, "--all"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    state.init_db()
+    try:
+        root = state.thread_root(thread) if thread else None
+    except ValueError:
+        err_console.print(f"[red]session {thread!r} not found[/red]")
+        raise typer.Exit(1) from None
+    rows = queue_mod.list_items(root, all_=all_)
+    if json_out:
+        typer.echo(json.dumps(rows))
+        return
+    table = Table("item", "thread", "pos", "status", "created", "gate", "prompt", "delivered_as")
+    for r in rows:
+        table.add_row(
+            str(r["id"]),
+            r["thread_id"][:8],
+            str(r["position"]),
+            r["status"],
+            r["created_at"],
+            "✓" if r["gate_cmd"] else "–",
+            _one_line(r["prompt"], 60),
+            (r["delivered_as"] or "")[:8],
+        )
+    console.print(table)
+
+
+@queue_app.command("show")
+def queue_show(item: int, json_out: bool = typer.Option(False, "--json")) -> None:
+    state.init_db()
+    row = queue_mod.get(item)
+    if not row:
+        err_console.print(f"[red]queue item #{item} not found[/red]")
+        raise typer.Exit(1) from None
+    typer.echo(json.dumps(row) if json_out else "\n".join(f"{k}: {v}" for k, v in row.items()))
+
+
+@queue_app.command("add")
+def queue_add(
+    session_id: str,
+    prompt: str | None = typer.Option(None, "--prompt", "-p"),
+    prompt_file: Path | None = typer.Option(None, "--prompt-file"),
+    files: list[Path] | None = typer.Option(None, "--files", "-f"),
+    gate_cmd: str | None = typer.Option(None, "--gate"),
+    model: str | None = typer.Option(None, "--model"),
+    expect_changes: bool = typer.Option(False, "--expect-changes"),
+    read_only: bool = typer.Option(False, "--read-only"),
+    first: bool = typer.Option(False, "--first"),
+    position: int | None = typer.Option(None, "--position"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    state.init_db()
+    prompt = _resolve_prompt(prompt, prompt_file)
+    if first and position:
+        raise typer.BadParameter("use only one of --first and --position")
+    if position is not None and position < 1:
+        raise typer.BadParameter("--position must be at least 1")
+    row = state.get_session(session_id)
+    if not row:
+        err_console.print(f"[red]session {session_id!r} not found[/red]")
+        raise typer.Exit(1) from None
+    root = state.thread_root(row["id"])
+    root_row = state.get_session(root) or row
+    explicit = _expectation_from_flags(expect_changes or None, read_only or None)
+    inherited = row.get("expect_changes")
+    item_expect_changes = (
+        bool(inherited)
+        if explicit is None and inherited is not None
+        else state.expects_changes(prompt, explicit)
+    )
+    item = queue_mod.enqueue(
+        root,
+        prompt,
+        files=[str(x) for x in (files or [])],
+        gate_cmd=gate_cmd if gate_cmd is not None else root_row.get("gate_cmd"),
+        model=model if model is not None else row.get("model"),
+        expect_changes=item_expect_changes,
+        first=first,
+        position=position,
+    )
+    if json_out:
+        typer.echo(json.dumps(item))
+    else:
+        console.print(f"queued #{item['id']} in thread {root[:8]}")
+
+
+@queue_app.command("edit")
+def queue_edit(
+    item: int,
+    prompt: str | None = typer.Option(None, "--prompt", "-p"),
+    prompt_file: Path | None = typer.Option(None, "--prompt-file"),
+    gate_cmd: str | None = typer.Option(None, "--gate"),
+    model: str | None = typer.Option(None, "--model"),
+    files: list[Path] | None = typer.Option(None, "--files", "-f"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    state.init_db()
+    if prompt is not None or prompt_file is not None:
+        prompt = _resolve_prompt(prompt, prompt_file)
+    if prompt is None and gate_cmd is None and model is None and files is None:
+        err_console.print("[yellow]nothing to change[/yellow]")
+        return
+    try:
+        row = queue_mod.edit(
+            item,
+            prompt=prompt,
+            gate_cmd=gate_cmd,
+            model=model,
+            files=[str(x) for x in files] if files is not None else None,
+        )
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+    _queue_event(row, "queue_edited")
+    typer.echo(json.dumps(row) if json_out else f"edited #{item}")
+
+
+@queue_app.command("rm")
+def queue_rm(item: int, json_out: bool = typer.Option(False, "--json")) -> None:
+    state.init_db()
+    try:
+        row = queue_mod.cancel(item)
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+    _queue_event(row, "queue_cancelled")
+    typer.echo(json.dumps(row) if json_out else f"cancelled #{item}")
+
+
+@queue_app.command("clear")
+def queue_clear(session_id: str, json_out: bool = typer.Option(False, "--json")) -> None:
+    state.init_db()
+    row = state.get_session(session_id)
+    if not row:
+        err_console.print(f"[red]session {session_id!r} not found[/red]")
+        raise typer.Exit(1)
+    root = state.thread_root(row["id"])
+    count = queue_mod.clear(root)
+    state.add_event(root, "queue_cancelled", detail={"count": count})
+    typer.echo(json.dumps({"cancelled": count}) if json_out else f"cancelled {count} item(s)")
+
+
+@queue_app.command("move")
+def queue_move(
+    item: int,
+    first: bool = typer.Option(False, "--first"),
+    last: bool = typer.Option(False, "--last"),
+    to: int | None = typer.Option(None, "--to"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    state.init_db()
+    if sum(bool(x) for x in (first, last, to is not None)) != 1:
+        raise typer.BadParameter("use one of --first, --last, --to")
+    if to is not None and to < 1:
+        raise typer.BadParameter("--to must be at least 1")
+    row = queue_mod.get(item)
+    if not row:
+        err_console.print(f"[red]queue item #{item} not found[/red]")
+        raise typer.Exit(1)
+    position = 1 if first else (queue_mod.queued_count(row["thread_id"]) if last else to or 1)
+    try:
+        row = queue_mod.move(item, position)
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from None
+    typer.echo(json.dumps(row) if json_out else f"moved #{item}")
+
+
+@queue_app.command("drain")
+def queue_drain(
+    thread: str | None = typer.Option(None, "--thread"),
+    force: bool = typer.Option(False, "--force"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    state.init_db()
+    try:
+        root = state.thread_root(thread) if thread else None
+    except ValueError:
+        err_console.print(f"[red]session {thread!r} not found[/red]")
+        raise typer.Exit(1) from None
+    delivered = queue_mod.drain_idle_threads(_spawn_detached, thread_id=root, force=force)
+    typer.echo(
+        json.dumps({"delivered": delivered}) if json_out else f"delivered {len(delivered)} item(s)"
+    )
 
 
 @app.command("list")
@@ -1205,6 +1444,9 @@ def get(
             f"(exit {row.get('gate_exit_code')}; {row.get('gate_log_path')})"
         )
         console.print(gate_line)
+    waiting = queue_mod.queued_count(state.thread_root(row["id"]))
+    if waiting:
+        console.print(f"  queue:    {waiting} item(s) waiting")
     console.print(f"\n[bold]prompt[/bold]\n{row['prompt']}")
     if output:
         console.print("\n[bold]output[/bold]")
@@ -1254,9 +1496,7 @@ def events(
             raise typer.Exit(2) from None
         if since_dt.tzinfo is None:
             since_dt = since_dt.replace(tzinfo=UTC)
-    effective_last = (
-        last if last is not None else (0 if follow else DEFAULT_EVENTS_LAST)
-    )
+    effective_last = last if last is not None else (0 if follow else DEFAULT_EVENTS_LAST)
     if interval is None:
         interval = _parse_duration(
             config.setting("events", "interval", DEFAULT_EVENTS_INTERVAL),
@@ -1290,6 +1530,7 @@ def events(
     try:
         while True:
             time.sleep(interval)
+            queue_mod.drain_idle_threads(_spawn_detached)
             new_rows = events_mod.list_events(**filters, after_id=cursor)
             _emit(new_rows)
             if new_rows:
@@ -1550,7 +1791,18 @@ def kill(
 @app.command()
 def watch() -> None:
     """Live TUI of recent and active sessions. Ctrl-C to exit."""
-    watcher.run()
+    state.init_db()
+    watch_console = Console()
+    try:
+        with watcher.Live(
+            watcher._build_table(), console=watch_console, refresh_per_second=1
+        ) as live:
+            while True:
+                time.sleep(1)
+                queue_mod.drain_idle_threads(_spawn_detached)
+                live.update(watcher._build_table())
+    except KeyboardInterrupt:
+        watch_console.print("[dim]watch stopped[/dim]")
 
 
 DEFAULT_QUOTAS_MAX_AGE = "5m"
