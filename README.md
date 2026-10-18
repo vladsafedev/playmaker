@@ -230,6 +230,7 @@ playmaker agents                              # who's installed
 playmaker quotas [--refresh]                  # capacity per provider, per model
 
 playmaker dispatch <agent> --prompt "..."     # detached by default
+                  [--prompt-file PATH]         # read a UTF-8 prompt from a file
                   [--model NAME]              # forwarded to the agent's own CLI
                   [--cwd DIR]
                   [--files PATH...]
@@ -237,7 +238,10 @@ playmaker dispatch <agent> --prompt "..."     # detached by default
                   [--sync]                    # block and print the final answer
                   [--parent ID]               # link lineage to an earlier session
                   [--batch LABEL]             # group a fan-out; one summary ping
+                  [--worktree NAME] [--worktree-base REF]
+                  [--gate CMD] [--fallback LANE[,LANE]] [--force]
 playmaker continue <id> --prompt "..."        # follow-up inside the live session
+                  [--prompt-file PATH] [--after|--now] [--gate CMD] [--force]
                   [--model NAME] [--files PATH...] [--expect-changes|--read-only] [--sync]
 
 playmaker list [--status running|done|failed|no_changes] [--agent NAME] [--limit N]
@@ -248,11 +252,43 @@ playmaker thread <id> [--last N] [--all] [--role assistant|user|tool]
 playmaker logs <id> [--follow]                # subprocess stdout for detached runs
 playmaker kill <id>
 playmaker watch                               # live TUI of sessions
+playmaker events [--follow] [--batch LABEL] [--session ID] [--kind KIND]
+                 [--last N] [--since ISO] [--interval SECONDS]  # JSON lines only
+playmaker worktree ls [--repo DIR] [--size]
+playmaker worktree rm <NAME|PATH> [--force]
+playmaker worktree prune-done [--into REF] [--dry-run]
+playmaker queue ls [--thread ID] [--all]
+playmaker queue show|edit|rm <item>
+playmaker queue add <session-id> --prompt "..." [--prompt-file PATH]
+                 [--files PATH...] [--gate CMD] [--model NAME]
+                 [--expect-changes|--read-only] [--first|--position N]
+playmaker queue clear <session-id|thread>
+playmaker queue move <item> --first|--last|--to N
+playmaker queue drain [--thread ID] [--force]
+playmaker limits [--json]                   # current parallelism and RAM headroom
 playmaker skill install [--dir PATH] [--force]
 ```
 
-`dispatch`, `continue`, `list`, `get`, `thread` and `quotas` all take `--json`
-for scripting.
+`dispatch`, `continue`, `list`, `get`, `thread`, `quotas`, `queue`, `worktree
+ls` and `limits` take `--json` for scripting; `events` always prints JSON
+lines.
+
+`--worktree` makes a branch-local working directory for a dispatch and runs the
+repository's `.playmaker/wt-setup.sh` or `scripts/playmaker/wt-setup.sh` hook
+when present. A `--gate` runs after the agent and its `gate_status` is shown by
+`get`; configure hook and gate deadlines with `[worktree] setup_timeout` and
+`[gate] timeout`. `--fallback` moves quota, authentication, binary or model
+refusals to the next named lane. `[fallback] window` only bounds how long after
+start an `unknown` failure still counts as a refusal.
+
+Use `continue --after` to leave a follow-up on a running thread; it is delivered
+by the finishing worker, rather than lost to a second live writer. `queue` lets
+you change or cancel waiting work, while `events --follow` and `watch` also
+pick up an eligible idle thread. `[events] interval` controls the follow cadence.
+
+Set `[limits] max_parallel` and `min_free_ram_gb` to keep a fan-out within the
+machine's capacity. `ledger.py add|fix --from-session <id>` fills the lane,
+model, wall time, first gate result and cycle count from that session's thread.
 
 Write-shaped prompts are checked for file changes at completion. A zero-change
 write task becomes `no_changes`; use `--read-only` for recon or answer-only

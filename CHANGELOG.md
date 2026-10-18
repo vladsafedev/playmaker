@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-10-18
+
+### Added
+
+- **Isolated worktrees and completion gates for dispatches.** `playmaker
+  dispatch … --worktree NAME [--worktree-base REF]` creates an isolated branch
+  and runs the repository setup hook when present; `--gate CMD` on `dispatch`
+  or `continue` records a `pass`, `fail` or `timeout` gate status after the
+  agent exits. `playmaker worktree ls|rm|prune-done` lists and cleans up those
+  worktrees; `[worktree] setup_timeout` and `[gate] timeout` bound the hooks.
+- **An event stream and fallback lanes.** `playmaker events [--follow]` emits
+  JSON lines only, filterable by batch, session, kind and time; `--interval`
+  paces `--follow`, while failures record a `fail_reason` of `quota`, `auth`,
+  `binary`, `model` or `unknown`. `dispatch --fallback LANE[,LANE]` reroutes
+  quota, authentication, binary and model refusals to the next lane; the
+  configured `[fallback] window` only bounds how long an `unknown` failure
+  after start still counts as a refusal.
+- **A per-thread follow-up queue.** A live thread keeps follow-ups submitted
+  with `continue --after` until its worker can take them, and `playmaker queue
+  ls|show|add|edit|rm|clear|move|drain` lets you inspect and revise that list.
+  The finishing worker delivers the next item itself; `events --follow` and
+  `watch` also drain eligible idle threads.
+- **File prompts, dispatch limits and ledger data from sessions.** `--prompt-file
+  PATH` reads a prompt without putting it on the command line; `[limits]
+  max_parallel` and `min_free_ram_gb`, reported by `playmaker limits`, protect
+  a host from an overfull fan-out. `ledger.py add|fix --from-session <id>`
+  fills the recorded lane, model, wall time, first gate result and cycle count
+  from the tracked thread.
+
+### Changed
+
+- **`continue` now preserves follow-ups for a live thread.** It queues the
+  request instead of attempting to resume into a busy agent thread; use
+  `--now` for the former immediate-resume behaviour.
+- **The bundled coach skill now keeps the conveyor moving.** Its protocol is
+  “propose once, then run”: owner decisions stay in flight while independent
+  work proceeds, it never waits synchronously, and the third fix cycle goes to
+  the escalation seat.
+
 ## [0.14.3] - 2026-10-02
 
 ### Fixed
