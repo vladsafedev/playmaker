@@ -15,7 +15,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from playmaker import __version__, config, notify, state, watcher
+from playmaker import __version__, config, gate, notify, state, watcher, worktree
 from playmaker.agents.claude import EFFORT_ENV_VAR, VALID_EFFORTS
 from playmaker.registry import get_handler
 
@@ -69,6 +69,9 @@ skill_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(skill_app, name="skill")
+
+worktree_app = typer.Typer(help="Inspect and remove dispatch worktrees.", no_args_is_help=True)
+app.add_typer(worktree_app, name="worktree")
 
 SKILL_NAME = "playmaker-coach"
 
@@ -206,6 +209,15 @@ def dispatch(
         "--read-only",
         help="disable the write-task check for recon or answer-only work",
     ),
+    worktree_name: str | None = typer.Option(
+        None, "--worktree", help="isolate this dispatch in wp/NAME"
+    ),
+    worktree_base: str | None = typer.Option(
+        None, "--worktree-base", help="base ref for a new worktree"
+    ),
+    gate_cmd: str | None = typer.Option(
+        None, "--gate", help="command to run after a successful agent run"
+    ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Run an agent non-interactively. Detached by default — prints session id
@@ -228,7 +240,39 @@ def dispatch(
         model=model,
         batch_id=batch,
         expect_changes=state.expects_changes(prompt, explicit_expectation),
+        gate_cmd=gate_cmd,
     )
+
+    if worktree_name:
+        try:
+            prepared = worktree.prepare(
+                cwd_resolved,
+                worktree_name,
+                worktree_base,
+                state.LOGS_DIR / f"{sid}.log",
+                _parse_duration(config.setting("worktree", "setup_timeout", "10m"), 600),
+            )
+        except worktree.WorktreeError as exc:
+            state.update_session(
+                sid,
+                status="failed",
+                finished_at=state.now_iso(),
+                exit_code=exc.exit_code,
+                fail_reason="worktree_setup",
+            )
+            err_console.print(
+                f"[red]worktree setup failed:[/red] {exc} "
+                f"(exit {exc.exit_code}; log: {state.LOGS_DIR / f'{sid}.log'})"
+            )
+            raise typer.Exit(1) from exc
+        cwd_resolved = prepared.path
+        state.update_session(
+            sid,
+            cwd=str(prepared.path),
+            worktree_path=str(prepared.path),
+            worktree_branch=prepared.branch,
+            repo_root=str(prepared.root),
+        )
 
     if sync:
         state.update_session(sid, status="running", pid=os.getpid())
@@ -249,7 +293,10 @@ def dispatch(
     log_fh.close()
     state.update_session(sid, status="running", pid=proc.pid)
     if json_out:
-        typer.echo(json.dumps({"session_id": sid, "pid": proc.pid, "status": "running"}))
+        payload = {"session_id": sid, "pid": proc.pid, "status": "running"}
+        row = state.get_session(sid) or {}
+        payload.update({k: row.get(k) for k in ("worktree_path", "worktree_branch", "repo_root")})
+        typer.echo(json.dumps(payload))
     else:
         console.print(f"[dim]session: {sid}  pid: {proc.pid}  (detached)[/dim]")
 
@@ -330,6 +377,28 @@ def _run_dispatch(sid: str) -> None:
             files_changed=files_changed,
             post_tree_hash=after_snapshot.tree_hash,
         )
+
+        if row.get("gate_cmd") and final_status in {"done", "no_changes"}:
+            gate_result = gate.run(
+                row["gate_cmd"],
+                cwd,
+                state.LOGS_DIR / f"{sid}.gate.log",
+                _parse_duration(config.setting("gate", "timeout", "20m"), 1200),
+            )
+            state.update_session(
+                sid,
+                gate_status=gate_result.status,
+                gate_exit_code=gate_result.exit_code,
+                gate_log_path=str(gate_result.log_path),
+            )
+            if gate_result.status != "pass":
+                notify.notify(
+                    f"playmaker — gate {gate_result.status}",
+                    f"{row['agent']} gate exited {gate_result.exit_code}",
+                    sound_name="Basso",
+                    open_path=str(gate_result.log_path),
+                    group=f"playmaker-gate-{sid}",
+                )
 
         if final_status == "no_changes":
             message = f"done but wrote 0 files in {cwd}"
@@ -497,6 +566,7 @@ def continue_(
         "--read-only",
         help="disable the write-task check for this follow-up",
     ),
+    gate_cmd: str | None = typer.Option(None, "--gate", help="command to run after this follow-up"),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Resume a previous agent session with a follow-up prompt — preserves the
@@ -530,6 +600,8 @@ def continue_(
         if explicit_expectation is None and inherited_expectation is not None
         else state.expects_changes(prompt, explicit_expectation)
     )
+    parent_worktree = parent.get("worktree_path")
+    inherits_worktree = bool(parent_worktree) and cwd_resolved.is_relative_to(Path(parent_worktree))
 
     # New playmaker session that targets the parent's live agent thread.
     sid = state.insert_session(
@@ -540,6 +612,10 @@ def continue_(
         parent_id=parent["id"],
         model=effective_model,
         expect_changes=session_expects_changes,
+        worktree_path=parent.get("worktree_path") if inherits_worktree else None,
+        worktree_branch=parent.get("worktree_branch") if inherits_worktree else None,
+        repo_root=parent.get("repo_root") if inherits_worktree else None,
+        gate_cmd=gate_cmd,
     )
     # Pre-populating agent_session_id flips _run_dispatch into resume mode.
     state.update_session(sid, agent_session_id=parent_agent_session_id)
@@ -603,6 +679,7 @@ def list_cmd(
     table.add_column("id", style="cyan")
     table.add_column("agent")
     table.add_column("status")
+    table.add_column("gate")
     table.add_column("started")
     table.add_column("prompt")
     for r in rows:
@@ -613,10 +690,217 @@ def list_cmd(
             r["id"][:8],
             r["agent"],
             _status_icon(r["status"]),
+            _gate_icon(r.get("gate_status")),
             (r["started_at"] or "")[:19],
             prompt_preview,
         )
     console.print(table)
+
+
+@worktree_app.command("ls")
+def worktree_ls(
+    repo: Path | None = typer.Option(None, "--repo", help="repository root (defaults to cwd)"),
+    json_out: bool = typer.Option(False, "--json"),
+    size: bool = typer.Option(False, "--size", help="include disk usage in KiB"),
+) -> None:
+    """List worktrees referenced by sessions."""
+    state.init_db()
+    try:
+        root = worktree.repo_root((repo or Path.cwd()).expanduser().resolve())
+        rows = _worktree_rows(root)
+        registered = {r["path"]: r for r in worktree.list_worktrees(root)}
+    except worktree.WorktreeError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    items = []
+    for path_text, sessions in rows.items():
+        path = Path(path_text)
+        info = registered.get(path_text, {})
+        exists = path.is_dir()
+        item = {
+            "name": path.name,
+            "path": path_text,
+            "branch": info.get("branch", sessions[-1].get("worktree_branch")),
+            "exists": exists,
+            "dirty": worktree.dirty(path) if exists else False,
+            "sessions": len(sessions),
+            "last_status": sessions[-1]["status"],
+            "age": sessions[0]["started_at"],
+        }
+        if size and exists:
+            item["size_kb"] = _worktree_size(path)
+        items.append(item)
+    if json_out:
+        typer.echo(json.dumps(items))
+        return
+    table = Table(show_header=True, header_style="bold")
+    for column in ("name", "path", "branch", "exists", "dirty", "sessions", "last status", "age"):
+        table.add_column(column)
+    if size:
+        table.add_column("size")
+    for item in items:
+        values = [
+            item["name"],
+            item["path"],
+            item["branch"] or "",
+            "y" if item["exists"] else "n",
+            "y" if item["dirty"] else "n",
+            str(item["sessions"]),
+            item["last_status"],
+            item["age"],
+        ]
+        if size:
+            values.append(f"{item.get('size_kb', 0)}K")
+        table.add_row(*values)
+    console.print(table)
+
+
+@worktree_app.command("rm")
+def worktree_rm(
+    name_or_path: str = typer.Argument(..., help="worktree name or path"),
+    repo: Path | None = typer.Option(None, "--repo"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Remove a session worktree and its branch."""
+    state.init_db()
+    try:
+        root = worktree.repo_root((repo or Path.cwd()).expanduser().resolve())
+        path, branch = _resolve_worktree(root, name_or_path)
+        kept_branch = _remove_worktree(root, path, branch, force)
+        console.print(f"[green]removed[/green] {path}")
+        if kept_branch:
+            console.print(f"[yellow]kept branch {branch}: not merged[/yellow]")
+    except worktree.WorktreeError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+
+def _remove_worktree(root: Path, path: Path, branch: str, force: bool) -> bool:
+    """Remove one worktree; return whether an unmerged branch was retained."""
+    sessions = _worktree_rows(root).get(str(path), [])
+    if any(s["status"] == "running" for s in sessions):
+        raise worktree.WorktreeError("refusing to remove a worktree with running sessions")
+    if path.is_dir() and worktree.dirty(path) and not force:
+        raise worktree.WorktreeError("refusing to remove a dirty worktree; pass --force")
+    remove = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "worktree",
+            "remove",
+            *(["--force"] if force else []),
+            str(path),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if remove.returncode:
+        raise worktree.WorktreeError(
+            remove.stderr.strip() or "git worktree remove failed", remove.returncode
+        )
+    delete = subprocess.run(
+        ["git", "-C", str(root), "branch", "-D" if force else "-d", branch],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if delete.returncode and force:
+        raise worktree.WorktreeError(
+            delete.stderr.strip() or "git branch delete failed", delete.returncode
+        )
+    subprocess.run(["git", "-C", str(root), "worktree", "prune"], check=False)
+    return bool(delete.returncode)
+
+
+@worktree_app.command("prune-done")
+def worktree_prune_done(
+    repo: Path | None = typer.Option(None, "--repo"),
+    into: str | None = typer.Option(None, "--into"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+) -> None:
+    """Remove completed worktrees whose branches are merged."""
+    state.init_db()
+    try:
+        root = worktree.repo_root((repo or Path.cwd()).expanduser().resolve())
+        target = (
+            into
+            or subprocess.run(
+                ["git", "-C", str(root), "branch", "--show-current"],
+                text=True,
+                capture_output=True,
+                check=False,
+            ).stdout.strip()
+        )
+        if not target:
+            raise worktree.WorktreeError("cannot prune on a detached HEAD; pass --into REF")
+        skipped = False
+        for path_text, sessions in _worktree_rows(root).items():
+            branch = sessions[-1].get("worktree_branch")
+            if not branch or any(s["status"] not in state.TERMINAL_STATUSES for s in sessions):
+                continue
+            merged = (
+                subprocess.run(
+                    ["git", "-C", str(root), "merge-base", "--is-ancestor", branch, target],
+                    check=False,
+                ).returncode
+                == 0
+            )
+            if not merged:
+                continue
+            if dry_run:
+                console.print(path_text)
+            else:
+                try:
+                    path, resolved_branch = _resolve_worktree(root, path_text)
+                    kept_branch = _remove_worktree(root, path, resolved_branch, force=False)
+                    console.print(f"[green]removed[/green] {path}")
+                    if kept_branch:
+                        console.print(f"[yellow]kept branch {resolved_branch}: not merged[/yellow]")
+                except worktree.WorktreeError as exc:
+                    skipped = True
+                    err_console.print(f"[yellow]skipped {path_text}: {exc}[/yellow]")
+        if skipped:
+            raise typer.Exit(1)
+    except worktree.WorktreeError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+
+def _worktree_rows(root: Path) -> dict[str, list[dict]]:
+    with state.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE repo_root = ? "
+            "AND worktree_path IS NOT NULL ORDER BY started_at ASC",
+            (str(root),),
+        ).fetchall()
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        item = dict(row)
+        grouped.setdefault(item["worktree_path"], []).append(item)
+    return grouped
+
+
+def _resolve_worktree(root: Path, name_or_path: str) -> tuple[Path, str]:
+    candidate = (
+        Path(name_or_path).expanduser().resolve()
+        if "/" in name_or_path
+        else root.parent / f"{root.name}-wt" / name_or_path
+    )
+    for item in worktree.list_worktrees(root):
+        if Path(item["path"]).resolve() == candidate.resolve():
+            branch = item.get("branch", "").removeprefix("refs/heads/")
+            return candidate, branch
+    raise worktree.WorktreeError(f"worktree {name_or_path!r} is not registered")
+
+
+def _worktree_size(path: Path) -> int:
+    result = subprocess.run(["du", "-sk", str(path)], text=True, capture_output=True, check=False)
+    try:
+        return int(result.stdout.split()[0])
+    except (IndexError, ValueError):
+        return 0
 
 
 @app.command()
@@ -658,6 +942,14 @@ def get(
     if row["session_file_path"]:
         console.print(f"  thread:   {row['session_file_path']}")
     console.print(f"  {_changes_line(row)}")
+    if row.get("worktree_path"):
+        console.print(f"  worktree: {row['worktree_path']} ({row.get('worktree_branch') or ''})")
+    if row.get("gate_status"):
+        gate_line = (
+            f"  gate:     {row['gate_status']} "
+            f"(exit {row.get('gate_exit_code')}; {row.get('gate_log_path')})"
+        )
+        console.print(gate_line)
     console.print(f"\n[bold]prompt[/bold]\n{row['prompt']}")
     if output:
         console.print("\n[bold]output[/bold]")
@@ -1193,6 +1485,14 @@ def _status_icon(status: str) -> str:
         "failed": "[red]failed[/red]",
         "killed": "[magenta]killed[/magenta]",
     }.get(status, status)
+
+
+def _gate_icon(status: str | None) -> str:
+    if status == "pass":
+        return "✓"
+    if status in {"fail", "timeout"}:
+        return "✗"
+    return "–"
 
 
 def _expectation_from_flags(expect_changes: bool | None, read_only: bool | None) -> bool | None:

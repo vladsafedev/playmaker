@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     pre_tree_hash TEXT,
     post_tree_hash TEXT,
     expect_changes INTEGER
+    ,worktree_path TEXT
+    ,worktree_branch TEXT
+    ,repo_root TEXT
+    ,gate_cmd TEXT
+    ,gate_status TEXT
+    ,gate_exit_code INTEGER
+    ,gate_log_path TEXT
+    ,fail_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_agent ON sessions(agent);
@@ -110,6 +118,18 @@ def init_db() -> None:
             c.execute("ALTER TABLE sessions ADD COLUMN post_tree_hash TEXT")
         if "expect_changes" not in existing_cols:
             c.execute("ALTER TABLE sessions ADD COLUMN expect_changes INTEGER")
+        for column, definition in (
+            ("worktree_path", "TEXT"),
+            ("worktree_branch", "TEXT"),
+            ("repo_root", "TEXT"),
+            ("gate_cmd", "TEXT"),
+            ("gate_status", "TEXT"),
+            ("gate_exit_code", "INTEGER"),
+            ("gate_log_path", "TEXT"),
+            ("fail_reason", "TEXT"),
+        ):
+            if column not in existing_cols:
+                c.execute(f"ALTER TABLE sessions ADD COLUMN {column} {definition}")
         # Created after migration so it works on pre-existing tables too.
         c.execute("CREATE INDEX IF NOT EXISTS idx_batch ON sessions(batch_id)")
         c.commit()
@@ -125,6 +145,10 @@ def insert_session(
     model: str | None = None,
     batch_id: str | None = None,
     expect_changes: bool | None = None,
+    worktree_path: str | None = None,
+    worktree_branch: str | None = None,
+    repo_root: str | None = None,
+    gate_cmd: str | None = None,
 ) -> str:
     """Insert a new pending session, return its id."""
     sid = new_session_id()
@@ -133,8 +157,9 @@ def insert_session(
             """
             INSERT INTO sessions (
                 id, agent, prompt, cwd, files,
-                status, started_at, parent_id, model, batch_id, expect_changes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, started_at, parent_id, model, batch_id, expect_changes,
+                worktree_path, worktree_branch, repo_root, gate_cmd
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 sid,
@@ -148,6 +173,10 @@ def insert_session(
                 model,
                 batch_id,
                 int(expect_changes) if expect_changes is not None else None,
+                worktree_path,
+                worktree_branch,
+                repo_root,
+                gate_cmd,
             ),
         )
         c.commit()
