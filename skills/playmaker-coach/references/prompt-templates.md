@@ -85,6 +85,26 @@ Do not refactor anything not listed. Re-run <gate cmd> until it exits 0 and past
 Reply with a one-line note per item saying what you changed.
 ```
 
+## Decision question to the owner
+
+```
+<One sentence of context.>
+
+Choose one: <A) <choice A> or B) <choice B>  |  yes / no>. This blocks <WP/tail>.
+There is no default and no deadline.
+```
+
+## Tail follow-up
+
+Send with `playmaker continue <impl-id> --after <impl-id> --gate "<same gate>" --prompt "<tail>"`.
+
+```
+The owner answered: <answer>.
+
+Complete exactly this tail: <exact tail scope>. Do not change the completed core or expand scope.
+Re-run <same gate> until it exits 0 and report its output.
+```
+
 ## Recon (read-only)
 
 ```

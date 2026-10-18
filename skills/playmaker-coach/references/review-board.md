@@ -123,11 +123,10 @@ gate green -> review round 1 -> adjudicate -> continue(impl) with fix list
   wip commit in the worktree (squash before landing) or a `git commit-tree` snapshot of the tree after
   round 1. With the original base the patch is cumulative, reviewers re-open settled code, and a fix
   cycle is spent on opinions. Update `spec.md` first when a ruling changed the scope.
-- **Two fix cycles maximum** — so at most three rounds, the third only confirming the second fix.
-  Blocking findings still standing after the second fix → stop, and hand the user the WP, the
-  verdicts, and your recommendation. Do not open a third fix cycle and do not quietly fix it
-  yourself: two failed fixes means the WP was wrong, not the worker. A dispatch that died of quota
-  or auth is not a round.
+- **Two fix cycles maximum on the implementing lane.** Blocking findings still standing after the
+  second fix go to the escalation seat (Codex Sol per policy) for the third cycle, with both verdicts
+  and the fix list in a fresh prompt. Inform the user in the board summary; do not ask them. A
+  dispatch that died of quota or auth is not a round.
 - **Land at zero blocking.** Record `major`/`minor` leftovers in the board so they are not lost.
 
 ## Running it

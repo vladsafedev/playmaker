@@ -18,7 +18,7 @@ Two loops run under your hand, always both:
 
 ```
 decompose → dispatch → prove on disk → REVIEW BOARD → adjudicate → continue
-                                            ↑______________________|   max 2 cycles
+                                            ↑______________________|   max 2 cycles; third → escalation seat
 all WPs green → integrate → GLOBAL GATE → SEAM REVIEW (≥2 interacting WPs) → land → ledger row
 ```
 
@@ -113,17 +113,20 @@ reading one paragraph — or by reading the whole diff and thinking hard?"* If t
 Lane and tier selection: `references/lanes.md`. Risk classes and what juniors may never touch: repo
 policy first, then `references/lanes.md`.
 
-### 3.4 Propose, then wait
+### 3.4 Propose once, then run
 
 Post the plan as: WP → class → lane+model → why → gate → done-condition, plus the reviewer pair per WP and
-the current per-model capacity. **Dispatch nothing until the user approves.** Approval may be
-partial ("go but reroute tests"); restate the modified plan in one line, then dispatch.
+the current per-model capacity. The plan is approved once per task; after that, dispatch further
+waves, fix cycles, re-boards and integration without asking again. Approval may be partial ("go but
+reroute tests"); restate the modified plan in one line, then dispatch. Owner decisions never stop the
+conveyor: see §3.11.
 
 ### 3.5 Dispatch
 
 ```bash
 B=<short-batch-label>
-playmaker dispatch <agent> --model <name> --batch "$B" --cwd "$(pwd)" --prompt "<WP prompt>"
+playmaker dispatch <agent> --model <name> --batch "$B" --cwd "$(pwd)" --worktree <wp-name> \
+  --gate "<cmd>" --fallback <lane,lane> --prompt "<WP prompt>"
 ```
 
 Detached by default — that is the point; never `--sync` a whole fan-out. Always pass `--cwd`,
@@ -131,12 +134,19 @@ Detached by default — that is the point; never `--sync` a whole fan-out. Alway
 Prompt shape: `references/prompt-templates.md`. Per-agent traps (agy scratch dir, opencode relative
 paths, codex model roster, kimi's K2.7 default and exit codes, muse's sandbox): `references/agent-gotchas.md`.
 
-Parallel WPs that touch the same files go in **git worktrees**, one per WP, or they will collide.
+Parallel WPs are isolated by the CLI: `--worktree NAME` creates `<repo>-wt/NAME` on branch
+`wp/NAME` and runs the repo's `.playmaker/wt-setup.sh` or `scripts/playmaker/wt-setup.sh` hook when
+present. A failing hook aborts dispatch before any quota is spent. The gate travels with dispatch as
+`--gate "<cmd>"`; the CLI runs it in the worktree after the agent exits and records `gate_status`
+(`pass`, `fail`, or `timeout`). `--fallback lane,lane` reroutes a quota or auth refusal itself.
 
-Within a minute of every detached dispatch, `playmaker get <id> --json`: a quota or auth refusal
-finishes in seconds as `failed`, pings nobody, and looks exactly like a slow worker. Give every
-dispatch a deadline (recon 15 minutes; a WP by its size) and on expiry check the process is alive
-(`playmaker logs <id>`, its RSS) before waiting longer. Never wait for a closed lane.
+The wake signal is `playmaker events --follow --batch "$B"` (JSON lines; run it under Monitor).
+For a dispatch made without `--fallback`, keep the manual one-minute `playmaker get <id> --json`
+probe: a quota or auth refusal finishes in seconds as `failed`, pings nobody, and looks exactly like
+a slow worker. Give every dispatch a deadline (recon 15 minutes; a WP by its size) and on expiry
+check the process is alive (`playmaker logs <id>`, its RSS) before waiting longer. Never wait for a
+closed lane. At landing run `playmaker worktree rm NAME`; after a fan-out run `playmaker worktree
+prune-done`. The team once accumulated 37 worktrees; cleanup is part of landing.
 
 ### 3.6 Prove it on disk before you believe it
 
@@ -150,8 +160,9 @@ git -C "<cwd>" status --short --untracked-files=all   # empty tree on a write WP
 New files are invisible to `git diff`: `git add -N <new files>` before the board, and compare
 `git diff --stat` with what the worker claims it changed.
 
-Then run the WP's own gate yourself, once, cheaply. A WP that fails its gate never reaches the
-review board — it goes straight back to the worker.
+Read `gate_status` from `playmaker get <id>`. Re-run the WP's own gate by hand only when the
+dispatch carried no `--gate`. A WP that fails its gate never reaches the review board — it goes
+straight back to the worker.
 
 ### 3.7 Review board — the mandatory second loop
 
@@ -181,8 +192,11 @@ Non-negotiables:
 - A ruling that changes the scope goes into `spec.md` before the next round — reviewers refute
   against the spec, and a stale spec produces false blockers. Before charging a finding to the
   worker, check it is not already present on the base ref.
-- **Two cycles maximum.** Still blocking after two → stop and escalate to the user with both
-  verdicts. A third round at the same lane is the most expensive way to use a cheap model.
+- **Two cycles maximum on the implementing lane.** Still blocking after two → send the third cycle
+  to the escalation seat named by policy (Codex Sol), in a fresh prompt containing both verdicts and
+  the fix list. Tell the user in the board summary; ask the user only for OWNER decisions: product
+  behaviour, money, design, production config, or legal. Owner order 2026-10-07: «Все пакеты
+  доделать надо» — waves run to the end without protocol questions.
 - Land only at **zero blocking findings**.
 - On `high`, the `risk` seat is told to **falsify** the acceptance criteria — a command, input or repro
   per criterion it attacked, not only an argument; its `pass` lists what it tried. A seat that cannot
@@ -196,6 +210,14 @@ Long fan-outs outlive your context. Maintain `./.playmaker/board.md` — one row
 | WP | lane/model | impl id | gate | reviewers (ids) | verdict | cycle | state |
 ```
 
+Keep a second fixed table for owner decisions:
+
+```
+| D | question (one choice: A/B or yes/no) | asked at | status (open / answered) | answer | blocks (WP/tail) |
+```
+
+There is no `default` status and no deadline column by design.
+
 Update it at dispatch, at gate, after each review round. On resume, read the board before anything
 else. It is also what you paste back to the user as the status report.
 
@@ -208,10 +230,11 @@ adjudication, cycles, wall time — the evidence the routing step reads.
 
 ### 3.9 Failures
 
-Surface them; never silently retry — and never wait. A failed dispatch (missing binary, bad auth,
-rejected model, quota) is neither a fix cycle nor a worker failure: re-route the WP to the next live
-senior lane now, with the full context in a fresh prompt, and record the substitution in the board.
-Ask the user only when no eligible lane is left. Diagnosis per agent: `references/agent-gotchas.md`.
+Surface them; never silently retry — and never wait. `--fallback` covers quota, auth, and binary
+refusals; reroute by hand only when the dispatch had no fallback list. A failed dispatch is neither a
+fix cycle nor a worker failure: re-route the WP to the next live senior lane now, with the full
+context in a fresh prompt, and record the substitution in the board. Ask the user only when no
+eligible lane is left. Diagnosis per agent: `references/agent-gotchas.md`.
 
 ### 3.10 Integrate before landing — when the fan-out had two or more WPs
 
@@ -224,6 +247,7 @@ integrate on one tree (worktrees merged in dependency order)
   → if ≥2 WPs touched interacting modules:
       SEAM REVIEW — pm-review <batch>-seams <base-before-first-WP> --risk seams --impl-agent <main lane>
   → commit, one WP per commit, in integration order → ledger rows
+  → playmaker worktree prune-done
 ```
 
 "Interacting" = shared types or packages, the same service or screen, a migration and its consumers,
@@ -232,6 +256,30 @@ those: changed interfaces, duplicated or conflicting assumptions, incompatible t
 naming, config, shared state. The packages' internals already passed their own boards — re-reviewing
 them is the third round the protocol forbids. Roster: the `seams` block in `reviewers.conf`;
 `--impl-agent` is the lane that implemented most of the fan-out.
+
+### 3.11 Decisions in flight
+
+A WP that depends on an owner decision is split into a core that needs no answer and a tail that
+does. Dispatch the core now. Ask the owner the moment the question is found: one choice, A/B or
+yes/no, with no default and no deadline. While the owner is silent, everything that needs no answer
+proceeds — other WPs, other tails, the next wave, the boards; only that tail waits. Silence is never
+a default; the coach never decides an owner question by timer.
+
+Deliver the answer with `playmaker continue <impl-id> --after <impl-id> --prompt "<tail>"`: it is
+queued and delivered when the worker is `done`; a `continue` on a live session is lost. When the
+worker is gone, dispatch the tail as a separate mini-WP on another lane. Put numbers and thresholds
+behind the repo's config keys where it has them, so code lands and the owner sets the value.
+
+Owner words (2026-10-18): «начать делать то, что понятно, а по решениям выяснять и досылать воркеру»;
+«молчит не равно дефолт! молчит, значит делает всё, что не требует ответа».
+
+### 3.12 No synchronous waiting
+
+Never block on one process or one board. Keep a ready queue of WPs with prompts written, so a freed
+lane takes the next one at once; dispatch wave N+1 while wave N sits on the board. Wake on
+`events --follow` under Monitor, never a sleep loop. Start the longest WP first: it is the critical
+path. Cap parallelism with `[limits] max_parallel` in `config.toml`; RAM, not quota, is the ceiling.
+Owner words (2026-10-18): «Конвейер внахлёст. Максимально уменьшить простой из-за ожидания».
 
 ## 4. What the coach may still type by hand
 
@@ -260,7 +308,10 @@ editor on product code, ask whether that is a WP you failed to write.
 - **Reading diffs instead of verdicts.** Reviewers exist to keep the diff out of your context.
 - **Reviewing with the implementer's own lane**, or letting reviewers see each other's output.
 - **Trusting `done`** without a disk check and a gate.
-- **A third fix cycle.** Escalate instead.
+- **A third fix cycle on the same lane.** Send the third cycle to the escalation seat instead.
+- **Waiting synchronously for a worker or a board.**
+- **Defaulting an owner decision by timer or by silence.**
+- **Trusting a gate the CLI did not run.**
 - **Dispatching a WP you cannot verify in one command and one paragraph.**
 - **Omitting `--model`** and letting a CLI default drain a top-tier bucket.
 - **Reading whole agent threads** when `summary` answers the question.

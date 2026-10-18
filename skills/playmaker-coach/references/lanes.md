@@ -116,6 +116,8 @@ A junior diff that touches this list is a routing bug: pull the WP back, do not 
 
 A worker that fails its own gate **twice** escalates one tier — never a third attempt at the same
 tier. Two failures at the top tier means the WP is wrong, not the worker: re-scope it.
+The terminal tier is the policy's escalation seat (Codex Sol): a WP whose board burned two fix cycles
+goes there with both verdicts, never to a third cycle on the same lane (SKILL.md §3.7).
 
 ## Two-stage senior review
 

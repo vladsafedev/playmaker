@@ -107,3 +107,5 @@ Parallel WPs that touch the same files collide. Give each its own git worktree a
 `--cwd <worktree>`. In JS monorepos remember the worktree needs its `node_modules` (symlink the
 store and repoint workspace packages) or the WP's gate silently cannot run — and a gate that cannot
 run is a WP that was never verified.
+Remove the worktree (`git worktree remove`) and delete its branch as soon as the WP has landed;
+`git worktree list` in the main checkout shows what is still hanging around.
