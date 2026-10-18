@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from playmaker import __version__, config, gate, notify, state, watcher, worktree
+from playmaker import events as events_mod
 from playmaker.agents.claude import EFFORT_ENV_VAR, VALID_EFFORTS
 from playmaker.registry import get_handler
 
@@ -153,6 +154,45 @@ def _apply_effort_override(agent: str, effort: str | None) -> None:
     os.environ[EFFORT_ENV_VAR] = effort
 
 
+FALLBACK_REASONS = frozenset({"quota", "auth", "binary", "model"})
+DEFAULT_FALLBACK_WINDOW = 120
+DEFAULT_EVENTS_INTERVAL = 2.0
+DEFAULT_EVENTS_LAST = 50
+
+
+def _parse_fallback_lanes(raw: str | None) -> list[str]:
+    """Split and validate `--fallback LANE,LANE`; unknown lane exits 1."""
+    if raw is None or not raw.strip():
+        return []
+    lanes = [lane.strip() for lane in raw.split(",") if lane.strip()]
+    for lane in lanes:
+        try:
+            get_handler(lane)
+        except KeyError as exc:
+            err_console.print(f"[red]unknown fallback lane:[/red] {exc}")
+            raise typer.Exit(1) from exc
+    return lanes
+
+
+def _spawn_detached(sid: str) -> int:
+    """Run `python -m playmaker _run-detached <sid>` in a new session; mark running."""
+    log_path = state.LOGS_DIR / f"{sid}.log"
+    log_fh = open(log_path, "wb")
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "playmaker", "_run-detached", sid],
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    finally:
+        log_fh.close()
+    state.update_session(sid, status="running", pid=proc.pid)
+    return proc.pid
+
+
 @app.command()
 def dispatch(
     agent: str = typer.Argument(
@@ -218,11 +258,19 @@ def dispatch(
     gate_cmd: str | None = typer.Option(
         None, "--gate", help="command to run after a successful agent run"
     ),
+    fallback: str | None = typer.Option(
+        None,
+        "--fallback",
+        help="comma-separated lanes to reroute this prompt to when the dispatch "
+        "fails fast: a quota/auth/binary/model refusal, or an unknown failure "
+        "within [fallback] window seconds of start",
+    ),
     json_out: bool = typer.Option(False, "--json", help="emit machine-readable result"),
 ) -> None:
     """Run an agent non-interactively. Detached by default — prints session id
     and returns immediately. Use --sync to block and print the final answer."""
     state.init_db()
+    fallback_lanes = _parse_fallback_lanes(fallback)
     handler = get_handler(agent)
     if not handler.is_available():
         err_console.print(_unavailable(agent))
@@ -242,6 +290,8 @@ def dispatch(
         expect_changes=state.expects_changes(prompt, explicit_expectation),
         gate_cmd=gate_cmd,
     )
+    if fallback_lanes:
+        state.update_session(sid, fallback_lanes=json.dumps(fallback_lanes))
 
     if worktree_name:
         try:
@@ -279,30 +329,23 @@ def dispatch(
         _run_dispatch(sid)
         return
 
-    log_path = state.LOGS_DIR / f"{sid}.log"
-    log_fh = open(log_path, "wb")
-    cmd = [sys.executable, "-m", "playmaker", "_run-detached", sid]
-    proc = subprocess.Popen(
-        cmd,
-        stdout=log_fh,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-        close_fds=True,
-    )
-    log_fh.close()
-    state.update_session(sid, status="running", pid=proc.pid)
+    pid = _spawn_detached(sid)
     if json_out:
-        payload = {"session_id": sid, "pid": proc.pid, "status": "running"}
+        payload = {"session_id": sid, "pid": pid, "status": "running"}
         row = state.get_session(sid) or {}
         payload.update({k: row.get(k) for k in ("worktree_path", "worktree_branch", "repo_root")})
         typer.echo(json.dumps(payload))
     else:
-        console.print(f"[dim]session: {sid}  pid: {proc.pid}  (detached)[/dim]")
+        console.print(f"[dim]session: {sid}  pid: {pid}  (detached)[/dim]")
 
 
-def _run_dispatch(sid: str) -> None:
-    """Execute the dispatch for a pending session and update its row."""
+def _run_dispatch(sid: str, *, can_fallback: bool = False) -> None:
+    """Execute the dispatch for a pending session and update its row.
+
+    `can_fallback` is True only on the detached path: a `--sync` dispatch runs
+    in the caller's foreground process, where silently spawning a reroute would
+    outlive the command the user is watching.
+    """
     row = state.get_session(sid)
     if row is None:
         err_console.print(f"[red]session {sid!r} vanished[/red]")
@@ -342,7 +385,12 @@ def _run_dispatch(sid: str) -> None:
             )
     except Exception as exc:
         before_snapshot.cleanup()
-        state.update_session(sid, status="failed", finished_at=state.now_iso(), exit_code=1)
+        reason = events_mod.classify_failure(
+            str(exc), events_mod.read_log_tail(state.LOGS_DIR / f"{sid}.log")
+        )
+        state.update_session(
+            sid, status="failed", finished_at=state.now_iso(), exit_code=1, fail_reason=reason
+        )
         err_console.print(f"[red]dispatch failed:[/red] {exc}")
         # Failures always ping immediately and loudly (Basso), even inside a
         # batch — they're the actionable event. Click opens the log.
@@ -353,6 +401,8 @@ def _run_dispatch(sid: str) -> None:
             open_path=str(state.LOGS_DIR / f"{sid}.log"),
             group=f"playmaker-fail-{sid}",
         )
+        if can_fallback:
+            _maybe_fallback(sid, row, reason)
         _maybe_finalize_batch(row.get("batch_id"))
         raise typer.Exit(1) from exc
 
@@ -457,6 +507,65 @@ def _batch_slug(batch_id: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "-" for c in batch_id)[:60]
 
 
+def _within_fallback_window(started_at: str | None) -> bool:
+    """Whether an unknown failure happened soon enough to look like a refusal."""
+    if not started_at:
+        return False
+    try:
+        started = datetime.fromisoformat(started_at)
+    except ValueError:
+        return False
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    window = _parse_duration(
+        config.setting("fallback", "window", DEFAULT_FALLBACK_WINDOW),
+        float(DEFAULT_FALLBACK_WINDOW),
+    )
+    return (datetime.now(UTC) - started).total_seconds() <= window
+
+
+def _maybe_fallback(sid: str, row: dict, reason: str) -> None:
+    """Reroute a failed dispatch to the next lane on its fallback list.
+
+    Only fast refusals reroute: a classified quota/auth/binary/model failure,
+    or an unknown one inside the fallback window — a worker that produced real
+    output and then died should not silently run again on another lane.
+    """
+    lanes = json.loads(row.get("fallback_lanes") or "[]")
+    if not lanes:
+        return
+    if reason not in FALLBACK_REASONS and not _within_fallback_window(row.get("started_at")):
+        return
+    lane, remaining = lanes[0], lanes[1:]
+    new_sid = state.insert_session(
+        agent=lane,
+        prompt=row["prompt"],
+        cwd=row["cwd"],
+        files=json.loads(row["files"] or "[]"),
+        parent_id=sid,
+        model=None,
+        batch_id=row.get("batch_id"),
+        expect_changes=(
+            bool(row["expect_changes"]) if row.get("expect_changes") is not None else None
+        ),
+    )
+    if remaining:
+        state.update_session(new_sid, fallback_lanes=json.dumps(remaining))
+    state.update_session(new_sid, fallback_of=sid)
+    new_pid = _spawn_detached(new_sid)
+    state.update_session(sid, fell_back_to=new_sid)
+    state.add_event(
+        sid, "fallback", detail={"from": sid, "to": new_sid, "reason": reason, "lane": lane}
+    )
+    notify.notify(
+        f"playmaker — {row['agent']} rerouted",
+        f"rerouted to {lane} ({reason})",
+        sound_name="Blow",
+        group=f"playmaker-fallback-{new_sid}",
+    )
+    console.print(f"[dim]fallback: {sid} → {new_sid} ({lane}, pid {new_pid})[/dim]")
+
+
 def _maybe_finalize_batch(batch_id: str | None) -> None:
     """Fire one summary notification when every session in a batch is terminal.
 
@@ -475,6 +584,19 @@ def _maybe_finalize_batch(batch_id: str | None) -> None:
 
     if not state.claim_batch([s["id"] for s in siblings]):
         return  # another finisher already fired the summary
+
+    state.add_event(
+        None,
+        "batch",
+        status="done",
+        batch_id=batch_id,
+        detail={
+            "total": len(siblings),
+            "done": sum(1 for s in siblings if s["status"] == "done"),
+            "failed": sum(1 for s in siblings if s["status"] == "failed"),
+            "no_changes": sum(1 for s in siblings if s["status"] == "no_changes"),
+        },
+    )
 
     ok = [s for s in siblings if s["status"] == "done"]
     marks = " · ".join(_batch_status_mark(s) for s in siblings)
@@ -527,7 +649,7 @@ def _render_batch_file(batch_id: str, siblings: list) -> Path | None:
 def _run_detached(session_id: str) -> None:
     """Internal: run a pre-inserted session in the background."""
     state.init_db()
-    _run_dispatch(session_id)
+    _run_dispatch(session_id, can_fallback=True)
 
 
 @app.command("continue")
@@ -625,25 +747,13 @@ def continue_(
         _run_dispatch(sid)
         return
 
-    log_path = state.LOGS_DIR / f"{sid}.log"
-    log_fh = open(log_path, "wb")
-    cmd = [sys.executable, "-m", "playmaker", "_run-detached", sid]
-    proc = subprocess.Popen(
-        cmd,
-        stdout=log_fh,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,
-        close_fds=True,
-    )
-    log_fh.close()
-    state.update_session(sid, status="running", pid=proc.pid)
+    pid = _spawn_detached(sid)
     if json_out:
         typer.echo(
             json.dumps(
                 {
                     "session_id": sid,
-                    "pid": proc.pid,
+                    "pid": pid,
                     "status": "running",
                     "resumes": parent_agent_session_id,
                     "parent_id": parent["id"],
@@ -652,7 +762,7 @@ def continue_(
         )
     else:
         console.print(
-            f"[dim]session: {sid}  pid: {proc.pid}  "
+            f"[dim]session: {sid}  pid: {pid}  "
             f"resumes {parent['agent']} thread {parent_agent_session_id[:8]}  (detached)[/dim]"
         )
 
@@ -937,6 +1047,12 @@ def get(
     console.print(f"  started:  {row['started_at']}")
     if row["finished_at"]:
         console.print(f"  finished: {row['finished_at']}")
+    if row.get("fail_reason"):
+        console.print(f"  fail:     {row['fail_reason']}")
+    if row.get("fallback_of"):
+        console.print(f"  fallback of:  {row['fallback_of']}")
+    if row.get("fell_back_to"):
+        console.print(f"  fell back to: {row['fell_back_to']}")
     if row["cost_usd"] is not None:
         console.print(f"  cost:     ${row['cost_usd']:.4f}")
     if row["session_file_path"]:
@@ -957,6 +1073,90 @@ def get(
 
 
 DEFAULT_THREAD_BYTES = 50_000
+
+
+@app.command()
+def events(
+    follow: bool = typer.Option(
+        False, "--follow", help="keep polling for new events (Ctrl-C to stop)"
+    ),
+    batch: str | None = typer.Option(None, "--batch", help="filter by batch label"),
+    session: str | None = typer.Option(None, "--session", help="filter by session id (prefix ok)"),
+    kind: str | None = typer.Option(
+        None, "--kind", help="filter by event kind (status|batch|fallback)"
+    ),
+    since: str | None = typer.Option(
+        None, "--since", help="only events at or after this ISO timestamp"
+    ),
+    last: int | None = typer.Option(
+        None,
+        "--last",
+        help="print only the last N matching events "
+        f"(default {DEFAULT_EVENTS_LAST}, or 0 with --follow)",
+    ),
+    interval: float | None = typer.Option(
+        None,
+        "--interval",
+        help="polling interval for --follow (default [events] interval, 2)",
+    ),
+) -> None:
+    """Print the event stream as JSON lines — one object per line, always.
+
+    The consumer of this command is a program, not a person, so there is no
+    table output and no --json flag: every line is a JSON object.
+    """
+    state.init_db()
+    since_dt: datetime | None = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except ValueError:
+            err_console.print(f"[red]--since must be an ISO timestamp, got {since!r}[/red]")
+            raise typer.Exit(2) from None
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=UTC)
+    effective_last = (
+        last if last is not None else (0 if follow else DEFAULT_EVENTS_LAST)
+    )
+    if interval is None:
+        interval = _parse_duration(
+            config.setting("events", "interval", DEFAULT_EVENTS_INTERVAL),
+            DEFAULT_EVENTS_INTERVAL,
+        )
+    if follow and interval <= 0:
+        err_console.print(
+            f"[red]--interval must be a positive number of seconds, got {interval}[/red]"
+        )
+        raise typer.Exit(2)
+
+    filters = dict(batch_id=batch, session_id=session, kind=kind, since=since_dt)
+
+    def _emit(rows: list[dict]) -> None:
+        for row in rows:
+            # print (not typer.echo) so each line carries its own flush — a
+            # piped reader must never wait on a block-buffered stdout.
+            print(events_mod.event_to_line(row), flush=True)
+
+    if follow:
+        # Snapshot the cursor BEFORE the initial listing and cap that listing
+        # at it: rows a racing commit pushes above the cursor belong to the
+        # polls, not to --last N, so printed ids never go backwards.
+        cursor = events_mod.max_event_id()
+        rows = events_mod.list_events(**filters, max_id=cursor, limit=effective_last)
+    else:
+        rows = events_mod.list_events(**filters, limit=effective_last)
+    _emit(rows)
+    if not follow:
+        return
+    try:
+        while True:
+            time.sleep(interval)
+            new_rows = events_mod.list_events(**filters, after_id=cursor)
+            _emit(new_rows)
+            if new_rows:
+                cursor = new_rows[-1]["id"]
+    except KeyboardInterrupt:
+        return
 
 
 @app.command()

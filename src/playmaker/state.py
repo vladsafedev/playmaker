@@ -63,6 +63,20 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_agent ON sessions(agent);
 CREATE INDEX IF NOT EXISTS idx_started ON sessions(started_at DESC);
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    session_id TEXT,
+    agent TEXT,
+    model TEXT,
+    batch_id TEXT,
+    kind TEXT NOT NULL,
+    status TEXT,
+    prev_status TEXT,
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_events_batch ON events(batch_id);
+CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
 """
 
 
@@ -127,6 +141,9 @@ def init_db() -> None:
             ("gate_exit_code", "INTEGER"),
             ("gate_log_path", "TEXT"),
             ("fail_reason", "TEXT"),
+            ("fallback_lanes", "TEXT"),
+            ("fallback_of", "TEXT"),
+            ("fell_back_to", "TEXT"),
         ):
             if column not in existing_cols:
                 c.execute(f"ALTER TABLE sessions ADD COLUMN {column} {definition}")
@@ -226,12 +243,91 @@ def claim_batch(session_ids: list[str]) -> bool:
         return True
 
 
+def _append_event(
+    c: sqlite3.Connection,
+    session_id: str | None,
+    kind: str,
+    *,
+    status: str | None = None,
+    prev_status: str | None = None,
+    detail: dict[str, Any] | None = None,
+    batch_id: str | None = None,
+) -> None:
+    """Insert one event row inside an open connection.
+
+    agent/model/batch_id are copied from the session row so the event stream
+    stays joinable even after the session row evolves; batch-level events pass
+    session_id=None and name their batch explicitly.
+    """
+    agent = model = None
+    if session_id is not None:
+        row = c.execute(
+            "SELECT agent, model, batch_id FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if row is not None:
+            agent, model, batch_id = row["agent"], row["model"], row["batch_id"]
+    c.execute(
+        "INSERT INTO events (ts, session_id, agent, model, batch_id, kind, status, prev_status,"
+        " detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            now_iso(),
+            session_id,
+            agent,
+            model,
+            batch_id,
+            kind,
+            status,
+            prev_status,
+            json.dumps(detail) if detail is not None else None,
+        ),
+    )
+
+
+def add_event(
+    session_id: str | None,
+    kind: str,
+    *,
+    status: str | None = None,
+    prev_status: str | None = None,
+    detail: dict[str, Any] | None = None,
+    batch_id: str | None = None,
+) -> None:
+    """Append one event to the stream; `detail` is stored as JSON."""
+    with connect() as c:
+        _append_event(
+            c,
+            session_id,
+            kind,
+            status=status,
+            prev_status=prev_status,
+            detail=detail,
+            batch_id=batch_id,
+        )
+        c.commit()
+
+
 def update_session(session_id: str, **fields: Any) -> None:
     if not fields:
         return
     cols = ", ".join(f"{k} = ?" for k in fields)
     values = list(fields.values()) + [session_id]
     with connect() as c:
+        new_status = fields.get("status")
+        if new_status is not None:
+            row = c.execute("SELECT status FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            prev_status = row["status"] if row is not None else None
+            if prev_status != new_status:
+                detail = None
+                if new_status == "failed" and fields.get("fail_reason"):
+                    detail = {"reason": fields["fail_reason"]}
+                _append_event(
+                    c,
+                    session_id,
+                    "status",
+                    status=new_status,
+                    prev_status=prev_status,
+                    detail=detail,
+                )
         c.execute(f"UPDATE sessions SET {cols} WHERE id = ?", values)
         c.commit()
 
