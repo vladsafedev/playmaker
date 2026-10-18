@@ -228,14 +228,28 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
     try:
         spawn(sid)
     except Exception:
-        state.update_session(
-            sid,
-            status="failed",
-            finished_at=state.now_iso(),
-            exit_code=1,
-            fail_reason="spawn",
-        )
+        # One BEGIN IMMEDIATE transaction: the child flips to failed in the
+        # same commit that returns the item to `queued`, so a concurrent
+        # `queue drain --force` can never see the child failed while item #1
+        # is still `delivered` and hand item #2 to a worker first.
         with state.connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row = c.execute("SELECT status FROM sessions WHERE id=?", (sid,)).fetchone()
+            prev_status = row["status"] if row is not None else None
+            if prev_status != "failed":
+                state._append_event(
+                    c,
+                    sid,
+                    "status",
+                    status="failed",
+                    prev_status=prev_status,
+                    detail={"reason": "spawn"},
+                )
+            c.execute(
+                "UPDATE sessions SET status='failed', finished_at=?, exit_code=1, "
+                "fail_reason='spawn' WHERE id=?",
+                (state.now_iso(), sid),
+            )
             c.execute(
                 "UPDATE queue SET status='queued', delivered_as=NULL, updated_at=? WHERE id=?",
                 (state.now_iso(), item["id"]),

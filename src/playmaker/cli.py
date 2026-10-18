@@ -2123,6 +2123,27 @@ sound = true
 # (terminal-notifier only). Any app name `open -a` accepts.
 editor = "Zed"
 
+# Timeout for the wt-setup hook of `dispatch --worktree`, e.g. "10m" (default "10m").
+# [worktree]
+# setup_timeout = "10m"
+
+# Timeout for the --gate command after the agent exits (default "20m").
+# [gate]
+# timeout = "20m"
+
+# Refuse dispatch when running+pending reach N / free RAM below X GB; 0 disables (default 0).
+# [limits]
+# max_parallel = 0
+# min_free_ram_gb = 0
+
+# Poll interval, in seconds, for `events --follow` (default 2.0).
+# [events]
+# interval = 2.0
+
+# An `unknown` failure within N seconds of start counts as a refusal for --fallback (default 120).
+# [fallback]
+# window = 120
+
 # How much each sub-agent may do while nobody is watching. A detached agent
 # cannot answer a permission prompt, so every agent needs *some* answer here.
 #

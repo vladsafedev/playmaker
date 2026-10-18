@@ -246,6 +246,47 @@ def test_spawn_failure_returns_item_to_queue_and_blocks(db: None, tmp_path: Path
     assert children[0]["fail_reason"] == "spawn"
 
 
+def test_spawn_failure_rollback_is_one_transaction(db: None, monkeypatch, tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    one = queue.enqueue(root, "one")
+    two = queue.enqueue(root, "two")
+    seen: dict[str, str] = {}
+    renumber = queue._renumber
+
+    def observing_renumber(c, thread_id: str) -> None:
+        # Mid-rollback the child row is visible from the earlier claim commit,
+        # so what a second connection reads here is the durable state a
+        # concurrent `queue drain --force` would act on.
+        with state.connect() as other:
+            child = other.execute(
+                "SELECT status FROM sessions WHERE parent_id=?", (root,)
+            ).fetchone()
+            if child is not None:
+                seen["child"] = child["status"]
+                seen["item"] = other.execute(
+                    "SELECT status FROM queue WHERE id=?", (one["id"],)
+                ).fetchone()["status"]
+        renumber(c, thread_id)
+
+    monkeypatch.setattr(queue, "_renumber", observing_renumber)
+
+    def broken_spawn(sid: str) -> int:
+        raise OSError("cannot spawn")
+
+    assert queue.deliver_next(root, root, broken_spawn) is None
+    assert seen == {"child": "pending", "item": "delivered"}
+    assert queue.get(one["id"])["status"] == "queued"
+    assert queue.get(one["id"])["delivered_as"] is None
+    children = [row for row in state.thread_sessions(root) if row["id"] != root]
+    assert len(children) == 1 and children[0]["status"] == "failed"
+    assert children[0]["fail_reason"] == "spawn" and children[0]["finished_at"]
+
+    delivered = queue.drain_idle_threads(lambda sid: 1, force=True)
+    assert len(delivered) == 1
+    assert queue.get(one["id"])["status"] == "delivered"
+    assert queue.get(two["id"])["status"] == "queued"
+
+
 def test_queue_prompt_files(db: None, tmp_path: Path) -> None:
     root = _root(tmp_path)
     source = tmp_path / "prompt.txt"
@@ -260,3 +301,21 @@ def test_queue_prompt_files(db: None, tmp_path: Path) -> None:
     )
     assert edited.exit_code == 0, edited.output
     assert queue.get(item["id"])["prompt"] == "edited file"
+
+
+def test_init_template_carries_commented_setting_sections() -> None:
+    import tomllib
+
+    cfg = tomllib.loads(cli._DEFAULT_CONFIG)
+    expected = {
+        "worktree": ['setup_timeout = "10m"'],
+        "gate": ['timeout = "20m"'],
+        "limits": ["max_parallel = 0", "min_free_ram_gb = 0"],
+        "events": [f"interval = {cli.DEFAULT_EVENTS_INTERVAL}"],
+        "fallback": [f"window = {cli.DEFAULT_FALLBACK_WINDOW}"],
+    }
+    for section, keys in expected.items():
+        assert f"# [{section}]" in cli._DEFAULT_CONFIG
+        for line in keys:
+            assert f"# {line}" in cli._DEFAULT_CONFIG
+        assert section not in cfg  # every new line stays commented out
