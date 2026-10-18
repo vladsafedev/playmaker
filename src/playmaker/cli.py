@@ -387,7 +387,7 @@ def dispatch(
                 worktree_name,
                 worktree_base,
                 state.LOGS_DIR / f"{sid}.log",
-                _parse_duration(config.setting("worktree", "setup_timeout", "10m"), 600),
+                state.worktree_setup_timeout_seconds(),
             )
         except worktree.WorktreeError as exc:
             state.update_session(
@@ -1115,9 +1115,13 @@ def list_cmd(
     agent: str | None = typer.Option(None, "--agent", help="filter by agent"),
     json_out: bool = typer.Option(False, "--json"),
     limit: int = typer.Option(50, "--limit"),
+    reap: bool = typer.Option(False, "--reap", help="mark dead running/pending sessions killed"),
 ) -> None:
     """List recent sessions."""
     state.init_db()
+    reaped = state.reap_dead_sessions() if reap else []
+    if reap:
+        typer.echo(f"reaped {len(reaped)} session(s)", err=json_out)
     rows = state.list_sessions(status=status, agent=agent, limit=limit)
     if json_out:
         typer.echo(json.dumps(rows, default=str))
@@ -1530,6 +1534,7 @@ def events(
     try:
         while True:
             time.sleep(interval)
+            state.reap_dead_sessions()
             queue_mod.drain_idle_threads(_spawn_detached)
             new_rows = events_mod.list_events(**filters, after_id=cursor)
             _emit(new_rows)
@@ -1809,18 +1814,8 @@ DEFAULT_QUOTAS_MAX_AGE = "5m"
 
 
 def _parse_duration(value: object, fallback: float) -> float:
-    """'90s' / '5m' / '1h' / a bare number of seconds -> seconds."""
-    if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value or "").strip().lower()
-    if not text:
-        return fallback
-    units = {"s": 1, "m": 60, "h": 3600}
-    factor = units.get(text[-1])
-    try:
-        return float(text[:-1]) * factor if factor else float(text)
-    except ValueError:
-        return fallback
+    """Compatibility wrapper for the shared duration parser."""
+    return state.parse_duration(value, fallback)
 
 
 def _quotas_age_seconds(path: Path) -> float | None:

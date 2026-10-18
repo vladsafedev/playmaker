@@ -40,7 +40,7 @@ def running_sessions() -> list[dict]:
             "SELECT * FROM sessions WHERE status IN ('running', 'pending') "
             "ORDER BY started_at ASC"
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [dict(row) for row in rows if state.session_is_alive(row)]
 
 
 def _system() -> str:

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -278,3 +280,52 @@ def test_limits_command_human_output(db: Path, monkeypatch) -> None:
     assert "max_parallel:    1" in result.output
     assert "unknown (no probe on this platform)" in result.output
     assert "refused" in result.output
+
+
+def test_dead_pid_is_not_counted_by_limits_or_atomic_insert(db: Path, monkeypatch) -> None:
+    _set_limits(monkeypatch, max_parallel=1)
+    dead = state.insert_session(agent="codex", prompt="p", cwd="/repo")
+    state.update_session(dead, status="running", pid=999_999_999)
+    monkeypatch.setattr(limits, "free_ram_gb", lambda: None)
+
+    assert limits.evaluate().running == []
+    assert state.insert_session(agent="codex", prompt="p", cwd="/repo", max_active=1)
+
+
+def test_alive_pid_still_counts_against_limits(db: Path, monkeypatch) -> None:
+    _set_limits(monkeypatch, max_parallel=1)
+    alive = state.insert_session(agent="codex", prompt="p", cwd="/repo")
+    state.update_session(alive, status="running", pid=os.getpid())
+    monkeypatch.setattr(limits, "free_ram_gb", lambda: None)
+
+    assert [row["id"] for row in limits.evaluate().running] == [alive]
+    with pytest.raises(state.LimitExceeded):
+        state.insert_session(agent="codex", prompt="p", cwd="/repo", max_active=1)
+
+
+def test_list_reap_marks_dead_sessions_and_reports_count(db: Path) -> None:
+    dead = state.insert_session(agent="codex", prompt="p", cwd="/repo")
+    state.update_session(dead, status="running", pid=999_999_999)
+
+    result = runner.invoke(cli.app, ["list", "--reap"])
+
+    assert result.exit_code == 0, result.output
+    assert "reaped 1 session(s)" in result.output
+    assert state.get_session(dead)["status"] == "killed"
+
+
+def test_list_reap_json_keeps_stdout_as_json(db: Path) -> None:
+    result = runner.invoke(cli.app, ["list", "--reap", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == []
+
+
+def test_pending_without_pid_waits_for_worktree_timeout_plus_grace(db: Path, monkeypatch) -> None:
+    monkeypatch.setattr(config, "load_config", lambda: {"worktree": {"setup_timeout": "20m"}})
+    pending = state.insert_session(agent="codex", prompt="p", cwd="/repo")
+    started = datetime.now(UTC) - timedelta(minutes=25)
+    state.update_session(pending, started_at=started.isoformat())
+
+    assert state.reap_dead_sessions() == []
+    assert state.get_session(pending)["status"] == "pending"

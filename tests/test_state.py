@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -233,3 +235,40 @@ def test_init_db_treats_finished_sessions_as_already_summarised(
 
     # A batch still in flight when the upgrade lands keeps its summary.
     assert [r["id"] for r in state.list_batch("dash")] == ["old-running"]
+
+
+def test_reap_marks_only_dead_active_rows_and_appends_event(db: Path) -> None:
+    dead = state.insert_session(agent="codex", prompt="p", cwd="/repo")
+    alive = state.insert_session(agent="codex", prompt="p", cwd="/repo")
+    done = state.insert_session(agent="codex", prompt="p", cwd="/repo")
+    state.update_session(dead, status="running", pid=999_999_999)
+    state.update_session(alive, status="running", pid=os.getpid())
+    state.update_session(done, status="done")
+
+    assert state.reap_dead_sessions() == [dead]
+    assert state.reap_dead_sessions() == []
+    assert state.get_session(dead)["status"] == "killed"
+    assert state.get_session(dead)["finished_at"] is not None
+    assert state.get_session(dead)["fail_reason"] == "reaped"
+    assert state.get_session(alive)["status"] == "running"
+    assert state.get_session(done)["status"] == "done"
+    with state.connect() as conn:
+        events = conn.execute(
+            "SELECT * FROM events WHERE session_id = ? AND kind = 'reaped'", (dead,)
+        ).fetchall()
+    assert len(events) == 1
+
+
+def test_pending_without_pid_uses_the_grace_period(db: Path) -> None:
+    pending = state.insert_session(agent="codex", prompt="p", cwd="/repo")
+    state.update_session(
+        pending,
+        started_at=(
+            datetime.now(UTC)
+            - timedelta(
+                seconds=state.worktree_setup_timeout_seconds() + state.PID_GRACE_SECONDS + 1
+            )
+        ).isoformat(),
+    )
+
+    assert state.reap_dead_sessions() == [pending]

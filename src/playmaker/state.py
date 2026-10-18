@@ -25,6 +25,7 @@ CONFIG_PATH = PLAYMAKER_HOME / "config.toml"
 QUOTAS_PATH = PLAYMAKER_HOME / "quotas.json"
 
 TERMINAL_STATUSES = frozenset({"done", "failed", "killed", "no_changes"})
+PID_GRACE_SECONDS = 10 * 60
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -180,6 +181,98 @@ class LimitExceeded(Exception):
         self.running_ids = running_ids
 
 
+def pid_is_alive(pid: int | None) -> bool:
+    """Return whether ``pid`` names a process we may still consider alive."""
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def parse_duration(value: object, fallback: float) -> float:
+    """'90s' / '5m' / '1h' / a bare number of seconds -> seconds."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value or "").strip().lower()
+    if not text:
+        return fallback
+    units = {"s": 1, "m": 60, "h": 3600}
+    factor = units.get(text[-1])
+    try:
+        return float(text[:-1]) * factor if factor else float(text)
+    except ValueError:
+        return fallback
+
+
+def worktree_setup_timeout_seconds() -> float:
+    """Configured worktree setup timeout, using the dispatch default when unset."""
+    # Imported lazily because config imports CONFIG_PATH from this module.
+    from playmaker import config
+
+    return parse_duration(config.setting("worktree", "setup_timeout", "10m"), 600)
+
+
+def session_is_alive(row: dict[str, Any] | sqlite3.Row, *, now: datetime | None = None) -> bool:
+    """Whether an active session row should still occupy a dispatch lane."""
+    pid = row["pid"]
+    if pid:
+        return pid_is_alive(pid)
+    try:
+        started = datetime.fromisoformat(row["started_at"])
+    except (TypeError, ValueError):
+        # A malformed timestamp cannot safely prove that a newly-created row is stale.
+        return True
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    current = now or datetime.now(UTC)
+    grace = PID_GRACE_SECONDS
+    if row["status"] == "pending":
+        grace += worktree_setup_timeout_seconds()
+    return (current - started).total_seconds() < grace
+
+
+def reap_dead_sessions() -> list[str]:
+    """Mark dead running/pending sessions killed and append one event per row."""
+    reaped: list[str] = []
+    with connect() as c:
+        c.execute("BEGIN IMMEDIATE")
+        columns = {row["name"] for row in c.execute("PRAGMA table_info(sessions)")}
+        rows = c.execute(
+            "SELECT * FROM sessions WHERE status IN ('running', 'pending')"
+        ).fetchall()
+        for row in rows:
+            if session_is_alive(row):
+                continue
+            assignments = "status = ?, finished_at = ?"
+            values: list[Any] = ["killed", now_iso()]
+            if "fail_reason" in columns:
+                assignments += ", fail_reason = ?"
+                values.append("reaped")
+            values.append(row["id"])
+            updated = c.execute(
+                f"UPDATE sessions SET {assignments} "
+                "WHERE id = ? AND status IN ('running', 'pending')",
+                values,
+            )
+            if updated.rowcount:
+                _append_event(
+                    c,
+                    row["id"],
+                    "reaped",
+                    status="killed",
+                    prev_status=row["status"],
+                    detail={"reason": "reaped"},
+                )
+                reaped.append(row["id"])
+        c.commit()
+    return reaped
+
+
 def insert_session(
     *,
     agent: str,
@@ -208,9 +301,11 @@ def insert_session(
         if max_active is not None and max_active > 0:
             c.execute("BEGIN IMMEDIATE")
             running = c.execute(
-                "SELECT id FROM sessions WHERE status IN ('running', 'pending') "
+                "SELECT id, pid, status, started_at FROM sessions "
+                "WHERE status IN ('running', 'pending') "
                 "ORDER BY started_at ASC"
             ).fetchall()
+            running = [row for row in running if session_is_alive(row)]
             if len(running) >= max_active:
                 c.rollback()
                 raise LimitExceeded([row["id"] for row in running])
