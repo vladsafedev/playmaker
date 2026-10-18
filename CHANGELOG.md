@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-10-19
+
+### Fixed
+
+- **Dead sessions no longer hold dispatch slots.** `running` and `pending`
+  rows whose process is gone (checked with `os.kill(pid, 0)`) are not counted
+  by `[limits] max_parallel` in `playmaker limits` or by the atomic check in
+  dispatch. `playmaker list --reap` marks them `killed` with `finished_at`,
+  `fail_reason = reaped` and an event; `events --follow` reaps on every tick.
+  A pending row without a pid gets `[worktree] setup_timeout` plus ten
+  minutes of grace, so a slow setup hook is not reaped mid-setup.
+- **Queue rollback after a failed spawn is one transaction.** Marking the
+  child `failed` (`spawn`) and returning the item to `queued` now share one
+  `BEGIN IMMEDIATE`, so a concurrent `queue drain --force` cannot deliver the
+  second item before the first.
+- **`playmaker worktree` polish.** `worktree rm a/b` resolves a slashed name
+  under `<repo>-wt/` instead of the current directory; the "kept branch"
+  message shows git's own stderr verbatim (the branch may just be checked out
+  in another worktree); `worktree ls` prints name and branch in full in a
+  narrow terminal and shortens the path to `…/<name>`.
+- **`playmaker init` documents the 0.15 settings.** The config template now
+  carries commented `[worktree] setup_timeout`, `[gate] timeout`, `[limits]
+  max_parallel` / `min_free_ram_gb`, `[events] interval` and `[fallback]
+  window`, one line of explanation each.
+
 ## [0.15.0] - 2026-10-18
 
 ### Added
