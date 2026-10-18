@@ -15,7 +15,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from playmaker import __version__, config, gate, notify, state, watcher, worktree
+from playmaker import __version__, config, gate, limits, notify, state, watcher, worktree
 from playmaker import events as events_mod
 from playmaker.agents.claude import EFFORT_ENV_VAR, VALID_EFFORTS
 from playmaker.registry import get_handler
@@ -193,12 +193,81 @@ def _spawn_detached(sid: str) -> int:
     return proc.pid
 
 
+def _resolve_prompt(prompt: str | None, prompt_file: Path | None) -> str:
+    """Exactly one of --prompt / --prompt-file; the file's UTF-8 content becomes the prompt.
+
+    A prompt travelling in a shell argument executes backticks in the caller's
+    shell and hangs the CLI on long text — reading it from a file avoids both.
+    """
+    if prompt is not None and prompt_file is not None:
+        err_console.print("[red]pass either --prompt or --prompt-file, not both[/red]")
+        raise typer.Exit(2)
+    if prompt is not None:
+        return prompt
+    if prompt_file is None:
+        err_console.print("[red]pass a prompt: --prompt TEXT or --prompt-file PATH[/red]")
+        raise typer.Exit(2)
+    try:
+        text = prompt_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        err_console.print(f"[red]cannot read --prompt-file {prompt_file}: {exc}[/red]")
+        raise typer.Exit(2) from exc
+    if not text.strip():
+        err_console.print(f"[red]--prompt-file {prompt_file} is empty[/red]")
+        raise typer.Exit(2)
+    return text
+
+
+def _refuse_if_limited() -> None:
+    """Refuse (exit 3) when [limits] min_free_ram_gb says no.
+
+    max_parallel is enforced atomically inside insert_session: a separate
+    pre-count and insert would let two simultaneous dispatches both see the
+    same running count and both slip past the limit. evaluate() still reports
+    it — the `limits` command shows the prediction — but only the RAM refusal
+    can stop a dispatch here.
+    """
+    decision = limits.evaluate()
+    for refusal in decision.refusals:
+        if refusal.startswith("max_parallel="):
+            continue
+        err_console.print(f"[red]{refusal}[/red]")
+        raise typer.Exit(3)
+
+
+def _max_active() -> int:
+    """[limits] max_parallel as a positive int; 0 = the guard is off."""
+    try:
+        return max(0, int(config.setting("limits", "max_parallel", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parallel_refusal(exc: state.LimitExceeded, max_active: int) -> str:
+    """The max_parallel refusal: running ids (8 chars), agents, ages, --force hint."""
+    lines = [
+        f"max_parallel={max_active} reached: "
+        f"{len(exc.running_ids)} session(s) running or pending"
+    ]
+    for sid in exc.running_ids:
+        row = state.get_session(sid) or {}
+        started = limits._age(row.get("started_at") or "")
+        lines.append(f"  {sid[:8]}  {row.get('agent') or '?'}  started {started}")
+    lines.append(limits.FORCE_HINT)
+    return "\n".join(lines)
+
+
 @app.command()
 def dispatch(
     agent: str = typer.Argument(
         ..., help="agent name (claude|codex|agy|gemini|kimi|muse|opencode)"
     ),
-    prompt: str = typer.Option(..., "--prompt", "-p", help="initial prompt"),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="initial prompt (or pass --prompt-file)"
+    ),
+    prompt_file: Path | None = typer.Option(
+        None, "--prompt-file", help="read the prompt from a UTF-8 file instead of --prompt"
+    ),
     cwd: Path = typer.Option(
         Path.cwd(),
         "--cwd",
@@ -228,6 +297,11 @@ def dispatch(
         False,
         "--sync",
         help="block until the agent finishes and print final output (default is detached)",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="bypass the [limits] max_parallel and min_free_ram_gb guards",
     ),
     parent: str | None = typer.Option(
         None, "--parent", help="parent session id (for delegation tree)"
@@ -271,25 +345,34 @@ def dispatch(
     and returns immediately. Use --sync to block and print the final answer."""
     state.init_db()
     fallback_lanes = _parse_fallback_lanes(fallback)
+    prompt = _resolve_prompt(prompt, prompt_file)
     handler = get_handler(agent)
     if not handler.is_available():
         err_console.print(_unavailable(agent))
         raise typer.Exit(1)
     _apply_effort_override(agent, effort)
+    if not force:
+        _refuse_if_limited()
 
     cwd_resolved = cwd.expanduser().resolve()
     explicit_expectation = _expectation_from_flags(expect_changes, read_only)
-    sid = state.insert_session(
-        agent=agent,
-        prompt=prompt,
-        cwd=str(cwd_resolved),
-        files=[str(f) for f in (files or [])],
-        parent_id=parent,
-        model=model,
-        batch_id=batch,
-        expect_changes=state.expects_changes(prompt, explicit_expectation),
-        gate_cmd=gate_cmd,
-    )
+    try:
+        sid = state.insert_session(
+            agent=agent,
+            prompt=prompt,
+            cwd=str(cwd_resolved),
+            files=[str(f) for f in (files or [])],
+            parent_id=parent,
+            model=model,
+            batch_id=batch,
+            expect_changes=state.expects_changes(prompt, explicit_expectation),
+            gate_cmd=gate_cmd,
+            max_active=None if force else _max_active(),
+        )
+    except state.LimitExceeded as exc:
+        max_active = _max_active()
+        err_console.print(f"[red]{_parallel_refusal(exc, max_active)}[/red]")
+        raise typer.Exit(3) from exc
     if fallback_lanes:
         state.update_session(sid, fallback_lanes=json.dumps(fallback_lanes))
 
@@ -655,7 +738,12 @@ def _run_detached(session_id: str) -> None:
 @app.command("continue")
 def continue_(
     session_id: str = typer.Argument(..., help="existing session id (or unique prefix) to resume"),
-    prompt: str = typer.Option(..., "--prompt", "-p", help="follow-up prompt"),
+    prompt: str | None = typer.Option(
+        None, "--prompt", "-p", help="follow-up prompt (or pass --prompt-file)"
+    ),
+    prompt_file: Path | None = typer.Option(
+        None, "--prompt-file", help="read the follow-up prompt from a UTF-8 file"
+    ),
     cwd: Path | None = typer.Option(
         None,
         "--cwd",
@@ -678,6 +766,11 @@ def continue_(
     sync: bool = typer.Option(
         False, "--sync", help="block until done and print final output (default is detached)"
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="bypass the [limits] max_parallel and min_free_ram_gb guards",
+    ),
     expect_changes: bool | None = typer.Option(
         None,
         "--expect-changes",
@@ -695,6 +788,7 @@ def continue_(
     sub-agent's prior reasoning and tool history. Use this for incremental
     feedback; only fall back to a fresh `dispatch` if context is stale."""
     state.init_db()
+    prompt = _resolve_prompt(prompt, prompt_file)
     parent = state.get_session(session_id)
     if parent is None:
         err_console.print(f"[red]session {session_id!r} not found[/red]")
@@ -712,6 +806,8 @@ def continue_(
         err_console.print(_unavailable(parent["agent"]))
         raise typer.Exit(1)
     _apply_effort_override(parent["agent"], effort)
+    if not force:
+        _refuse_if_limited()
 
     cwd_resolved = (cwd or Path(parent["cwd"])).expanduser().resolve()
     effective_model = model if model is not None else parent.get("model")
@@ -726,19 +822,24 @@ def continue_(
     inherits_worktree = bool(parent_worktree) and cwd_resolved.is_relative_to(Path(parent_worktree))
 
     # New playmaker session that targets the parent's live agent thread.
-    sid = state.insert_session(
-        agent=parent["agent"],
-        prompt=prompt,
-        cwd=str(cwd_resolved),
-        files=[str(f) for f in (files or [])],
-        parent_id=parent["id"],
-        model=effective_model,
-        expect_changes=session_expects_changes,
-        worktree_path=parent.get("worktree_path") if inherits_worktree else None,
-        worktree_branch=parent.get("worktree_branch") if inherits_worktree else None,
-        repo_root=parent.get("repo_root") if inherits_worktree else None,
-        gate_cmd=gate_cmd,
-    )
+    try:
+        sid = state.insert_session(
+            agent=parent["agent"],
+            prompt=prompt,
+            cwd=str(cwd_resolved),
+            files=[str(f) for f in (files or [])],
+            parent_id=parent["id"],
+            model=effective_model,
+            expect_changes=session_expects_changes,
+            worktree_path=parent.get("worktree_path") if inherits_worktree else None,
+            worktree_branch=parent.get("worktree_branch") if inherits_worktree else None,
+            repo_root=parent.get("repo_root") if inherits_worktree else None,
+            gate_cmd=gate_cmd,
+            max_active=None if force else _max_active(),
+        )
+    except state.LimitExceeded as exc:
+        err_console.print(f"[red]{_parallel_refusal(exc, _max_active())}[/red]")
+        raise typer.Exit(3) from exc
     # Pre-populating agent_session_id flips _run_dispatch into resume mode.
     state.update_session(sid, agent_session_id=parent_agent_session_id)
 
@@ -805,6 +906,44 @@ def list_cmd(
             prompt_preview,
         )
     console.print(table)
+
+
+@app.command("limits")
+def limits_(
+    json_out: bool = typer.Option(False, "--json", help="emit machine-readable status"),
+) -> None:
+    """Show running sessions, free RAM and whether a dispatch would be allowed now."""
+    state.init_db()
+    decision = limits.evaluate()
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "running": len(decision.running),
+                    "max_parallel": decision.max_parallel,
+                    "free_ram_gb": decision.free_gb,
+                    "min_free_ram_gb": decision.min_free_ram_gb,
+                    "allowed": decision.allowed,
+                    "refusals": decision.refusals,
+                }
+            )
+        )
+        return
+    free = (
+        "unknown (no probe on this platform)"
+        if decision.free_gb is None
+        else f"{decision.free_gb:.1f} GB"
+    )
+    console.print(f"running:         {len(decision.running)}")
+    console.print(f"max_parallel:    {decision.max_parallel or 'off'}")
+    console.print(f"free ram:        {free}")
+    console.print(f"min_free_ram_gb: {decision.min_free_ram_gb or 'off'}")
+    if decision.allowed:
+        console.print("[green]dispatch now:   allowed[/green]")
+        return
+    console.print("[red]dispatch now:   refused[/red]")
+    for refusal in decision.refusals:
+        err_console.print(f"[red]{refusal}[/red]")
 
 
 @worktree_app.command("ls")

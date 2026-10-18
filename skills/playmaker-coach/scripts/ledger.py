@@ -2,7 +2,9 @@
 """ledger.py — one JSON line per work package: the evidence the coach routes on.
 
   ledger.py add    wp=<label> class=<c> impl_lane=<lane> [k=v ...]   append a WP row
+  ledger.py add    wp=<label> --from-session <id> [k=v ...]          fill fields from state.db
   ledger.py fix    wp=<label> [repo=<r>] [commit=<sha>] k=v ...      update the LAST matching row
+  ledger.py fix    wp=<label> --from-session <id> [k=v ...]          ... from state.db too
   ledger.py escape wp=<label> commit=<later-fix> [note=...]          a later fix for a passed board
   ledger.py stats  [class=<c>] [repo=<r>] [since=YYYY-MM-DD]         per lane × class, per reviewer
   ledger.py reviewers [roots=<d>,...] [since=YYYY-MM-DD] [lens=<l>]  per reviewer × lens
@@ -11,6 +13,11 @@
 Unknown fields land as "-". Lives in ~/.playmaker (outside the skill dir, which
 `playmaker skill install --force` overwrites). Fields: see ~/.playmaker/policy.md, «Ledger».
 Lists are comma-separated on the command line.
+
+--from-session resolves a playmaker session id (unique prefix OK) in
+~/.playmaker/state.db (env PLAYMAKER_STATE_DB overrides, e.g. for tests), walks
+to the thread root, and fills impl_lane, impl_model, wall_min, gate_first_pass,
+cycles and quota_note unless the same field is given explicitly as k=v.
 """
 import collections
 import datetime
@@ -19,6 +26,7 @@ import hashlib
 import json
 import os
 import pathlib
+import sqlite3
 import subprocess
 import sys
 
@@ -53,6 +61,119 @@ def kv(argv):
         k, v = a.split("=", 1)
         out[k.strip()] = v.strip()
     return out
+
+
+FROM_SESSION_ORDER = ["impl_lane", "impl_model", "wall_min", "gate_first_pass",
+                      "cycles", "quota_note"]
+
+
+def parse_from_session(argv):
+    """Split `--from-session <id>` / `--from-session=<id>` out of argv."""
+    ident, rest = None, []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--from-session":
+            if i + 1 >= len(argv):
+                die("--from-session needs a session id")
+            ident, i = argv[i + 1], i + 2
+            continue
+        if a.startswith("--from-session="):
+            ident, i = a.split("=", 1)[1], i + 1
+            continue
+        rest.append(a)
+        i += 1
+    return ident, rest
+
+
+def state_db_path():
+    return pathlib.Path(os.environ.get("PLAYMAKER_STATE_DB")
+                        or pathlib.Path.home() / ".playmaker" / "state.db")
+
+
+def _ts(value):
+    if not value:
+        return None
+    try:
+        dt = datetime.datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.UTC)
+    return dt
+
+
+def session_not_found(msg):
+    print(f"ledger: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def collect_from_session(ident):
+    """The five/five+ ledger fields a playmaker thread already knows."""
+    db = state_db_path()
+    if not db.exists():
+        session_not_found(f"no state db at {db} (--from-session {ident!r})")
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = [dict(r) for r in conn.execute("SELECT * FROM sessions")]
+    except sqlite3.Error as exc:
+        session_not_found(f"cannot read sessions from {db}: {exc}")
+    finally:
+        conn.close()
+    exact = [r for r in rows if r["id"] == ident]
+    if exact:
+        session = exact[0]
+    else:
+        hits = [r for r in rows if str(r["id"]).startswith(ident)]
+        if len(hits) > 1:
+            session_not_found(f"--from-session {ident!r} matches {len(hits)} sessions; "
+                              "use a longer prefix")
+        if not hits:
+            session_not_found(f"--from-session: no session {ident!r} in {db}")
+        session = hits[0]
+
+    by_id = {r["id"]: r for r in rows}
+    root, seen = session, set()
+    while root.get("parent_id") and root["parent_id"] in by_id and root["parent_id"] not in seen:
+        seen.add(root["id"])
+        root = by_id[root["parent_id"]]
+    thread, children = [root], collections.defaultdict(list)
+    for r in rows:
+        if r.get("parent_id"):
+            children[r["parent_id"]].append(r)
+    i = 0
+    while i < len(thread):
+        thread.extend(children[thread[i]["id"]])
+        i += 1
+
+    end = max((t for t in (_ts(r.get("finished_at")) for r in thread) if t), default=None)
+    if end is None or any(r.get("status") in ("running", "pending") for r in thread):
+        end = datetime.datetime.now(datetime.UTC)
+    start = _ts(root.get("started_at"))
+    gate = root.get("gate_status")
+    fills = {
+        "impl_lane": root["agent"],
+        "impl_model": root.get("model") or "-",
+        "wall_min": str(int(round((end - start).total_seconds() / 60))) if start else "-",
+        "gate_first_pass": "y" if gate == "pass" else ("n" if gate in ("fail", "timeout") else "-"),
+        "cycles": str(sum(1 for r in thread if r.get("parent_id"))),
+    }
+    fallback = root.get("fallback_of")
+    if fallback:
+        fills["quota_note"] = f"fallback_of={str(fallback)[:8]}"
+    return fills
+
+
+def apply_from_session(d, fills):
+    """Fill fields the command line did not give explicitly; say which on stderr."""
+    applied = {k: str(v) for k, v in fills.items() if k not in d}
+    d.update(applied)
+    if applied:
+        order = [f for f in FROM_SESSION_ORDER if f in applied]
+        print("[ledger] from-session: " + " ".join(f"{k}={applied[k]}" for k in order),
+              file=sys.stderr)
+    return applied
 
 
 def repo_name():
@@ -146,8 +267,9 @@ def reviewer_key(lane, model):
     return lane
 
 
-def cmd_add(argv):
+def cmd_add(argv, fills=None):
     d = kv(argv)
+    apply_from_session(d, fills or {})
     for req in ("wp", "class", "impl_lane"):
         if req not in d:
             die(f"{req}= is required")
@@ -168,11 +290,12 @@ def cmd_add(argv):
           f"({row['repo']}/{row['wp']} {row['class']} {row['impl_lane']} {row['outcome']})")
 
 
-def cmd_fix(argv):
+def cmd_fix(argv, fills=None):
     d = kv(argv)
     if "wp" not in d:
         die("wp= is required")
     sel = {k: d.pop(k) for k in ("wp", "repo", "commit") if k in d}
+    apply_from_session(d, fills or {})
     if not d:
         die("nothing to update — pass k=v fields")
     for k in d:
@@ -453,4 +576,13 @@ if __name__ == "__main__":
     cmd, argv = sys.argv[1], sys.argv[2:]
     commands = {"add": cmd_add, "fix": cmd_fix, "escape": cmd_escape,
                 "stats": cmd_stats, "reviewers": cmd_reviewers, "tail": cmd_tail}
-    commands.get(cmd, lambda a: die(f"unknown command {cmd!r}"))(argv)
+    if cmd not in commands:
+        die(f"unknown command {cmd!r}")
+    fills = {}
+    if cmd in ("add", "fix"):
+        from_session, argv = parse_from_session(argv)
+        if from_session is not None:
+            fills = collect_from_session(from_session)
+        commands[cmd](argv, fills)
+    else:
+        commands[cmd](argv)

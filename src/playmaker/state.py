@@ -152,6 +152,14 @@ def init_db() -> None:
         c.commit()
 
 
+class LimitExceeded(Exception):
+    """insert_session refused: running+pending sessions already fill max_active."""
+
+    def __init__(self, running_ids: list[str]) -> None:
+        super().__init__(f"{len(running_ids)} session(s) already running or pending")
+        self.running_ids = running_ids
+
+
 def insert_session(
     *,
     agent: str,
@@ -166,10 +174,26 @@ def insert_session(
     worktree_branch: str | None = None,
     repo_root: str | None = None,
     gate_cmd: str | None = None,
+    max_active: int | None = None,
 ) -> str:
-    """Insert a new pending session, return its id."""
+    """Insert a new pending session, return its id.
+
+    With `max_active` > 0 the count of running/pending sessions and the insert
+    share one BEGIN IMMEDIATE transaction, so two simultaneous dispatches
+    cannot both count past the limit and both insert; a full house raises
+    LimitExceeded and nothing is written.
+    """
     sid = new_session_id()
     with connect() as c:
+        if max_active is not None and max_active > 0:
+            c.execute("BEGIN IMMEDIATE")
+            running = c.execute(
+                "SELECT id FROM sessions WHERE status IN ('running', 'pending') "
+                "ORDER BY started_at ASC"
+            ).fetchall()
+            if len(running) >= max_active:
+                c.rollback()
+                raise LimitExceeded([row["id"] for row in running])
         c.execute(
             """
             INSERT INTO sessions (
