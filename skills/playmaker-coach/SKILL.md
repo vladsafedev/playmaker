@@ -179,6 +179,14 @@ pm-review --collect <wp-label>          # once the review batch drains
 (`pm-review` is `scripts/review-board.sh` from this skill; without the shortcut on `PATH`, call
 `~/.claude/skills/playmaker-coach/scripts/review-board.sh` directly.)
 
+Every board run starts with a **precheck**: before any reviewer is dispatched, a cheap lane from
+the roster's `precheck` block checks the spec's acceptance list against the diff and answers in
+about half a minute. A fail — an acceptance item with no evidence in the diff — blocks the board
+with a ready numbered fix list that goes straight back to the worker via `playmaker continue`,
+exactly like a board verdict; a pass dispatches the board; and when no cheap lane answers the
+board runs anyway, because the precheck must never block the pipeline by being down. `--no-precheck`
+skips it, `--precheck-only` runs it alone (details: `references/review-board.md`, «Precheck»).
+
 Non-negotiables:
 
 - **The implementer never reviews its own WP**, and reviewers do not see each other's verdicts.

@@ -16,7 +16,14 @@
 #   --round N                    review round number (default: 1). The diff is always against
 #                                <base-ref>, so a later round is cumulative unless you commit
 #                                round 1 and pass that commit as the base.
+#   --no-precheck                skip the precheck step (default: it runs before every board)
+#   --precheck-only              run only the precheck and exit with its status (2 = fail)
 #   --dry-run                    print the prompts and the dispatches, run nothing
+#
+# Before the board is dispatched a PRECHECK runs: one cheap lane checks the spec's
+# ## ACCEPTANCE section against the diff (see references/review-board.md, «Precheck»).
+# A fail exits 2 with a numbered fix list and no reviewer is dispatched; when no cheap
+# lane answers the script warns and dispatches the board anyway.
 #
 # Reviewer roster comes from the first of these that exists:
 #   ./.playmaker/reviewers.conf     ~/.playmaker/reviewers.conf
@@ -32,12 +39,43 @@
 # (routine 1, normal 2, high 3, seams 1) and holds the rest in reserve — keep count+1 lines per class
 # so the skip still fills the board. Fewer than N eligible lines → the script stops
 # (PM_REVIEW_ALLOW_SHORT=1 overrides, and board.md must say why).
+# A `precheck` risk-class keyword holds the cheap lanes for the precheck — an ordered preference
+# list, first lane to answer wins, e.g.
+#   precheck opencode opencode/glm-5.3-flash-free       precheck
+#   precheck agy      gemini-3.8-flash-low              precheck
 # Model names must be copied from `agy models` / `opencode models`, never typed from memory.
 
 set -euo pipefail
 
 die() { printf '%s\n' "error: $*" >&2; exit 1; }
 note() { printf '%s\n' "$*" >&2; }
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  sed -n '2,/^set -euo pipefail$/p' "$0" | sed '$d; s/^# \{0,1\}//'
+  exit 0
+fi
+
+# run_timed SECS CMD… — run CMD under a hard wall-clock cap (SECONDS), stderr merged into
+# stdout, returning its exit code (124 = timed out). Uses `timeout` where installed,
+# python3 otherwise (macOS ships no timeout).
+run_timed() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$secs" "$@" 2>&1
+  else
+    python3 - "$secs" "$@" <<'PY'
+import subprocess, sys
+try:
+    r = subprocess.run(sys.argv[2:], capture_output=True, text=True, timeout=int(sys.argv[1]))
+except subprocess.TimeoutExpired:
+    print(f"timed out after {sys.argv[1]}s", file=sys.stderr)
+    sys.exit(124)
+sys.stdout.write(r.stdout or "")
+sys.stderr.write(r.stderr or "")
+sys.exit(r.returncode)
+PY
+  fi
+}
 
 command -v playmaker >/dev/null 2>&1 || die "playmaker is not on PATH"
 
@@ -138,6 +176,7 @@ wp="${1:-}"; base="${2:-}"
 shift 2
 
 risk=normal; cwd="$PWD"; paths=""; spec=""; gate=""; impl_agent=""; round=1; dry=0
+no_precheck=0; precheck_only=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --risk) risk="$2"; shift 2 ;;
@@ -148,10 +187,13 @@ while [[ $# -gt 0 ]]; do
     --impl-agent) impl_agent="$2"; shift 2 ;;
     --round) round="$2"; shift 2 ;;
     --dry-run) dry=1; shift ;;
+    --no-precheck) no_precheck=1; shift ;;
+    --precheck-only) precheck_only=1; shift ;;
     *) die "unknown option: $1" ;;
   esac
 done
 case "$risk" in routine|normal|high|seams) ;; *) die "--risk must be routine, normal, high or seams" ;; esac
+[[ $no_precheck -eq 1 && $precheck_only -eq 1 ]] && die "pass either --no-precheck or --precheck-only, not both"
 
 dir="$cwd/.playmaker/reviews/$wp"
 mkdir -p "$dir"
@@ -176,6 +218,185 @@ conf=""
 for c in "$cwd/.playmaker/reviewers.conf" "$HOME/.playmaker/reviewers.conf"; do
   [[ -f "$c" ]] && { conf="$c"; break; }
 done
+
+# ── precheck: a cheap spec-vs-diff coverage check before the board ────────────
+# One cheap lane reads the spec's ## ACCEPTANCE section against diff-rN.patch and answers in
+# seconds. fail → exit 2 with a numbered fix list, no reviewer dispatched; unavailable → warn
+# and continue — the precheck must never block the pipeline by being down.
+pc_record_env() {
+  # board.env: keep every other key, refresh the precheck pair
+  local envf="$dir/board.env"
+  touch "$envf"
+  grep -v -E '^precheck(_lane)?=' "$envf" >"$envf.tmp" 2>/dev/null || true
+  mv "$envf.tmp" "$envf"
+  printf 'precheck=%s\nprecheck_lane=%s\n' "$1" "$2" >>"$envf"
+}
+
+pc_status=""; pc_lane=""; pc_secs=0; pjson="$dir/precheck-r$round.json"
+if [[ $no_precheck -eq 0 ]]; then
+  acceptance=$(awk '/^## /{if (in_sec) exit; if ($0 ~ /^## ACCEPTANCE/) in_sec=1} in_sec' "$spec")
+  done_when=$(awk '/^## /{if (in_sec) exit; if ($0 ~ /^## DONE when/) in_sec=1} in_sec' "$spec")
+  if [[ -z "$acceptance" ]]; then
+    pc_status=unavailable
+    note "precheck: unavailable (spec has no ## ACCEPTANCE section — nothing to check)"
+  else
+    precheck_prompt="$dir/precheck-prompt.md"
+    {
+      echo "You are the PRECHECK for a work package: a fast, cheap coverage check of its diff"
+      echo "against the spec's acceptance list. You did NOT write it. Change nothing — read-only."
+      echo
+      echo "THE ACCEPTANCE LIST (from the WP spec):"
+      echo '---'
+      printf '%s\n' "$acceptance"
+      echo '---'
+      if [[ -n "$done_when" ]]; then
+        echo
+        echo "THE DONE-CONDITION:"
+        printf '%s\n' "$done_when"
+      fi
+      echo
+      echo "THE DIFF UNDER REVIEW (the only admissible evidence; paths are relative to the repo"
+      echo "root, $cwd):"
+      echo "  .playmaker/reviews/$wp/$(basename "$patch")"
+      echo "Read that patch file and check every acceptance item against it."
+      echo
+      echo "RULES:"
+      echo "  - Read-only: run nothing that changes anything."
+      echo "  - The diff is the ONLY evidence. An acceptance item with no evidence in the diff is missing."
+      echo "  - Style is not a reason to mark an item missing."
+      echo
+      echo "OUTPUT: exactly one JSON object, no prose before or after, matching this shape:"
+      echo '{"covered":[{"item":"<acceptance item>","evidence":"file:line or test name"}],"missing":[{"item":"<acceptance item>","why":"one sentence"}],"verdict":"pass|fail"}'
+    } > "$precheck_prompt"
+
+    pc_roster=()
+    if [[ -n "$conf" ]]; then
+      while read -r r lane model _extra; do
+        [[ -z "${r:-}" || "$r" == \#* ]] && continue
+        [[ "$r" == "precheck" ]] || continue
+        pc_roster+=("$lane|$model")
+      done < "$conf"
+    fi
+
+    if [[ $dry -eq 1 ]]; then
+      pc_dry_lane="none — no precheck lane in the roster"
+      [[ ${#pc_roster[@]} -gt 0 ]] && pc_dry_lane="${pc_roster[0]%%|*}/${pc_roster[0]#*|}"
+      note "── precheck would dispatch: $pc_dry_lane — prompt at $precheck_prompt:"
+      cat "$precheck_prompt" >&2
+    elif [[ ${#pc_roster[@]} -eq 0 ]]; then
+      pc_status=unavailable
+      note "precheck: unavailable (no precheck lines in ${conf:-any reviewers.conf})"
+    else
+      pc_reasons=""
+      for entry in "${pc_roster[@]}"; do
+        IFS='|' read -r lane model <<< "$entry"
+        cmd=(playmaker dispatch "$lane" --sync --read-only --batch "precheck-$wp-r$round" --cwd "$cwd" --prompt-file "$precheck_prompt")
+        [[ "$model" != "-" && -n "$model" ]] && cmd+=(--model "$model")
+        note "precheck → $lane/${model:--} …"
+        pc_t0=$(date +%s); pc_rc=0
+        pc_out=$(run_timed 120 "${cmd[@]}") || pc_rc=$?
+        pc_secs=$(( $(date +%s) - pc_t0 ))
+        printf '%s\n' "$pc_out" > "$dir/precheck-r$round.txt"
+        pc_reason="$lane: exit $pc_rc"
+        if [[ $pc_rc -eq 124 ]]; then
+          pc_reason="$lane: timed out after 120s"
+        elif [[ $pc_rc -ne 0 ]]; then
+          pc_first=${pc_out%%$'\n'*}
+          [[ -n "${pc_first:-}" ]] && pc_reason="$lane: ${pc_first:0:80}"
+        fi
+        usable=0
+        if [[ $pc_rc -eq 0 ]]; then
+          # same tolerant last-object parse as the verdicts, plus FULL contract validation:
+          # verdict ∈ {pass, fail}; covered and missing are lists; every missing element is an
+          # object with string item and why; fail <=> missing non-empty. Anything else
+          # (e.g. {"verdict":"pass","missing":"none"}) is an unusable answer -> next lane.
+          printf '%s' "$pc_out" | python3 -c '
+import json, sys
+
+def valid(d):
+    if not isinstance(d, dict):
+        return False
+    v = d.get("verdict")
+    if v not in ("pass", "fail"):
+        return False
+    cov, mis = d.get("covered"), d.get("missing")
+    if not isinstance(cov, list) or not isinstance(mis, list):
+        return False
+    for m in mis:
+        if not isinstance(m, dict) or not isinstance(m.get("item"), str) or not isinstance(m.get("why"), str):
+            return False
+    for c in cov:
+        if not isinstance(c, dict):
+            return False
+        if not (isinstance(c.get("item"), str) and c["item"].strip()):
+            return False
+        if not (isinstance(c.get("evidence"), str) and c["evidence"].strip()):
+            return False
+    if v == "fail":
+        return bool(mis)
+    # a pass must rest on evidence: at least one well-formed covered entry and nothing missing
+    return bool(cov) and not mis
+
+raw = sys.stdin.read()
+dec = json.JSONDecoder()
+found = None
+for j in range(len(raw) - 1, -1, -1):
+    if raw[j] != "{":
+        continue
+    try:
+        obj, _ = dec.raw_decode(raw[j:])
+    except json.JSONDecodeError:
+        continue
+    if isinstance(obj, dict) and "verdict" in obj and "missing" in obj:
+        found = obj
+        break
+if found is None or not valid(found):
+    sys.exit(1)
+json.dump(found, sys.stdout, indent=2, ensure_ascii=False)
+' > "$pjson" 2>/dev/null && usable=1
+          [[ $usable -eq 0 ]] && pc_reason="$lane: answer violates the precheck contract (no valid JSON object)"
+        fi
+        if [[ $usable -eq 1 ]]; then
+          pc_missing_n=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["missing"]))' "$pjson" 2>/dev/null || echo 0)
+          pc_lane="$lane/${model:--}"
+          if [[ "$pc_missing_n" -gt 0 ]]; then pc_status=fail; else pc_status=pass; fi
+          break
+        fi
+        pc_reasons="${pc_reasons:+$pc_reasons; }$pc_reason"
+      done
+      if [[ -z "$pc_status" ]]; then
+        pc_status=unavailable
+        note "precheck: unavailable ($pc_reasons)"
+      fi
+    fi
+  fi
+
+  if [[ "$pc_status" == "fail" ]]; then
+    pc_record_env fail "$pc_lane"
+    note ""
+    note "precheck FAILED — acceptance items with no evidence in $(basename "$patch"):"
+    python3 - "$pjson" <<'PY' >&2
+import json, sys
+d = json.load(open(sys.argv[1]))
+for i, m in enumerate(d.get("missing") or [], 1):
+    item = str(m.get("item", "")).strip() or "(unnamed acceptance item)"
+    why = str(m.get("why", "")).strip()
+    print(f"{i}. {item} — {why}" if why else f"{i}. {item}")
+PY
+    note ""
+    note "precheck FAILED — board not dispatched; send the list with playmaker continue <impl-id>"
+    exit 2
+  fi
+
+  if [[ "$pc_status" == "pass" ]]; then
+    note "precheck: pass ($pc_lane, ${pc_secs}s)"
+  fi
+
+  if [[ $precheck_only -eq 1 ]]; then
+    [[ -n "$pc_status" ]] && pc_record_env "$pc_status" "$pc_lane"
+    exit 0
+  fi
+fi
 
 roster=()
 if [[ -n "$conf" ]]; then
@@ -214,6 +435,7 @@ if [[ $dry -eq 0 ]]; then
   fi
   : > "$dir/sessions.txt"
   printf 'risk=%s\nround=%s\nrequired=%s\nbase=%s\npatch=%s\n' "$risk" "$round" "$required" "$base" "$(basename "$patch")" > "$dir/board.env"
+  [[ -n "$pc_status" ]] && pc_record_env "$pc_status" "$pc_lane"
 fi
 
 for entry in "${roster[@]}"; do

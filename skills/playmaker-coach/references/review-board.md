@@ -129,6 +129,42 @@ gate green -> review round 1 -> adjudicate -> continue(impl) with fix list
   dispatch that died of quota or auth is not a round.
 - **Land at zero blocking.** Record `major`/`minor` leftovers in the board so they are not lost.
 
+## Precheck
+
+Before any reviewer is dispatched, the script runs one cheap **precheck**: does the diff actually
+cover the spec's acceptance list? On 2026-10-18 half of the first review rounds failed on exactly
+this — the worker delivered fewer tests than the acceptance list demanded — and each such round
+cost two senior reviewers ~15 minutes and a full fix cycle. A cheap lane answers the same
+question in half a minute, so the board never starts until that check passes.
+
+The precheck reads the spec's `## ACCEPTANCE` section and `## DONE when` line plus the round's
+`diff-rN.patch`, and returns one JSON object: `covered` (item + evidence in the diff), `missing`
+(item + why), `verdict`. The diff is the only evidence — an acceptance item with no evidence in
+the diff is missing; style is never a reason.
+
+Roster: the `precheck` risk-class keyword in `reviewers.conf` — an ordered preference list of
+cheap lanes maintained by the coach (the script never hard-codes models); the first lane to
+answer wins:
+
+    precheck opencode opencode/glm-5.3-flash-free       precheck
+    precheck agy      gemini-3.8-flash-low              precheck
+
+Behaviour and exit codes of a dispatch run:
+
+- **pass** — `precheck: pass (<lane>, <seconds>s)`, the board is dispatched as today. The answer
+  lands in `precheck-rN.json`, the status in `board.env` (`precheck=pass`, `precheck_lane=…`).
+- **fail** (missing items) — the script prints the numbered fix list (`N. <item> — <why>`),
+  writes `precheck=fail`, and exits **2** without dispatching a single reviewer. Send the list
+  to the worker with `playmaker continue <impl-id>` — this counts as a fix cycle exactly like a
+  board verdict, not as a review round.
+- **unavailable** (every lane failed, timed out after 120 s, or returned no parseable JSON) —
+  the script warns `precheck: unavailable (<reasons>)` and CONTINUES to the board. The precheck
+  must never block the pipeline by being down.
+
+Flags: `--no-precheck` skips it; `--precheck-only` runs it alone and exits with its status
+(0 on pass/unavailable, 2 on fail); `--dry-run` prints the precheck prompt too. A spec without
+an `## ACCEPTANCE` section makes the precheck unavailable — the board runs as before.
+
 ## Running it
 
 Write the WP spec to `.playmaker/reviews/<wp-label>/spec.md` first — scope, acceptance criteria and
