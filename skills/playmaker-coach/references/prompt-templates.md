@@ -100,6 +100,28 @@ Choose one: <A) <choice A> or B) <choice B>  |  yes / no>. This blocks <WP/tail>
 There is no default and no deadline.
 ```
 
+## Decision review question
+
+Save this as the `--question` file for `pm-review-decision`. Keep it concrete: the lanes should be
+able to point at an artefact, not reconstruct the project from context.
+
+```
+# <decision title>
+
+## Artefact
+<Paste the relevant spec text, public changelog paragraph, diff path/hunk, numbers, or contract.>
+
+## Options
+A) <one bounded choice>
+B) <the alternative>
+
+## One question
+Which option should we take, and what breaks if we are wrong?
+
+## Evidence to cite
+<The artefact headings, paths, hunk references, numbers, or public sources that a break must name.>
+```
+
 ## Tail follow-up
 
 Send with `playmaker continue <impl-id> --after <impl-id> --gate "<same gate>" --prompt "<tail>"`.

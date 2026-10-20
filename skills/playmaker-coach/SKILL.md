@@ -179,6 +179,16 @@ pm-review --collect <wp-label>          # once the review batch drains
 (`pm-review` is `scripts/review-board.sh` from this skill; without the shortcut on `PATH`, call
 `~/.claude/skills/playmaker-coach/scripts/review-board.sh` directly.)
 
+### 3.7.1 Decision review — advisory senior lanes for a disputed artefact
+
+Convene `pm-review-decision <slug> --question <file>` before dispatching a WP spec of class
+`architecture` or risk `high`, when two reviewers disagree about one hunk, when you mark a choice
+`спорно`, or when the owner asks. It fans the first three senior `decision` roster lanes (and an
+Opus fourth seat only with `--opus`) across one artefact with the question «what breaks», then
+mechanically records agreement or split; use at most two per day without the owner's word. It is
+read-only and never stops the cores of a wave. On a split, decide yourself or bring the owner one
+bounded question—not the raw disagreement. Contract, budget, and flags: `references/review-decision.md`.
+
 Every board run starts with a **precheck**: before any reviewer is dispatched, a cheap lane from
 the roster's `precheck` block checks the spec's acceptance list against the diff and answers in
 about half a minute. A fail — an acceptance item with no evidence in the diff — blocks the board
