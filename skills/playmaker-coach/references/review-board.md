@@ -165,6 +165,76 @@ Flags: `--no-precheck` skips it; `--precheck-only` runs it alone and exits with 
 (0 on pass/unavailable, 2 on fail); `--dry-run` prints the precheck prompt too. A spec without
 an `## ACCEPTANCE` section makes the precheck unavailable — the board runs as before.
 
+## Automatic loop
+
+Everything above that is mechanical for the common case — waiting for the worker and its gate,
+the precheck, the wip snapshot, the fan-out, waiting for seats, collecting, filtering verdicts,
+writing the fix list, sending it, running the next round on the delta — is one command:
+
+```bash
+pm-review --auto <wp-label> <base-ref> --impl-id <impl-session> --paths "<wp pathspecs>" \
+    [--risk routine|normal|high|seams] [--gate "<cmd>"] [--impl-agent <lane>] \
+    [--max-cycles N] [--seat-deadline 20m] [--dry-run]
+```
+
+`--paths` is **required**: the wip commits and the `git add -N` cover the WP's files only —
+in a shared worktree an unpinned commit would sweep other packages' work into this WP's
+history.
+
+It runs in the **foreground** until the loop ends — background it (`nohup pm-review --auto … &`
+or under Monitor) and read the final summary it prints; every step is appended with a timestamp
+to `.playmaker/reviews/<wp>/auto.log`. The loop:
+
+1. **Wait the implementer** (`playmaker get --wait`). `failed`/`killed`, or `no_changes` on a
+   write task → **exit 4**, reroute. A `gate_status` of `fail`/`timeout` is handled whether or
+   not `--gate` was passed — the gate command comes from `--gate`, else from the implementer
+   session's own `gate_cmd`, else exit 4 «implementer gate failed and no gate command is
+   known» — and the tail of the CLI's gate log goes back as a fix list
+   (`continue --after --gate --expect-changes`); that consumes a cycle and the check repeats.
+   A failed gate never reaches the board.
+2. **Precheck** as above, per round — always against the **whole package** (the original
+   base): acceptance items describe the WP, not the round's delta, so a delta-based
+   precheck would mark everything delivered in round 1 as missing on every later round.
+   The reviewers still get the delta only. A fail goes back the same way and also
+   consumes a cycle. New files get `git add -N` right before the precheck's diff is
+   built — only after the implementer is done and its gate passed, so a failed
+   implementer never leaves the index dirty.
+3. **Wip snapshot** after the precheck passes: `git commit -m "wip: <wp> rN (auto)"` of
+   the WP paths only. Round N diffs the previous wip commit, so later rounds review the
+   delta — squash the wip commits before landing.
+4. **Dispatch the board** as today. When the implementer's row carries `gate_status=pass`, the
+   reviewer prompt says the CLI already ran the gate (with the log path) and asks the reviewer
+   NOT to re-run it; otherwise the re-run instruction stands.
+5. **Wait every seat** in **one common `--seat-deadline` window counted from the board
+   dispatch** — each seat, and a substitute, waits only the time remaining in that window,
+   so a hung board cannot stretch to N × the configured deadline. A `failed`/`killed`/
+   timeout seat is substituted **once** from the roster's first not-yet-used eligible line
+   (same lens, `--read-only`), else recorded as a missing seat. A `[limits]` refusal
+   (`max_parallel=`/`min_free_ram_gb=`) on any dispatch — a seat, the precheck or the fix
+   follow-up — is temporary: the loop logs «waiting for a lane slot» and retries every 30 s
+   up to the seat deadline; only then is the seat dead (and substituted — a seat the board
+   could not dispatch at all is substituted the same way).
+6. **Mechanical adjudication**: `blocking` findings only; one without `file`+`line`+`scenario`
+   is dropped; one on a file outside the round's diff is dropped as environmental; dedupe by
+   `file:line` keeping the longer scenario. Zero blocking **and** a full board →
+   `auto=green cycles=<n>` in `board.env`, summary, **exit 0**.
+7. Otherwise the fix list (numbered `file:line — claim -> suggested_fix` + the standard tail)
+   goes back via `continue --after`; the follow-up's gate result loops step 1, and round N+1
+   reviews the delta.
+
+Exit codes: **0** green · **3** stopped — the cycle budget is exhausted with blocking findings
+left, the board could not fill its seats, or a fix round changed nothing (escalate per policy:
+Codex Sol) · **4** the implementer failed, or a hard dispatch failure (unknown lane, auth,
+binary) with the reason — reroute or fix the roster line. `--max-cycles` (default 2) and
+`--seat-deadline` (default `20m`) come from `[board]` in `~/.playmaker/config.toml` or the
+repo's `.playmaker/config.toml` (repo wins); flags override. `--dry-run` prints the plan —
+steps, seats and reserves, deadlines, the fix-list format — and dispatches nothing. A hidden
+`pm-review --adjudicate <wp>` runs step 6's mechanical pass alone over the verdicts and the
+newest `diff-r*.patch` and prints the fix list — handy for demos and spot checks.
+
+What stays with the coach: arbitration of reviewer disagreements, spec rulings, the escalation
+seat, and any OWNER decision — the loop stops (exit 3/4) rather than deciding those.
+
 ## Running it
 
 Write the WP spec to `.playmaker/reviews/<wp-label>/spec.md` first — scope, acceptance criteria and

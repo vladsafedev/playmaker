@@ -54,8 +54,14 @@ THE DIFF UNDER REVIEW: <.playmaker/reviews/<wp>/diff.patch>
 YOUR LENS: <correctness & regression | contracts & integration | <risk> | conventions & tests>
 Review through that lens first. Note anything outside it only if it is blocking.
 
-Re-run the acceptance gate yourself: <cmd>. Report its real exit status — do not trust the
-implementer's claim.
+Gate line — exactly one of these, chosen by the script:
+  Re-run the acceptance gate yourself: <cmd>. Report its real exit status — do not trust the
+  implementer's claim.
+    (the default: the CLI did not run the gate, or it failed)
+  The acceptance gate was already run by the CLI right after the implementer finished and it
+  PASSED (log: <gate_log_path>). Do NOT re-run it — spend your budget on the code.
+    (chosen by `--auto` when the implementer's session row carries gate_status=pass; the
+     reviewer sets gate_rerun to "cli:pass")
 
 Rules:
   - Every finding needs file, line, and a concrete failure scenario (inputs or state -> wrong

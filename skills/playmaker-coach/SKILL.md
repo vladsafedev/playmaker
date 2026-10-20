@@ -187,6 +187,22 @@ exactly like a board verdict; a pass dispatches the board; and when no cheap lan
 board runs anyway, because the precheck must never block the pipeline by being down. `--no-precheck`
 skips it, `--precheck-only` runs it alone (details: `references/review-board.md`, «Precheck»).
 
+**The default way to run a board is the automatic loop.** One command drives the whole cycle
+without you — wait the implementer and its CLI gate → precheck → wip commit → fan-out → wait the
+seats (one substitution per dead seat) → collect → mechanical adjudication → fix list back via
+`playmaker continue --after` → delta round — to green or a stop:
+
+```bash
+pm-review --auto <wp-label> <base-ref> --impl-id <impl-session> --paths "<wp pathspecs>" --gate "<cmd>" --impl-agent <lane>
+```
+
+It runs in the foreground, so background it and read the final summary it prints (every step is
+in `.playmaker/reviews/<wp>/auto.log`): exit 0 = green, 3 = stopped with blocking findings left
+or an incomplete board — escalate per policy, 4 = the implementer failed — reroute. It writes a
+`wip: <wp> rN (auto)` commit per round so round N+1 reviews the delta only; squash before
+landing. Your part is what the loop refuses to do: arbitrate disagreements, rule on the spec,
+own the escalation seat (details and flags: `references/review-board.md`, «Automatic loop»).
+
 Non-negotiables:
 
 - **The implementer never reviews its own WP**, and reviewers do not see each other's verdicts.
