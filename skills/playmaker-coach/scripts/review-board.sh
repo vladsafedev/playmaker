@@ -47,7 +47,7 @@
 # (PM_REVIEW_ALLOW_SHORT=1 overrides, and board.md must say why).
 # A `precheck` risk-class keyword holds the cheap lanes for the precheck — an ordered preference
 # list, first lane to answer wins, e.g.
-#   precheck opencode opencode/glm-5.3-flash-free       precheck
+#   precheck opencode zai-coding-plan/glm-5.3-flash     precheck
 #   precheck agy      gemini-3.8-flash-low              precheck
 # Model names must be copied from `agy models` / `opencode models`, never typed from memory.
 #

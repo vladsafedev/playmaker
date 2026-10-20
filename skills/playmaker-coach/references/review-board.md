@@ -146,7 +146,7 @@ Roster: the `precheck` risk-class keyword in `reviewers.conf` — an ordered pre
 cheap lanes maintained by the coach (the script never hard-codes models); the first lane to
 answer wins:
 
-    precheck opencode opencode/glm-5.3-flash-free       precheck
+    precheck opencode zai-coding-plan/glm-5.3-flash     precheck
     precheck agy      gemini-3.8-flash-low              precheck
 
 Behaviour and exit codes of a dispatch run:
