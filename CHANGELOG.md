@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.3] - 2026-10-20
+
+### Added
+
+- **`review-board.sh --auto` — the review loop runs itself.** It waits for the
+  implementer and its CLI gate, runs the precheck on the whole package, commits
+  a wip snapshot of the WP paths, dispatches the board on the delta, adjudicates
+  mechanically (evidence required; environmental and duplicate findings
+  dropped), sends the fix list through the thread queue and repeats until green
+  (exit 0), cycles exhausted (exit 3) or a hard failure (exit 4). `[limits]`
+  refusals wait for a lane slot; every step is logged to `auto.log`.
+- **`pm-review-decision`.** Three senior lanes review one decision or spec in
+  parallel and answer «what breaks» in a validated JSON each; the summary shows
+  agreement or split with the merged breaks. Roster keyword `decision`.
+
 ## [0.15.2] - 2026-10-20
 
 ### Added
