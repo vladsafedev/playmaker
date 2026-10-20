@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.2] - 2026-10-20
+
+### Added
+
+- **A precheck before every review board.** `review-board.sh` now sends the
+  WP's acceptance list and the diff to the first live `precheck` roster line
+  (cheap lanes on your own subscriptions) before any reviewer is dispatched.
+  The answer is validated against a strict JSON contract; a `fail` prints the
+  missing items as a ready fix list and exits 2 without spending a board, a
+  `pass` is recorded in `board.env`, and an unavailable lane never blocks the
+  pipeline. `--no-precheck`, `--precheck-only` and `--dry-run` control it.
+
 ## [0.15.1] - 2026-10-19
 
 ### Fixed
