@@ -81,6 +81,12 @@ mod_app = typer.Typer(
 )
 app.add_typer(mod_app, name="mod")
 
+sdk_app = typer.Typer(
+    help="Install the Claude Agent SDK the claude-api lane runs on.",
+    no_args_is_help=True,
+)
+app.add_typer(sdk_app, name="sdk")
+
 worktree_app = typer.Typer(help="Inspect and remove dispatch worktrees.", no_args_is_help=True)
 app.add_typer(worktree_app, name="worktree")
 queue_app = typer.Typer(help="Manage per-thread follow-up work.", no_args_is_help=True)
@@ -252,6 +258,27 @@ def mod_install(
     console.print("  New Claude Code sessions load it; in a running one, type /reload-plugins.")
 
 
+@sdk_app.command("install")
+def sdk_install() -> None:
+    """Install the pinned Claude Agent SDK into ~/.playmaker/sdk-runner (npm, once)."""
+    from playmaker.agents import claude_sdk
+
+    # soft_wrap: a path broken across lines does not paste.
+    console.print(
+        f"installing {claude_sdk.SDK_PACKAGE}@{claude_sdk.SDK_VERSION} "
+        f"into {claude_sdk.sdk_dir()} …",
+        soft_wrap=True,
+    )
+    try:
+        target, version = claude_sdk.install_sdk()
+    except RuntimeError as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]", soft_wrap=True)
+        raise typer.Exit(1) from exc
+    console.print(
+        f"[green]installed[/green] {claude_sdk.SDK_PACKAGE}@{version} in {target}", soft_wrap=True
+    )
+
+
 def _apply_effort_override(agent: str, effort: str | None) -> None:
     """Route `--effort` to a claude lane (claude, claude-api) for this run only.
 
@@ -279,9 +306,9 @@ def _apply_effort_override(agent: str, effort: str | None) -> None:
 def _preflight(agent: str, handler: object) -> None:
     """Refuse (exit 2) before any session row exists when the lane cannot start.
 
-    Only the claude lanes implement it today: a bare lane without its API key
-    refuses here with the fix spelled out, instead of spawning, failing on
-    claude's own auth error and leaving a failed row behind.
+    Only the claude lanes implement it today: a lane on an API key without its
+    key, or claude-api without Node or its Agent SDK, refuses here with the fix
+    spelled out, instead of spawning, failing and leaving a failed row behind.
     """
     check = getattr(handler, "preflight", None)
     if check is None:
@@ -2111,7 +2138,7 @@ def _render_provider(name: str, info: dict) -> None:
         "ollama": "bright_cyan",
     }.get(name, "white")
     display = {
-        "claude-api": "Claude API (claude --bare)",
+        "claude-api": "Claude API (Agent SDK)",
         "agy": "Antigravity (agy)",
         "zai": "Z.ai (GLM, via opencode)",
         "kimi": "Kimi Code",
@@ -2360,13 +2387,16 @@ permission_mode = "acceptEdits"
 # Only for prompts and directories you would run unattended.
 # yolo = true
 
-# The same CLI on an API key instead of the subscription. `claude --bare` reads
-# no OAuth login and no Keychain entry — auth is ANTHROPIC_API_KEY alone — so
-# this lane spends Console credits and never touches the claude lane's pool.
-# --bare also skips hooks, plugins, auto-memory and CLAUDE.md discovery: the
-# prompt carries its own context. Pass --model explicitly (fable|opus|sonnet|haiku).
-# The key never lives in this file: `key_source = "keychain"` reads the macOS
-# Keychain item added with
+# The same agent on an API key instead of the subscription, through the Claude
+# Agent SDK: a runner on Node calls the SDK's query() with ANTHROPIC_API_KEY as
+# the only credential, so this lane spends Console credits (the promo credit
+# included, which pays for the SDK and not for Claude Code) and never touches the
+# claude lane's pool. `binary` is Node 18.14+; the SDK itself is installed once
+# with `playmaker sdk install` into ~/.playmaker/sdk-runner. No settings files,
+# hooks, MCP servers, auto-memory or CLAUDE.md reach the worker: the prompt
+# carries its own context. Pass --model explicitly (fable|opus|sonnet|haiku).
+# max_turns caps the agent's turns per run. The key never lives in this file:
+# `key_source = "keychain"` reads the macOS Keychain item added with
 #   security add-generic-password -s playmaker-anthropic-api -a playmaker -w
 # and `key_source = "file"` reads ANTHROPIC_API_KEY=... from ~/.playmaker/secrets.env
 # (mode 600). `playmaker quotas` shows the lane's spend this cycle — the sum of
@@ -2375,10 +2405,10 @@ permission_mode = "acceptEdits"
 # reaches stop_at_usd. An API answer of "credit balance is too low" counts as a
 # quota refusal, so --fallback reroutes the work.
 # [agents.claude-api]
-# binary = "claude"
-# bare = true
+# binary = "node"
 # key_source = "keychain"
 # effort = "high"
+# max_turns = 50
 # credit_reset_day = 4
 # monthly_cap_usd = 200
 # stop_at_usd = 200

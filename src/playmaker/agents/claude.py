@@ -8,11 +8,12 @@ Empirically:
 - session file: ~/.claude/projects/<cwd-with-slashes-as-dashes>/<session-id>.jsonl
 - json result fields: session_id, result, total_cost_usd, duration_ms, usage
 
-One handler class serves two lanes: `claude` (the sibling CLI on the Max
-subscription, login in the macOS Keychain) and `claude-api` (`claude --bare`,
-authenticated only through ANTHROPIC_API_KEY, which spends Console credits and
-never touches the subscription). The lane key names the `[agents.<key>]`
-section every setting is read from.
+This handler is the `claude` lane (the sibling CLI on the Max subscription,
+login in the macOS Keychain); `[agents.claude] bare = true` turns it into
+`claude --bare`, authenticated only through ANTHROPIC_API_KEY. The
+`claude-api` lane subclasses it in claude_sdk.py to run the same agent through
+the Claude Agent SDK. The lane key names the `[agents.<key>]` section every
+setting is read from.
 """
 
 from __future__ import annotations
@@ -236,6 +237,10 @@ class ClaudeHandler:
     overrides it. A bare lane needs its API key before it can start.
     """
 
+    # `claude -p` takes the prompt as its last argument; a subclass whose
+    # executable reads it from stdin sets this instead.
+    prompt_on_stdin = False
+
     def __init__(self, agent_key: str = "claude", *, bare: bool = False) -> None:
         self.name = agent_key
         self._bare_default = bare
@@ -305,7 +310,8 @@ class ClaudeHandler:
         if model:
             cmd += ["--model", model]
         cmd += effort_args(self.name)
-        cmd.append(full_prompt)
+        if not self.prompt_on_stdin:
+            cmd.append(full_prompt)
         env = self._spawn_env()
         import time as _time
         t0 = _time.monotonic()
@@ -313,11 +319,18 @@ class ClaudeHandler:
             cmd,
             cwd=str(cwd),
             env=env,
+            stdin=subprocess.PIPE if self.prompt_on_stdin else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,  # line-buffered
         )
+        if self.prompt_on_stdin and proc.stdin is not None:
+            try:
+                proc.stdin.write(full_prompt)
+                proc.stdin.close()
+            except BrokenPipeError:
+                pass  # the child exited before reading; its stderr says why
 
         agent_session_id: str | None = None
         last_text = ""
@@ -417,9 +430,17 @@ class ClaudeHandler:
         if model:
             cmd += ["--model", model]
         cmd += effort_args(self.name)
-        cmd.append(full_prompt)
+        if not self.prompt_on_stdin:
+            cmd.append(full_prompt)
         env = self._spawn_env()
-        proc = subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True)
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            env=env,
+            input=full_prompt if self.prompt_on_stdin else None,
+            capture_output=True,
+            text=True,
+        )
         if proc.returncode != 0:
             raise RuntimeError(
                 f"{self.name} resume failed (exit {proc.returncode}): "

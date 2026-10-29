@@ -410,30 +410,46 @@ ignored on every other lane so scripts can pass it uniformly, and when it is
 unset everywhere no `--effort` flag is sent at all — Claude Code's own default
 applies.
 
-**claude-api** is the same CLI on an API key. `claude --bare` reads no OAuth
-login and no Keychain entry — auth is `ANTHROPIC_API_KEY` alone — so this lane
-spends Console credits and leaves the subscription pool the `claude` lane runs
-on untouched. The key never lives in `config.toml`: `key_source = "keychain"`
-reads the macOS Keychain item added with
-`security add-generic-password -s playmaker-anthropic-api -a playmaker -w`, and
-`key_source = "file"` reads `ANTHROPIC_API_KEY=...` from
+**claude-api** is the same agent on an API key, through the
+[Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk):
+a runner shipped in the package (`playmaker/runners/claude_sdk.mjs`) calls the
+SDK's `query()` on Node and prints the stream-json `claude -p` prints, so
+`cost_usd`, `session_id`, `get`, `thread` and `continue` work as on the `claude`
+lane. Auth is `ANTHROPIC_API_KEY` alone — the runner stops a run whose SDK
+reports any other credential — so this lane spends Console credits (the promo
+credit included: it pays for Agent SDK traffic and not for Claude Code's) and
+leaves the subscription pool the `claude` lane runs on untouched. The key never
+lives in `config.toml`: `key_source = "keychain"` reads the macOS Keychain item
+added with `security add-generic-password -s playmaker-anthropic-api -a
+playmaker -w`, and `key_source = "file"` reads `ANTHROPIC_API_KEY=...` from
 `~/.playmaker/secrets.env` (mode 600). The key goes into the worker's
-environment only — never on the command line, never in a log — and a lane
-without its key refuses the dispatch (exit 2) before any session row exists.
+environment only — never on the command line, never in a log — and every other
+`CLAUDE*` / `ANTHROPIC_*` variable the launching shell carries is dropped.
 
-`--bare` also skips hooks, plugins, auto-memory and `CLAUDE.md` discovery, so
-the prompt carries its own context; pass `--model` explicitly (`fable`, `opus`,
-`sonnet`, `haiku`). Console exposes no usage endpoint for a key, so `playmaker
-quotas` keeps a local counter instead — the sum of `cost_usd` over the lane's
-sessions since `credit_reset_day` — marks the lane `low` when less than
-`warn_below_usd` is left, and `dispatch` / `continue` refuse (exit 3, `--force`
-overrides) once it reaches `stop_at_usd`. An API answer of «credit balance is
-too low» counts as a quota refusal, so `--fallback` reroutes the work:
+The SDK is not in the wheel. Install it once, pinned, with npm from the lane's
+own Node (`binary`, Node 18.14+, default `node` on PATH):
+
+```bash
+playmaker sdk install   # → ~/.playmaker/sdk-runner
+```
+
+A lane without Node, without the pinned SDK or without its key refuses the
+dispatch (exit 2) before any session row exists, with the fix spelled out. No
+settings files, hooks, MCP servers, auto-memory or `CLAUDE.md` reach the
+worker, so the prompt carries its own context; pass `--model` explicitly
+(`fable`, `opus`, `sonnet`, `haiku`), and `max_turns` caps a run. Console
+exposes no usage endpoint for a key, so `playmaker quotas` keeps a local
+counter instead — the sum of `cost_usd` over the lane's sessions since
+`credit_reset_day` — marks the lane `low` when less than `warn_below_usd` is
+left, and `dispatch` / `continue` refuse (exit 3, `--force` overrides) once it
+reaches `stop_at_usd`. An API answer of «credit balance is too low» counts as a
+quota refusal, so `--fallback` reroutes the work:
 
 ```toml
 [agents.claude-api]
-bare = true
+binary = "node"
 key_source = "keychain"
+max_turns = 50
 credit_reset_day = 4
 monthly_cap_usd = 200
 stop_at_usd = 200

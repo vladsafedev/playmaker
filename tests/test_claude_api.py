@@ -1,12 +1,14 @@
-"""The claude-api lane: `claude --bare` on an API key, and its local credit counter."""
+"""The claude-api lane: the Claude Agent SDK on an API key, and its local credit counter."""
 
 from __future__ import annotations
 
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import textwrap
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,11 +19,13 @@ from typer.testing import CliRunner
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import playmaker.config as config
+import playmaker.events as events
 import playmaker.quotas as quotas
 import playmaker.registry as registry
 import playmaker.state as state
 from playmaker import cli
 from playmaker.agents import claude as claude_mod
+from playmaker.agents import claude_sdk
 from playmaker.agents.base import DispatchResult
 from playmaker.agents.claude import (
     API_KEY_ENV_VAR,
@@ -32,6 +36,7 @@ from playmaker.agents.claude import (
     load_api_key,
     permission_args,
 )
+from playmaker.agents.claude_sdk import RUNNER_PATH, SDK_PACKAGE, SDK_VERSION, ClaudeSdkHandler
 from playmaker.config import agent_binary
 
 runner = CliRunner()
@@ -81,8 +86,21 @@ class _FakeStream:
         return "".join(self._lines)
 
 
+class _FakeStdin:
+    def __init__(self) -> None:
+        self.written = ""
+        self.closed = False
+
+    def write(self, text: str) -> int:
+        self.written += text
+        return len(text)
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class _FakePopen:
-    """Stand-in for subprocess.Popen that records the command and its keyword arguments."""
+    """Stand-in for subprocess.Popen that records the command, its kwargs and its stdin."""
 
     def __init__(self, lines: list[str], returncode: int = 0, stderr: str = "") -> None:
         self._lines = lines
@@ -90,12 +108,14 @@ class _FakePopen:
         self._stderr = stderr
         self.cmd: list[str] = []
         self.kwargs: dict = {}
+        self.stdin: _FakeStdin | None = None
         self.stdout = None
         self.stderr = None
 
     def __call__(self, cmd, **kwargs):
         self.cmd = cmd
         self.kwargs = kwargs
+        self.stdin = _FakeStdin() if kwargs.get("stdin") is not None else None
         self.stdout = _FakeStream(self._lines)
         self.stderr = _FakeStream([self._stderr])
         return self
@@ -146,27 +166,48 @@ def keychain(monkeypatch):
 
 def _with_key(monkeypatch) -> None:
     monkeypatch.setattr(claude_mod, "load_api_key", lambda agent: KEY)
+    monkeypatch.setattr(claude_sdk, "load_api_key", lambda agent: KEY)
+
+
+def _install_fake_sdk(home: Path, version: str = SDK_VERSION) -> Path:
+    """An sdk-runner directory holding only the SDK's package.json at `version`."""
+    package = home / "sdk-runner" / "node_modules" / SDK_PACKAGE
+    package.mkdir(parents=True, exist_ok=True)
+    (package / "package.json").write_text(
+        json.dumps({"name": SDK_PACKAGE, "version": version}), encoding="utf-8"
+    )
+    return home / "sdk-runner"
+
+
+@pytest.fixture
+def sdk_ready(db, monkeypatch) -> Path:
+    """Node 24 on PATH and the pinned SDK in the disposable home; returns the SDK dir."""
+    monkeypatch.setattr(claude_sdk.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(claude_sdk, "node_version", lambda executable: (24, 15, 0))
+    return _install_fake_sdk(db)
 
 
 # ---- the lane itself --------------------------------------------------------
 
 
-def test_registry_has_claude_api_as_a_bare_claude_lane(configured) -> None:
+def test_registry_has_claude_api_as_the_sdk_claude_lane(configured) -> None:
     configured({})
     handler = registry.get_handler("claude-api")
 
-    assert isinstance(handler, ClaudeHandler)
+    assert isinstance(handler, ClaudeSdkHandler)
+    assert isinstance(handler, ClaudeHandler)  # parsing, resume and --effort are shared
     assert handler.name == "claude-api"
-    assert handler.bare
-    assert not registry.get_handler("claude").bare
+    assert handler.prompt_on_stdin
+    assert not handler.bare
+    assert not registry.get_handler("claude").prompt_on_stdin
     assert registry.claude_lanes() == ("claude", "claude-api")
 
 
-def test_an_unconfigured_claude_api_lane_runs_the_claude_binary(configured) -> None:
-    # One CLI, two lanes: the lane name is not an executable.
+def test_an_unconfigured_claude_api_lane_runs_node(configured) -> None:
+    # The lane name is not an executable: the runner runs on Node.
     configured({})
 
-    assert agent_binary("claude-api") == "claude"
+    assert agent_binary("claude-api") == "node"
     assert agent_binary("claude") == "claude"
 
 
@@ -200,27 +241,106 @@ def test_bare_in_config_overrides_the_lane_default(configured) -> None:
     assert not ClaudeHandler("claude-api", bare=True).bare
 
 
+def test_a_leftover_bare_setting_no_longer_applies_to_the_sdk_lane(configured) -> None:
+    # A config.toml written for the `claude --bare` lane still says `bare = true`.
+    configured({"agents": {"claude-api": {"bare": True}}})
+
+    assert not ClaudeSdkHandler().bare
+
+
 # ---- command shape and environment ------------------------------------------
 
 
-def test_dispatch_runs_claude_bare_with_the_key_in_the_environment_only(
-    configured, monkeypatch, tmp_path
+def test_dispatch_runs_the_sdk_runner_with_the_prompt_on_stdin(
+    db, configured, monkeypatch, tmp_path
 ) -> None:
-    configured({})
+    configured({"agents": {"claude-api": {"effort": "high", "allowed_tools": ["Read", "Edit"]}}})
     _with_key(monkeypatch)
     fake = _FakePopen(_success_lines())
     monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
 
-    result = ClaudeHandler("claude-api", bare=True).dispatch(
-        prompt="p", cwd=tmp_path, model="haiku"
-    )
+    result = ClaudeSdkHandler().dispatch(prompt="do the thing", cwd=tmp_path, model="haiku")
 
-    assert fake.cmd[:3] == ["claude", "-p", "--bare"]
-    assert fake.cmd[fake.cmd.index("--model") + 1] == "haiku"
-    assert fake.kwargs["env"][API_KEY_ENV_VAR] == KEY
+    assert fake.cmd[:4] == ["node", str(RUNNER_PATH), "--sdk-dir", str(db / "sdk-runner")]
+    assert fake.cmd[4:] == [
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--permission-mode",
+        "acceptEdits",
+        "--allowedTools",
+        "Read,Edit",
+        "--model",
+        "haiku",
+        "--effort",
+        "high",
+    ]
+    assert "do the thing" not in fake.cmd  # the prompt travels on stdin
+    assert fake.stdin is not None
+    assert (fake.stdin.written, fake.stdin.closed) == ("do the thing", True)
+    assert fake.kwargs["cwd"] == str(tmp_path)
+    assert result.agent_session_id == "sess-api"
+    assert result.cost_usd == 0.0123
+
+
+def test_the_worker_gets_the_key_and_none_of_the_launching_sessions_variables(
+    configured, monkeypatch, tmp_path
+) -> None:
+    # A dispatch from inside Claude Code inherits that session's entrypoint, auth
+    # hand-off and base URL; the SDK keeps an inherited entrypoint as is.
+    configured({})
+    _with_key(monkeypatch)
+    inherited = {
+        "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+        "CLAUDE_CODE_OAUTH_TOKEN": "oauth-token",
+        "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH": "1",
+        "CLAUDE_AGENT_SDK_VERSION": "0.3.309",
+        "CLAUDECODE": "1",
+        "CLAUDE_CONFIG_DIR": "/elsewhere",
+        "ANTHROPIC_BASE_URL": "https://proxy.example",
+        "ANTHROPIC_AUTH_TOKEN": "bearer",
+    }
+    for name, value in inherited.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("PLAYMAKER_TEST_KEEP", "kept")
+    fake = _FakePopen(_success_lines())
+    monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
+
+    ClaudeSdkHandler().dispatch(prompt="p", cwd=tmp_path, model="haiku")
+
+    env = fake.kwargs["env"]
+    assert env[API_KEY_ENV_VAR] == KEY
+    assert env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+    assert env["CLAUDE_AGENT_SDK_CLIENT_APP"].startswith("playmaker/")
+    assert not set(inherited) & set(env)
+    assert env["PLAYMAKER_TEST_KEEP"] == "kept"
+    assert env["PATH"] == os.environ["PATH"]
     assert KEY not in " ".join(fake.cmd)
     assert API_KEY_ENV_VAR not in os.environ  # the parent process is untouched
-    assert result.cost_usd == 0.0123
+    assert os.environ["CLAUDE_CODE_ENTRYPOINT"] == "claude-desktop"
+
+
+def test_max_turns_reaches_the_runner(db, configured, monkeypatch, tmp_path) -> None:
+    configured({"agents": {"claude-api": {"max_turns": 40}}})
+    _with_key(monkeypatch)
+    fake = _FakePopen(_success_lines())
+    monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
+
+    ClaudeSdkHandler().dispatch(prompt="p", cwd=tmp_path, model="haiku")
+
+    assert fake.cmd[4:6] == ["--max-turns", "40"]
+
+
+def test_yolo_reaches_the_runner_as_the_cli_flag(db, configured, monkeypatch, tmp_path) -> None:
+    configured({"agents": {"claude-api": {"yolo": True}}})
+    _with_key(monkeypatch)
+    fake = _FakePopen(_success_lines())
+    monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
+
+    ClaudeSdkHandler().dispatch(prompt="p", cwd=tmp_path, model="haiku")
+
+    assert "--dangerously-skip-permissions" in fake.cmd
+    assert "--permission-mode" not in fake.cmd
 
 
 def test_the_subscription_lane_sends_no_bare_flag_and_inherits_its_environment(
@@ -236,8 +356,8 @@ def test_the_subscription_lane_sends_no_bare_flag_and_inherits_its_environment(
     assert fake.kwargs["env"] is None
 
 
-def test_resume_runs_claude_bare_with_the_key_in_the_environment(
-    configured, monkeypatch, tmp_path
+def test_resume_runs_the_runner_with_resume_and_the_prompt_on_stdin(
+    db, configured, monkeypatch, tmp_path
 ) -> None:
     configured({})
     _with_key(monkeypatch)
@@ -246,19 +366,45 @@ def test_resume_runs_claude_bare_with_the_key_in_the_environment(
     def fake_run(cmd, **kwargs):
         recorded.append((cmd, kwargs))
         return _Completed(
-            stdout=json.dumps({"session_id": "sess-api", "result": "ok", "duration_ms": 10})
+            stdout=json.dumps(
+                {
+                    "type": "result",
+                    "session_id": "sess-api",
+                    "result": "ok",
+                    "total_cost_usd": 0.004,
+                    "duration_ms": 10,
+                }
+            )
         )
 
     monkeypatch.setattr("playmaker.agents.claude.subprocess.run", fake_run)
 
-    ClaudeHandler("claude-api", bare=True).resume(
-        prompt="more", cwd=tmp_path, agent_session_id="sess-api"
+    result = ClaudeSdkHandler().resume(
+        prompt="more", cwd=tmp_path, agent_session_id="sess-api", model="haiku"
     )
 
     ((cmd, kwargs),) = recorded
-    assert cmd[:5] == ["claude", "-p", "--bare", "--resume", "sess-api"]
+    assert cmd[:2] == ["node", str(RUNNER_PATH)]
+    assert cmd[4:8] == ["--resume", "sess-api", "--output-format", "json"]
+    assert "more" not in cmd
+    assert kwargs["input"] == "more"
     assert kwargs["env"][API_KEY_ENV_VAR] == KEY
     assert KEY not in " ".join(cmd)
+    assert (result.agent_session_id, result.cost_usd) == ("sess-api", 0.004)
+
+
+def test_the_subscription_lane_still_takes_the_prompt_on_the_command_line(
+    configured, monkeypatch, tmp_path
+) -> None:
+    configured({})
+    fake = _FakePopen(_success_lines())
+    monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
+
+    ClaudeHandler().dispatch(prompt="p", cwd=tmp_path)
+
+    assert fake.cmd[:2] == ["claude", "-p"]
+    assert fake.cmd[-1] == "p"
+    assert fake.kwargs["stdin"] is None
 
 
 def test_a_missing_key_refuses_before_any_process_starts(
@@ -271,7 +417,7 @@ def test_a_missing_key_refuses_before_any_process_starts(
     monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
 
     with pytest.raises(RuntimeError, match=re.escape(KEYCHAIN_ADD_COMMAND)):
-        ClaudeHandler("claude-api", bare=True).dispatch(prompt="p", cwd=tmp_path)
+        ClaudeSdkHandler().dispatch(prompt="p", cwd=tmp_path)
 
     assert fake.cmd == []
 
@@ -285,9 +431,116 @@ def test_a_failure_message_names_the_lane_and_carries_no_key(
     monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
 
     with pytest.raises(RuntimeError, match="claude-api failed") as info:
-        ClaudeHandler("claude-api", bare=True).dispatch(prompt="p", cwd=tmp_path)
+        ClaudeSdkHandler().dispatch(prompt="p", cwd=tmp_path)
 
     assert KEY not in str(info.value)
+
+
+def test_an_empty_balance_reads_as_a_quota_refusal(configured, monkeypatch, tmp_path) -> None:
+    configured({})
+    _with_key(monkeypatch)
+    error = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "result": "Credit balance is too low",
+            "session_id": "sess-api",
+            "total_cost_usd": 0,
+        }
+    )
+    fake = _FakePopen(
+        [_success_lines()[0], error + "\n"], returncode=1, stderr="Credit balance is too low\n"
+    )
+    monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
+
+    with pytest.raises(RuntimeError) as info:
+        ClaudeSdkHandler().dispatch(prompt="p", cwd=tmp_path, model="haiku")
+
+    assert str(info.value) == "claude-api failed (exit 1): Credit balance is too low"
+    assert events.classify_failure(str(info.value)) == "quota"
+
+
+# ---- preflight: Node, the SDK, max_turns ------------------------------------
+
+
+def test_preflight_passes_with_node_the_pinned_sdk_and_a_key(
+    sdk_ready, configured, monkeypatch
+) -> None:
+    configured({})
+    _with_key(monkeypatch)
+
+    ClaudeSdkHandler().preflight()
+
+
+def test_preflight_without_node_names_the_binary_setting(db, configured, monkeypatch) -> None:
+    configured({})
+    monkeypatch.setattr(claude_sdk.shutil, "which", lambda name: None)
+
+    with pytest.raises(RuntimeError, match=r"Node not found \('node'\)") as info:
+        ClaudeSdkHandler().preflight()
+
+    assert "[agents.claude-api] binary" in str(info.value)
+
+
+def test_preflight_refuses_a_binary_that_is_not_node(db, configured, monkeypatch) -> None:
+    # A config.toml written for the `claude --bare` lane still says binary = "claude".
+    configured({"agents": {"claude-api": {"binary": "claude"}}})
+    monkeypatch.setattr(claude_sdk.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(claude_sdk, "node_version", lambda executable: None)
+
+    with pytest.raises(RuntimeError, match="'claude' is not Node") as info:
+        ClaudeSdkHandler().preflight()
+
+    assert "no longer runs `claude --bare`" in str(info.value)
+
+
+def test_preflight_refuses_a_node_older_than_the_sdk_needs(db, configured, monkeypatch) -> None:
+    configured({})
+    monkeypatch.setattr(claude_sdk.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(claude_sdk, "node_version", lambda executable: (16, 13, 0))
+
+    with pytest.raises(RuntimeError, match=r"Node 16\.13\.0 is too old .*\(needs 18\.14\+\)"):
+        ClaudeSdkHandler().preflight()
+
+
+def test_preflight_without_the_sdk_says_how_to_install_it(db, configured, monkeypatch) -> None:
+    configured({})
+    monkeypatch.setattr(claude_sdk.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(claude_sdk, "node_version", lambda executable: (24, 15, 0))
+
+    with pytest.raises(RuntimeError, match="not installed in .*sdk-runner — run: playmaker sdk"):
+        ClaudeSdkHandler().preflight()
+
+
+def test_preflight_refuses_an_sdk_other_than_the_pinned_one(db, configured, monkeypatch) -> None:
+    configured({})
+    monkeypatch.setattr(claude_sdk.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(claude_sdk, "node_version", lambda executable: (24, 15, 0))
+    _install_fake_sdk(db, version="0.3.1")
+
+    with pytest.raises(RuntimeError, match=f"holds {SDK_PACKAGE}@0.3.1, .* pins {SDK_VERSION}"):
+        ClaudeSdkHandler().preflight()
+
+
+@pytest.mark.parametrize("value", [0, -3, "40", True])
+def test_preflight_refuses_a_bad_max_turns(sdk_ready, configured, value) -> None:
+    configured({"agents": {"claude-api": {"max_turns": value}}})
+
+    with pytest.raises(RuntimeError, match=r"\[agents.claude-api\] max_turns"):
+        ClaudeSdkHandler().preflight()
+
+
+def test_node_version_reads_vxyz_and_rejects_anything_else(monkeypatch) -> None:
+    replies = {"node": "v24.15.0\n", "claude": "2.1.312 (Claude Code)\n"}
+
+    def fake_run(cmd, **kwargs):
+        return _Completed(stdout=replies[cmd[0]])
+
+    monkeypatch.setattr(claude_sdk.subprocess, "run", fake_run)
+
+    assert claude_sdk.node_version("node") == (24, 15, 0)
+    assert claude_sdk.node_version("claude") is None
 
 
 # ---- key sources ------------------------------------------------------------
@@ -374,10 +627,9 @@ def _claude_on_path(monkeypatch) -> None:
 
 
 def test_dispatch_without_a_key_exits_2_before_any_session_row(
-    db, configured, monkeypatch, tmp_path
+    sdk_ready, configured, monkeypatch, tmp_path
 ) -> None:
     configured({})
-    _claude_on_path(monkeypatch)
     monkeypatch.setattr(claude_mod.sys, "platform", "darwin")
     monkeypatch.setattr(claude_mod, "_keychain_api_key", lambda: None)
 
@@ -391,11 +643,27 @@ def test_dispatch_without_a_key_exits_2_before_any_session_row(
     assert state.list_sessions() == []
 
 
-def test_a_sync_dispatch_records_the_cost_and_never_prints_the_key(
+def test_dispatch_without_the_sdk_exits_2_before_any_session_row(
     db, configured, monkeypatch, tmp_path
 ) -> None:
     configured({})
     _claude_on_path(monkeypatch)
+    monkeypatch.setattr(claude_sdk, "node_version", lambda executable: (24, 15, 0))
+    _with_key(monkeypatch)
+
+    result = runner.invoke(
+        cli.app, ["dispatch", "claude-api", "--prompt", "p", "--cwd", str(tmp_path)]
+    )
+
+    assert result.exit_code == 2, result.output
+    assert "run: playmaker sdk install" in result.output
+    assert state.list_sessions() == []
+
+
+def test_a_sync_dispatch_records_the_cost_and_never_prints_the_key(
+    sdk_ready, configured, monkeypatch, tmp_path
+) -> None:
+    configured({})
     _with_key(monkeypatch)
     monkeypatch.setattr(cli.notify, "notify", lambda *args, **kwargs: None)
     fake = _FakePopen(_success_lines(cost=0.0123))
@@ -423,11 +691,105 @@ def test_a_sync_dispatch_records_the_cost_and_never_prints_the_key(
 
     assert result.exit_code == 0, result.output
     assert KEY not in result.output
-    assert "--bare" in fake.cmd
+    assert fake.cmd[1] == str(RUNNER_PATH)
+    assert "--bare" not in fake.cmd
+    assert fake.stdin is not None and fake.stdin.written == "answer in one word: ok"
     assert fake.kwargs["env"][API_KEY_ENV_VAR] == KEY
     (row,) = state.list_sessions()
     assert row["agent"] == "claude-api"
     assert row["cost_usd"] == 0.0123
+
+
+def _fake_node(path: Path, body: str) -> Path:
+    """An executable standing in for `node`: `--version` says v24, anything else runs `body`."""
+    path.write_text(
+        f"#!{sys.executable}\n"
+        + textwrap.dedent(
+            """\
+            import json, sys
+            if sys.argv[1:] == ["--version"]:
+                print("v24.15.0")
+                sys.exit(0)
+            prompt = sys.stdin.read()
+            """
+        )
+        + textwrap.dedent(body),
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+    return path
+
+
+def test_an_empty_balance_through_a_stand_in_runner_fails_as_quota(
+    db, configured, monkeypatch, tmp_path
+) -> None:
+    # End to end through real processes: dispatch → preflight → the "node" the
+    # config names → the failure classifier. The stand-in prints what the runner
+    # prints when Console answers «Credit balance is too low».
+    node = _fake_node(
+        tmp_path / "node",
+        """\
+        print(json.dumps({"type": "system", "subtype": "init", "session_id": "sess-api",
+                          "apiKeySource": "ANTHROPIC_API_KEY"}), flush=True)
+        print(json.dumps({"type": "result", "subtype": "success", "is_error": True,
+                          "result": "Credit balance is too low", "session_id": "sess-api",
+                          "total_cost_usd": 0}), flush=True)
+        sys.stderr.write("Credit balance is too low\\n")
+        sys.exit(1)
+        """,
+    )
+    configured({"agents": {"claude-api": {"binary": str(node)}}})
+    _install_fake_sdk(db)
+    _with_key(monkeypatch)
+    monkeypatch.setattr(cli.notify, "notify", lambda *args, **kwargs: None)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    result = runner.invoke(
+        cli.app,
+        ["dispatch", "claude-api", "--model", "haiku", "--sync", "--cwd", str(repo),
+         "--prompt", "Reply with the single word OK"],
+    )
+
+    assert result.exit_code == 1, result.output
+    assert "Credit balance is too low" in result.output
+    assert KEY not in result.output
+    (row,) = state.list_sessions()
+    assert (row["agent"], row["status"], row["fail_reason"]) == ("claude-api", "failed", "quota")
+    assert row["agent_session_id"] == "sess-api"
+
+
+def test_a_successful_stand_in_runner_run_is_done_with_its_cost(
+    db, configured, monkeypatch, tmp_path
+) -> None:
+    node = _fake_node(
+        tmp_path / "node",
+        """\
+        assert "--sdk-dir" in sys.argv and "--model" in sys.argv, sys.argv
+        print(json.dumps({"type": "system", "subtype": "init", "session_id": "sess-ok",
+                          "apiKeySource": "ANTHROPIC_API_KEY"}), flush=True)
+        print(json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                          "result": prompt.upper(), "session_id": "sess-ok",
+                          "total_cost_usd": 0.0081, "duration_ms": 1200, "num_turns": 1}))
+        """,
+    )
+    configured({"agents": {"claude-api": {"binary": str(node)}}})
+    _install_fake_sdk(db)
+    _with_key(monkeypatch)
+    monkeypatch.setattr(cli.notify, "notify", lambda *args, **kwargs: None)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    result = runner.invoke(
+        cli.app,
+        ["dispatch", "claude-api", "--model", "haiku", "--sync", "--read-only",
+         "--cwd", str(repo), "--prompt", "ok"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "OK" in result.output
+    (row,) = state.list_sessions()
+    assert (row["status"], row["cost_usd"], row["duration_seconds"]) == ("done", 0.0081, 1.2)
 
 
 def test_effort_is_forwarded_to_the_api_lane(capsys) -> None:
@@ -702,3 +1064,269 @@ def test_other_lanes_without_a_stop_line_are_untouched(db, configured, quiet) ->
     )
 
     assert result.exit_code == 0, result.output
+
+
+# ---- the runner itself: real Node, a stand-in SDK ---------------------------
+
+NODE = shutil.which("node")
+
+
+def _node_is_usable() -> bool:
+    version = claude_sdk.node_version(NODE) if NODE else None
+    return version is not None and version[:2] >= claude_sdk.MIN_NODE
+
+
+needs_node = pytest.mark.skipif(not _node_is_usable(), reason="Node 18.14+ is not on PATH")
+
+# Yields what query() yields, shaped by FAKE_API_KEY_SOURCE and FAKE_RESULT, and
+# echoes the prompt and the options it was given in the assistant message.
+_STUB_SDK = """\
+export async function* query({ prompt, options }) {
+  yield { type: "system", subtype: "init", session_id: "sess-stub",
+          apiKeySource: process.env.FAKE_API_KEY_SOURCE ?? "ANTHROPIC_API_KEY" };
+  const echo = Object.fromEntries(Object.entries(options).filter(
+    ([, value]) => typeof value !== "function" && !(value instanceof AbortController)));
+  const text = JSON.stringify({ prompt, options: echo });
+  yield { type: "assistant", session_id: "sess-stub",
+          message: { content: [{ type: "text", text }] } };
+  if (process.env.FAKE_RESULT === "credit") {
+    yield { type: "result", subtype: "success", is_error: true, session_id: "sess-stub",
+            result: "Credit balance is too low", total_cost_usd: 0, num_turns: 1, duration_ms: 5 };
+    throw new Error("Claude Code returned an error result: Credit balance is too low");
+  }
+  yield { type: "result", subtype: "success", is_error: false, session_id: "sess-stub",
+          result: "OK", total_cost_usd: 0.0081, num_turns: 1, duration_ms: 1200 };
+}
+"""
+
+
+def _install_stub_sdk(home: Path) -> Path:
+    sdk = _install_fake_sdk(home)
+    package = sdk / "node_modules" / SDK_PACKAGE
+    (package / "package.json").write_text(
+        json.dumps(
+            {
+                "name": SDK_PACKAGE,
+                "version": SDK_VERSION,
+                "type": "module",
+                "exports": {".": {"default": "./sdk.mjs"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (package / "sdk.mjs").write_text(_STUB_SDK, encoding="utf-8")
+    return sdk
+
+
+def _run_runner(sdk: Path, cwd: Path, *args: str, prompt: str = "say OK", **env: str):
+    return subprocess.run(
+        [NODE, str(RUNNER_PATH), "--sdk-dir", str(sdk), *args],
+        input=prompt,
+        cwd=cwd,
+        env={**os.environ, **env},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def _echo(lines: list[dict]) -> dict:
+    (assistant,) = [line for line in lines if line["type"] == "assistant"]
+    return json.loads(assistant["message"]["content"][0]["text"])
+
+
+@needs_node
+def test_the_runner_streams_every_message_and_maps_the_cli_flags(tmp_path) -> None:
+    sdk = _install_stub_sdk(tmp_path / "home")
+
+    proc = _run_runner(
+        sdk,
+        tmp_path,
+        "--output-format", "stream-json", "--verbose",
+        "--permission-mode", "acceptEdits",
+        "--allowedTools", "Read, Edit,Bash(pytest:*)",
+        "--disallowedTools", "WebFetch",
+        "--model", "haiku",
+        "--effort", "high",
+        "--max-turns", "7",
+        prompt="Reply with the single word OK",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    lines = [json.loads(line) for line in proc.stdout.splitlines()]
+    assert [line["type"] for line in lines] == ["system", "assistant", "result"]
+    assert lines[0]["session_id"] == "sess-stub"
+    assert lines[-1]["total_cost_usd"] == 0.0081
+    echo = _echo(lines)
+    assert echo["prompt"] == "Reply with the single word OK"
+    assert echo["options"] == {
+        "cwd": str(tmp_path.resolve()),
+        "systemPrompt": {"type": "preset", "preset": "claude_code"},
+        "tools": {"type": "preset", "preset": "claude_code"},
+        "settingSources": [],
+        "strictMcpConfig": True,
+        "model": "haiku",
+        "effort": "high",
+        "maxTurns": 7,
+        "permissionMode": "acceptEdits",
+        "allowedTools": ["Read", "Edit", "Bash(pytest:*)"],
+        "disallowedTools": ["WebFetch"],
+    }
+
+
+@needs_node
+def test_the_runner_in_json_mode_prints_the_result_alone_and_resumes(tmp_path) -> None:
+    sdk = _install_stub_sdk(tmp_path / "home")
+
+    proc = _run_runner(sdk, tmp_path, "--resume", "sess-old", "--output-format", "json")
+
+    assert proc.returncode == 0, proc.stderr
+    result = json.loads(proc.stdout)
+    assert (result["type"], result["result"], result["session_id"]) == (
+        "result",
+        "OK",
+        "sess-stub",
+    )
+
+
+@needs_node
+def test_the_runner_maps_yolo_to_bypass_permissions(tmp_path) -> None:
+    sdk = _install_stub_sdk(tmp_path / "home")
+
+    proc = _run_runner(sdk, tmp_path, "--dangerously-skip-permissions", "--resume", "sess-old")
+
+    assert proc.returncode == 0, proc.stderr
+    options = _echo([json.loads(line) for line in proc.stdout.splitlines()])["options"]
+    assert options["permissionMode"] == "bypassPermissions"
+    assert options["allowDangerouslySkipPermissions"] is True
+    assert options["resume"] == "sess-old"
+
+
+@needs_node
+def test_the_runner_exits_1_with_the_api_error_the_classifier_reads_as_quota(tmp_path) -> None:
+    sdk = _install_stub_sdk(tmp_path / "home")
+
+    proc = _run_runner(sdk, tmp_path, FAKE_RESULT="credit")
+
+    assert proc.returncode == 1
+    assert proc.stderr.strip() == "Credit balance is too low"
+    assert json.loads(proc.stdout.splitlines()[-1])["is_error"] is True
+    assert events.classify_failure(proc.stderr) == "quota"
+
+
+@needs_node
+def test_the_runner_stops_when_the_sdk_did_not_authenticate_with_the_key(tmp_path) -> None:
+    # "none" is a claude.ai OAuth login: the subscription the lane must never spend.
+    sdk = _install_stub_sdk(tmp_path / "home")
+
+    proc = _run_runner(sdk, tmp_path, FAKE_API_KEY_SOURCE="none")
+
+    assert proc.returncode == 1
+    assert 'authenticated with "none", not ANTHROPIC_API_KEY' in proc.stderr
+    assert [json.loads(line)["type"] for line in proc.stdout.splitlines()] == ["system"]
+
+
+@needs_node
+@pytest.mark.parametrize(
+    ("args", "prompt", "message"),
+    [
+        ([], "p", "is not installed in"),
+        (["--bogus"], "p", "Unknown option '--bogus'"),
+        (["--output-format", "text"], "p", "--output-format wants stream-json or json"),
+        (["--max-turns", "0"], "p", "--max-turns wants a positive integer"),
+        ([], "  ", "no prompt on stdin"),
+    ],
+)
+def test_the_runner_exits_2_on_a_usage_error(tmp_path, args, prompt, message) -> None:
+    sdk = tmp_path / "empty" if message == "is not installed in" else _install_stub_sdk(tmp_path)
+
+    proc = _run_runner(sdk, tmp_path, *args, prompt=prompt)
+
+    assert proc.returncode == 2
+    assert message in proc.stderr
+    assert proc.stdout == ""
+
+
+@needs_node
+def test_the_handler_drives_the_real_runner_end_to_end(
+    db, configured, monkeypatch, tmp_path
+) -> None:
+    configured({"agents": {"claude-api": {"binary": NODE}}})
+    _install_stub_sdk(db)
+    _with_key(monkeypatch)
+    started: list[str] = []
+
+    result = ClaudeSdkHandler().dispatch(
+        prompt="say OK", cwd=tmp_path, model="haiku", on_session_started=started.append
+    )
+
+    assert started == ["sess-stub"]
+    assert (result.agent_session_id, result.initial_output) == ("sess-stub", "OK")
+    assert (result.cost_usd, result.duration_seconds) == (0.0081, 1.2)
+
+
+# ---- playmaker sdk install --------------------------------------------------
+
+
+def _fake_npm_pair(tmp_path: Path, npm_body: str) -> Path:
+    """A fake `node` and, next to it, a fake `npm`; returns the node path."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    node = _fake_node(bindir / "node", "sys.exit(0)\n")
+    npm = bindir / "npm"
+    npm.write_text(f"#!{sys.executable}\n" + textwrap.dedent(npm_body), encoding="utf-8")
+    npm.chmod(0o755)
+    return node
+
+
+_GOOD_NPM = """\
+import json, os, pathlib, sys
+manifest = json.loads(pathlib.Path("package.json").read_text())
+((name, version),) = manifest["dependencies"].items()
+package = pathlib.Path("node_modules", name)
+package.mkdir(parents=True, exist_ok=True)
+(package / "package.json").write_text(json.dumps({"name": name, "version": version}))
+pathlib.Path("npm-call.json").write_text(
+    json.dumps({"argv": sys.argv[1:], "path": os.environ["PATH"]})
+)
+"""
+
+
+def test_sdk_install_pins_the_version_with_the_lanes_own_npm(db, configured, tmp_path) -> None:
+    node = _fake_npm_pair(tmp_path, _GOOD_NPM)
+    configured({"agents": {"claude-api": {"binary": str(node)}}})
+
+    target, version = claude_sdk.install_sdk()
+
+    assert (target, version) == (db / "sdk-runner", SDK_VERSION)
+    manifest = json.loads((target / "package.json").read_text())
+    assert manifest["dependencies"] == {SDK_PACKAGE: SDK_VERSION}
+    call = json.loads((target / "npm-call.json").read_text())
+    assert call["argv"] == ["install", "--no-audit", "--no-fund", "--omit=dev"]
+    assert call["path"].split(os.pathsep)[0] == str(node.parent)
+    assert claude_sdk.installed_sdk_version() == SDK_VERSION
+
+
+def test_the_sdk_install_command_reports_the_installed_version(db, configured, tmp_path) -> None:
+    node = _fake_npm_pair(tmp_path, _GOOD_NPM)
+    configured({"agents": {"claude-api": {"binary": str(node)}}})
+
+    result = runner.invoke(cli.app, ["sdk", "install"])
+
+    assert result.exit_code == 0, result.output
+    assert f"installed {SDK_PACKAGE}@{SDK_VERSION}" in result.output
+
+
+def test_a_failed_npm_install_exits_1_with_npms_last_lines(db, configured, tmp_path) -> None:
+    node = _fake_npm_pair(
+        tmp_path, 'import sys\nsys.stderr.write("npm error code E404\\n")\nsys.exit(1)\n'
+    )
+    configured({"agents": {"claude-api": {"binary": str(node)}}})
+
+    result = runner.invoke(cli.app, ["sdk", "install"])
+
+    assert result.exit_code == 1
+    assert "npm install" in result.output
+    assert "failed (exit 1)" in result.output
+    assert "E404" in result.output
+    assert claude_sdk.installed_sdk_version() is None

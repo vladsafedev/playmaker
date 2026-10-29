@@ -7,6 +7,7 @@ from pathlib import Path
 from playmaker.agents.agy import AgyHandler
 from playmaker.agents.base import AgentHandler
 from playmaker.agents.claude import ClaudeHandler
+from playmaker.agents.claude_sdk import ClaudeSdkHandler
 from playmaker.agents.codex import CodexHandler
 from playmaker.agents.gemini import GeminiHandler
 from playmaker.agents.kimi import KimiHandler
@@ -16,9 +17,10 @@ from playmaker.state import AGENTS_DIR
 
 _HANDLERS: dict[str, AgentHandler] = {
     "claude": ClaudeHandler(),
-    # Same CLI on an API key: `claude --bare` never reads the subscription login,
-    # so this lane spends Console credits and leaves the Max pool alone.
-    "claude-api": ClaudeHandler("claude-api", bare=True),
+    # The same agent on an API key, through the Claude Agent SDK: never the
+    # subscription login, so this lane spends Console credits and leaves the Max
+    # pool alone.
+    "claude-api": ClaudeSdkHandler(),
     "codex": CodexHandler(),
     "agy": AgyHandler(),
     "gemini": GeminiHandler(),
@@ -39,7 +41,7 @@ def all_handlers() -> dict[str, AgentHandler]:
 
 
 def claude_lanes() -> tuple[str, ...]:
-    """Lanes driven by the Claude Code CLI — the ones `--effort` is forwarded to."""
+    """Lanes running Claude Code's agent (CLI or Agent SDK): the ones `--effort` reaches."""
     return tuple(name for name, handler in _HANDLERS.items() if isinstance(handler, ClaudeHandler))
 
 

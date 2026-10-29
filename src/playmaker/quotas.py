@@ -2034,7 +2034,7 @@ def ollama_probe() -> dict:
 # ---- Claude API lane: local credit counter ----------------------------------
 
 
-# The `claude-api` lane spends a monthly Console credit through `claude --bare`.
+# The `claude-api` lane spends Console credit through the Claude Agent SDK.
 # Console exposes no usage endpoint for an API key, so the counter is local:
 # the sum of `cost_usd` (Claude Code's own total_cost_usd per session) over
 # the lane's sessions since the last reset day. It estimates the Console
