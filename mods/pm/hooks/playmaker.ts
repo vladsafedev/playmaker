@@ -122,15 +122,28 @@ export const parseQuotas = (json: string): Quotas | null => {
   for (const [lane, raw] of Object.entries(providers as Record<string, unknown>)) {
     if (typeof raw !== 'object' || raw === null) continue
     const p = raw as Record<string, unknown>
-    const windows: QuotaWindow[] = []
-    for (const w of Array.isArray(p.windows) ? p.windows : []) {
-      if (typeof w !== 'object' || w === null) continue
-      const win = w as Record<string, unknown>
-      const name = asString(win.name)
-      if (name === null) continue
-      windows.push({ name, pct: asNumber(win.pct_left), reset: asString(win.reset_relative) })
+    const readWindows = (list: unknown): QuotaWindow[] => {
+      const out: QuotaWindow[] = []
+      for (const w of Array.isArray(list) ? list : []) {
+        if (typeof w !== 'object' || w === null) continue
+        const win = w as Record<string, unknown>
+        const name = asString(win.name)
+        if (name === null) continue
+        out.push({ name, pct: asNumber(win.pct_left), reset: asString(win.reset_relative) })
+      }
+
+      return out
     }
-    lanes.push({ lane, status: asString(p.status) ?? 'unknown', tier: asString(p.tier), windows })
+    let windows = readWindows(p.windows)
+    let staleAt: string | null = null
+    // A failed probe: playmaker keeps the last good numbers beside the error.
+    const kept = p.last_good
+    if (windows.length === 0 && typeof kept === 'object' && kept !== null) {
+      const k = kept as Record<string, unknown>
+      windows = readWindows(k.windows)
+      if (windows.length > 0) staleAt = asString(k.at) ?? ''
+    }
+    lanes.push({ lane, status: asString(p.status) ?? 'unknown', tier: asString(p.tier), windows, staleAt })
   }
 
   return { fetchedAt: asString(top.fetched_at) ?? '', lanes }
@@ -191,6 +204,8 @@ export const paneLanes = (q: Quotas): Quota[] => {
   const claude = q.lanes.find(l => l.lane === 'claude')
   const platform = q.lanes.find(l => l.lane === 'claude-api')
   if (claude === undefined || platform === undefined) return orderedLanes(q)
+  // Credits come after Claude's own windows; a Claude probe that failed with
+  // nothing kept still shows them.
   const merged: Quota = { ...claude, windows: [...claude.windows, ...platform.windows] }
 
   return orderedLanes({ ...q, lanes: q.lanes.filter(l => l.lane !== 'claude-api') }).map(l =>
@@ -222,8 +237,10 @@ export const quotaLine = (q: Quotas): string =>
     .map(l => {
       const w = binding(l)
       if (w === null || w.pct === null) return `${l.lane} ${l.status === 'ok' ? 'ok' : '?'}`
+      // Kept numbers say how old they are, so nobody reads them as current.
+      const asOf = l.staleAt === null ? '' : `(as of ${clockTime(l.staleAt) || '?'})`
 
-      return `${l.lane} ${Math.round(w.pct)}${windowTag(w)}`
+      return `${l.lane} ${Math.round(w.pct)}${windowTag(w)}${asOf}`
     })
     .join(' · ')
 
@@ -581,6 +598,58 @@ export const loneBrief = (row: Row, nowMs: number, quotas: string | null): strin
 
   return lines.join('\n')
 }
+
+// What one Bash call of this session started: batch labels it named, label
+// prefixes of the review scripts' rounds, and worker ids its output printed.
+// The wake-up goes only to the session whose own call started the work.
+export type Claims = { batches: string[]; prefixes: string[]; sessions: string[] }
+
+const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g
+
+const unquote = (s: string): string => s.replace(/^["']|["']$/g, '')
+
+export const claimsOf = (command: string, output: string): Claims => {
+  const vars = new Map<string, string>()
+  for (const m of command.matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=("[^"]*"|'[^']*'|[^\s;&|)]+)/g)) {
+    if (m[1] !== undefined && m[2] !== undefined) vars.set(m[1], unquote(m[2]))
+  }
+  const resolve = (raw: string): string | null => {
+    const v = unquote(raw)
+    const ref = /^\$\{?([A-Za-z_]\w*)\}?$/.exec(v)
+    if (ref !== null) return vars.get(ref[1] ?? '') ?? null
+
+    return v.includes('$') ? null : v
+  }
+  const batches: string[] = []
+  const prefixes: string[] = []
+  for (const m of command.matchAll(/--batch(?:=|\s+)("[^"]*"|'[^']*'|\S+)/g)) {
+    const label = resolve(m[1] ?? '')
+    if (label) batches.push(label)
+  }
+  const board = /review-board\.sh\s+((?:-\S+\s+)*)([^\s-][^\s;&|]*)/.exec(command)
+  if (board !== null && board[2] !== undefined) {
+    const wp = resolve(board[2])
+    if (wp) prefixes.push(`review-${wp}-r`, `precheck-${wp}-r`)
+  }
+  const decision = /review-decision\.sh\s+([^\s-][^\s;&|]*)/.exec(command)
+  if (decision !== null && decision[1] !== undefined) {
+    const slug = resolve(decision[1])
+    if (slug) batches.push(`decision-${slug}`)
+  }
+  const sessions = [...new Set([...command.matchAll(UUID), ...output.matchAll(UUID)].map(m => m[0]))]
+
+  return { batches, prefixes, sessions }
+}
+
+export const mergeClaims = (a: Claims, b: Claims, cap = 200): Claims => ({
+  batches: [...new Set([...a.batches, ...b.batches])].slice(-cap),
+  prefixes: [...new Set([...a.prefixes, ...b.prefixes])].slice(-cap),
+  sessions: [...new Set([...a.sessions, ...b.sessions])].slice(-cap),
+})
+
+export const isClaimed = (c: Claims, batchId: string | null, memberIds: string[]): boolean =>
+  (batchId !== null && (c.batches.includes(batchId) || c.prefixes.some(p => batchId.startsWith(p)))) ||
+  memberIds.some(id => c.sessions.includes(id))
 
 // `playmaker dispatch <lane> …` anywhere in a Bash command; the first lane.
 export const dispatchLane = (command: string): string | null => {

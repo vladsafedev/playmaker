@@ -2040,6 +2040,38 @@ PROBES = {
 }
 
 
+def _last_good(previous: dict) -> dict | None:
+    """What a provider's previous snapshot knew from its last successful probe:
+    `{"at", "windows", "blocks"}`, or None when it never had windows.
+
+    A successful entry is itself the last good one; a failed one carries the
+    `last_good` an earlier failure already kept, so a run of failures never
+    loses the numbers."""
+    if previous.get("status") == "ok":
+        windows = previous.get("windows") or []
+        if not windows:
+            return None
+        return {
+            "at": previous.get("last_success"),
+            "windows": windows,
+            "blocks": previous.get("blocks") or [],
+        }
+    kept = previous.get("last_good")
+    return kept if isinstance(kept, dict) and kept.get("windows") else None
+
+
+def _aged(last_good: dict) -> dict:
+    """The kept windows with their «resets in» counted from now, not from the
+    probe that measured them; a reset already past reads as such."""
+    windows = []
+    for window in last_good.get("windows") or []:
+        window = dict(window)
+        if window.get("reset_at_iso"):
+            window["reset_relative"] = _format_relative(window["reset_at_iso"])
+        windows.append(window)
+    return {**last_good, "windows": windows}
+
+
 def refresh_all(quotas_path: Path) -> dict:
     previous: dict = {}
     if quotas_path.exists():
@@ -2053,22 +2085,28 @@ def refresh_all(quotas_path: Path) -> dict:
         "providers": {},
     }
     for name, probe in PROBES.items():
-        last_success = (
-            (previous.get("providers") or {}).get(name, {}).get("last_success")
-        )
+        before = (previous.get("providers") or {}).get(name) or {}
+        last_success = before.get("last_success")
         try:
             result = probe()
             if result.get("status") == "ok":
                 result["last_success"] = out["fetched_at"]
             else:
                 result["last_success"] = last_success
-            out["providers"][name] = result
         except Exception as exc:
-            out["providers"][name] = {
+            result = {
                 "status": "error",
                 "error": f"{type(exc).__name__}: {exc}",
                 "last_success": last_success,
             }
+        # A failed probe (a 429, an expired token) keeps the last numbers it
+        # had, apart from the fresh ones: the status stays the failure, so
+        # nothing routes on them as if they were current.
+        if result.get("status") != "ok":
+            kept = _last_good(before)
+            if kept is not None:
+                result["last_good"] = _aged(kept)
+        out["providers"][name] = result
 
     tmp = quotas_path.with_suffix(quotas_path.suffix + ".tmp")
     tmp.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")

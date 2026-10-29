@@ -11,10 +11,12 @@ workers from a Claude Code session. It shows, carries and wakes; it decides noth
   `playmaker quotas --json`, session text every 30 seconds from `playmaker summary`.
 - **Status line.** `pm · claude 52·Fable · codex 96 · kimi 85·wk …` under the prompt,
   and the same line as hidden context with every prompt you type.
-- **Wake-up.** When playmaker records a finished batch whose workers ran in this
-  session's directory (or its `<dir>-wt/…` worktrees), the mod submits a brief to the
+- **Wake-up.** When playmaker records a finished batch that this session started — a
+  `playmaker dispatch --batch …`, `review-board.sh` or `review-decision.sh` it ran
+  itself, or a worker id its own call printed — the mod submits a brief to the
   chat — facts only: counts, workers, durations, directories, quotas — so the coach
-  continues without anyone typing «check». Batches of other projects show as a toast.
+  continues without anyone typing «check». Every other batch shows as a toast; a directory shared with
+  other sessions is never enough.
 - **Policy in the prompt.** The tiers section of `~/.playmaker/policy.md` and of
   `./.playmaker/policy.md` goes into the system prompt as written, once per session.
 - **Quotas beside a dispatch.** After `playmaker dispatch …` runs, the model reads the

@@ -228,7 +228,7 @@ rules there and `playmaker skill install --force` stays a safe upgrade.
 A Claude Code mod that puts playmaker in a pane next to the conversation: every
 quota window of every lane, and every recent worker by batch with its state and
 what its session is doing. It also wakes the coach with a short brief when a
-batch of the current project finishes, shows the quota line beside each
+batch this session started finishes, shows the quota line beside each
 `playmaker dispatch` result, and carries the policy tiers into the system prompt.
 It decides nothing: no dispatch is ever refused, no lane picked.
 

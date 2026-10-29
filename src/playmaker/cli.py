@@ -2093,7 +2093,11 @@ def _render_provider(name: str, info: dict) -> None:
 
     if status == "error":
         console.print(f"  [red]error[/red]: {info.get('error', '')}")
-        if info.get("last_success"):
+        kept = info.get("last_good") or {}
+        if kept.get("windows"):
+            console.print(f"  [dim]last known, as of {kept.get('at') or 'unknown'}:[/dim]")
+            render_windows(kept["windows"])
+        elif info.get("last_success"):
             console.print(f"  [dim]last success: {info['last_success']}[/dim]")
         return
     if status == "unsupported":

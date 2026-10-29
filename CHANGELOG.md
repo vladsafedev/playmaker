@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every quota window (CodexBar's colors and order) and every recent worker by
   batch, with its state, lane, model, elapsed time and what its session is
   doing; the quota line under the prompt and beside every `playmaker dispatch`
-  result; a wake-up brief in the chat when a batch of this project finishes;
+  result; a wake-up brief in the chat when a batch this session started finishes;
   the policy tiers in the system prompt; `/pm board|quotas|review|wp|policy`.
   It shows, carries and wakes — it never refuses a dispatch or picks a lane.
   Lives at `mods/pm/`; the repository is a plugin marketplace
@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A failed quota probe keeps the last good numbers.** A 429 from a usage
+  endpoint or an expired token used to replace the provider's entry in
+  `quotas.json` with the error alone, so the numbers from five minutes earlier
+  were gone until the next success. The entry now carries `last_good` — the
+  windows of the last successful probe, `at` when it ran, «resets in» counted
+  from now — beside the error, through any run of failures. The status stays
+  the failure, so nothing routes on old numbers; `playmaker quotas` prints them
+  under the error as «last known, as of …», and the pm mod draws them with
+  «as of HH:MM» in place of «error».
 - **Antigravity quota groups keep their own names.** The language server
   reports a group per model family — since October 2026 «Gemini 4 Argon»
   beside «Gemini Models», with a weekly bucket of its own — and the window

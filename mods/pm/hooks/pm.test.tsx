@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 const ROWS = JSON.stringify([
@@ -66,6 +67,15 @@ const QUOTAS = JSON.stringify({
       ],
     },
     'claude-api': { status: 'ok', windows: [{ name: 'Credits', pct_left: 100, reset_relative: '6d' }] },
+    // A failed probe with the last good numbers playmaker kept.
+    kimi: {
+      status: 'error',
+      error: 'RuntimeError: HTTP 429',
+      last_good: {
+        at: '2026-10-28T13:20:00+00:00',
+        windows: [{ name: 'Weekly', pct_left: 85, reset_relative: '5d 8h' }],
+      },
+    },
     muse: { status: 'ok', windows: [] },
     ollama: { status: 'unsupported', windows: [] },
   },
@@ -120,6 +130,7 @@ const world = (on: On, phase: { batchDone: boolean }) => {
 test('the pane lists the workers and a finished batch wakes the coach', async ($, on) => {
   const phase = { batchDone: false }
   const clock = world(on, phase)
+  on('tool.call', () => ({ result: {} }))
   const submitted: string[] = []
   on('prompt.submit', (_, e) => {
     submitted.push(e.text)
@@ -149,6 +160,10 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     // Console credits sit inside the Claude block, not as a lane of their own.
     expect(await quotas.find({ type: 'Text', text: /^Credits$/ })).toBeDefined()
     expect(await quotas.find({ type: 'Text', text: /Claude Platform/ })).toBe(undefined)
+    // A lane whose probe failed shows its kept numbers and says how old they are.
+    expect(await quotas.find({ type: 'Text', text: /^85%$/ })).toBeDefined()
+    expect(await quotas.find({ type: 'Text', text: /^as of \d\d:\d\d$/ })).toBeDefined()
+    expect(await quotas.find({ type: 'Text', text: /^error$/ })).toBe(undefined)
     expect(await quotas.find({ type: 'Text', text: /^65%$/ })).toBeDefined()
     expect(await quotas.find({ type: 'Text', text: /6d 7h/ })).toBeDefined()
     await quotas.unmount()
@@ -156,6 +171,9 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
 
   // Nothing replayed from before the session started.
   expect(submitted.length).toBe(0)
+
+  // This session starts the batch itself; the label comes through a variable.
+  await $.tool.call({ tool: 'Bash', command: 'B=review-af-money-r1; playmaker dispatch codex --batch "$B" -p "x"' })
 
   phase.batchDone = true
   await clock.advance(3000)
@@ -172,8 +190,12 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
   expect(submitted.length).toBe(1)
 })
 
-test('a batch of another project shows as a toast and wakes nobody', async ($, on) => {
-  const phase = { batchDone: true }
+const wakes = async (
+  $: Engine,
+  on: On,
+  command: string | null,
+): Promise<string[]> => {
+  const phase = { batchDone: false }
   const clock = world(on, phase)
   const submitted: string[] = []
   on('prompt.submit', (_, e) => {
@@ -181,14 +203,35 @@ test('a batch of another project shows as a toast and wakes nobody', async ($, o
 
     return { text: e.text }
   })
-
-  // The rows live in /repo; this session runs elsewhere.
-  await $.session.start({ cwd: '/elsewhere', surface: 'desktop', isInteractive: true })
+  on('tool.call', () => ({ result: {} }))
+  // Same directory as the workers: a directory alone must never be enough.
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
   await clock.settle()
+  await clock.advance(3000)
+  if (command !== null) await $.tool.call({ tool: 'Bash', command })
   phase.batchDone = true
   await clock.advance(3000)
   await clock.advance(3000)
-  expect(submitted.length).toBe(0)
+
+  return submitted
+}
+
+test('a batch another session started wakes nobody here, same directory or not', async ($, on) => {
+  expect((await wakes($, on, null)).length).toBe(0)
+})
+
+test('a batch of some other label this session started does not count', async ($, on) => {
+  expect((await wakes($, on, 'playmaker dispatch codex --batch other-batch -p x')).length).toBe(0)
+})
+
+test('the review board this session ran claims its rounds', async ($, on) => {
+  const submitted = await wakes(
+    $,
+    on,
+    '~/.claude/skills/playmaker-coach/scripts/review-board.sh --auto af-money main --impl-id 0a2ffe97',
+  )
+  expect(submitted.length).toBe(1)
+  expect((submitted[0] ?? '').startsWith('Batch review-af-money-r1 finished')).toBe(true)
 })
 
 test('the system prompt carries the policy tiers, verbatim, after the engine', async ($, on) => {

@@ -25,9 +25,16 @@ export type Quota = {
   status: string
   tier: string | null
   windows: QuotaWindow[]
+  // When the probe failed and the windows are the last good ones playmaker
+  // kept: when those were measured. Null for fresh windows.
+  staleAt: string | null
 }
 
 export type Quotas = { fetchedAt: string; lanes: Quota[] }
+
+// What this session's own Bash calls started: the batches, the review
+// scripts' round prefixes and the worker ids. Only these wake it.
+export type Claims = { batches: string[]; prefixes: string[]; sessions: string[] }
 
 // One line per worker out of `playmaker summary`, by session id.
 export type Note = { status: string; text: string; at: number }
@@ -51,6 +58,7 @@ declare module 'claude-code' {
       review: Review | null
       error: string | null
       notes: Shaped<Record<string, Note>>
+      mine: Shaped<Claims>
     }
   }
 }

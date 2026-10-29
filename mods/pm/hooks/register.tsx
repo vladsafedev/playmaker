@@ -9,21 +9,24 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderInput } from 'claude-code'
 
-import type { Note, Quota, Quotas, Review, Row } from '../types'
+import type { Claims, Note, Quota, Quotas, Review, Row } from '../types'
 import {
   basename,
   batchBrief,
   batchCounts,
+  claimsOf,
   clockTime,
   condenseSummary,
   dispatchLane,
   elapsed,
   groupByBatch,
+  isClaimed,
   isTerminal,
   keepRecent,
   laneOf,
   laneOfRow,
   loneBrief,
+  mergeClaims,
   modelShort,
   paneLanes,
   parseEvents,
@@ -55,11 +58,16 @@ const USAGE = [
 const rows = atom({ plugin: 'pm', key: 'rows' } as const, [] as Row[], { shape: 'rows-1' })
 // Shaped: a reload with another window layout must not read the old value.
 const quotas = atom({ plugin: 'pm', key: 'quotas' } as const, null as Quotas | null, {
-  shape: 'quotas-2',
+  shape: 'quotas-3',
 })
 const policy = atom({ plugin: 'pm', key: 'policy' } as const, null as string | null)
 const review = atom({ plugin: 'pm', key: 'review' } as const, null as Review | null)
 const error = atom({ plugin: 'pm', key: 'error' } as const, null as string | null)
+const mine = atom(
+  { plugin: 'pm', key: 'mine' } as const,
+  { batches: [], prefixes: [], sessions: [] } as Claims,
+  { shape: 'mine-1' },
+)
 const notes = atom({ plugin: 'pm', key: 'notes' } as const, {} as Record<string, Note>, {
   shape: 'notes-2',
 })
@@ -206,15 +214,11 @@ const refreshNotes = async ($: Engine, kept: Row[], now: number): Promise<void> 
   if (JSON.stringify(next) !== JSON.stringify(current)) await update($, notes, () => next)
 }
 
-// playmaker's state is machine-wide; this session is woken only for work in
-// its own directory or that directory's worktrees (`<cwd>-wt/…`). The rest
-// shows as a toast.
-const isOurs = (members: Row[]): boolean =>
-  members.some(r => {
-    if (r.cwd === null || cwd === '') return false
-
-    return r.cwd === cwd || r.cwd.startsWith(`${cwd}/`) || r.cwd.startsWith(`${cwd}-wt/`)
-  })
+// playmaker's state is machine-wide and many sessions share one directory, so
+// a session is woken only for work its own Bash calls started (`mine`). Every
+// other batch shows as a toast at most.
+const isOurs = async ($: Engine, batchId: string | null, members: Row[]): Promise<boolean> =>
+  isClaimed(await read($, mine), batchId, members.map(r => r.id))
 
 const handleEvents = async ($: Engine, events: Event[], all: Row[], now: number): Promise<void> => {
   // First sight: remember where the stream stands, replay nothing.
@@ -232,7 +236,7 @@ const handleEvents = async ($: Engine, events: Event[], all: Row[], now: number)
     const inBatch = ev.batch_id === null ? '' : ` · ${ev.batch_id}`
     if (ev.kind === 'batch' && ev.batch_id !== null) {
       const members = all.filter(r => r.batchId === ev.batch_id)
-      const ours = isOurs(members)
+      const ours = await isOurs($, ev.batch_id, members)
       $.ui.toast(
         `batch ${ev.batch_id}: ${batchCounts(members)}${ours ? '' : ` · ${basename(members[0]?.cwd ?? null)}`}`,
       )
@@ -248,7 +252,7 @@ const handleEvents = async ($: Engine, events: Event[], all: Row[], now: number)
       $.ui.toast(`${statusGlyph(ev.status)} ${who} ${statusWord(ev.status).toLowerCase()}${inBatch}`)
       if (ev.batch_id === null && wake && wakeLone) {
         const row = all.find(r => r.id === ev.session_id)
-        if (row !== undefined && isOurs([row])) void $.prompt.submit({ text: loneBrief(row, now, qLine) })
+        if (row !== undefined && (await isOurs($, null, [row]))) void $.prompt.submit({ text: loneBrief(row, now, qLine) })
       }
       continue
     }
@@ -434,7 +438,7 @@ const drawQuotas = async ($: Engine, e: PaneInput) => {
             {lane.name}
           </Text>
           <Text dimColor size="caption">
-            {l.status === 'ok' ? '' : l.status}
+            {l.status === 'ok' ? '' : l.staleAt !== null ? `as of ${clockTime(l.staleAt) || '?'}` : l.status}
           </Text>
         </Box>
         {l.windows.length === 0 && (
@@ -580,7 +584,15 @@ export const register: Register = (on, options) => {
   // its result. Never a deny.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const lane = dispatchLane(e.command)
+    const starts = lane !== null || /review-(board|decision)\.sh/.test(e.command)
     const ran = await next(e)
+    if (starts) {
+      // Remember what this session started, so its batches wake it and only it.
+      const claims = claimsOf(e.command, typeof ran.text === 'string' ? ran.text : '')
+      if (claims.batches.length + claims.prefixes.length + claims.sessions.length > 0) {
+        await update($, mine, held => mergeClaims(held, claims))
+      }
+    }
     if (!quotaOnDispatch || lane === null || ran.deny !== undefined) return ran
     const q = await read($, quotas)
     if (q === null) return ran

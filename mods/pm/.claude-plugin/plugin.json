@@ -1,6 +1,6 @@
 {
   "name": "pm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "playmaker beside the chat: a board pane with workers and quotas, a wake-up when a batch finishes, the policy tiers in the system prompt, and /pm commands. Shows, carries and wakes; decides nothing.",
   "author": {
     "name": "vladsafedev"
