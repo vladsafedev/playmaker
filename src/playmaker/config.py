@@ -25,10 +25,16 @@ def agent_setting(agent: str, key: str, default: Any = None) -> Any:
     return load_config().get("agents", {}).get(agent, {}).get(key, default)
 
 
+# Lanes that drive another lane's CLI: the executable when `[agents.<lane>] binary`
+# is unset. `claude-api` is `claude --bare` on an API key, not a second binary.
+BINARY_DEFAULTS = {"claude-api": "claude"}
+
+
 def agent_binary(agent: str) -> str:
     """The executable to launch for this agent.
 
-    `[agents.<agent>] binary` when set, else the agent's own name. A bare name
+    `[agents.<agent>] binary` when set, else the agent's own name (or, for a
+    lane in BINARY_DEFAULTS, the CLI it shares). A bare name
     and an absolute path both work: every call site feeds this to `shutil.which`
     or straight to `subprocess`, and `which` returns a path containing a
     separator as-is. `~` is expanded here because these CLIs install under the
@@ -36,11 +42,12 @@ def agent_binary(agent: str) -> str:
     an interactive shell puts on PATH, so a non-interactive dispatch (cron, an
     editor-spawned run, the coach) cannot find it without this setting.
     """
+    fallback = BINARY_DEFAULTS.get(agent, agent)
     value = agent_setting(agent, "binary")
     if value is None:
-        return agent
+        return fallback
     text = os.path.expanduser(str(value).strip())
-    return text or agent
+    return text or fallback
 
 
 def setting(section: str, key: str, default: Any = None) -> Any:

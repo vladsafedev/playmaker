@@ -330,6 +330,9 @@ def test_events_follow_last_n_prints_ascending_ids_across_the_race(db, monkeypat
         ("monthly quota exhausted", "quota"),
         ("HTTP 429: too many requests", "quota"),
         ("rate-limit exceeded for model", "quota"),
+        # The Console API key with an empty balance (claude-api lane): HTTP 400, not 429.
+        ("Your credit balance is too low to access the Anthropic API.", "quota"),
+        ("HTTP 400: insufficient credits", "quota"),
         ("You've hit your limit for now", "unknown"),  # not a listed quota phrase
         ("401 unauthorized", "auth"),
         ("HTTP 403", "auth"),

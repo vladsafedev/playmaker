@@ -226,7 +226,7 @@ def test_apply_override_ignores_other_agents_with_one_stderr_line(capsys, monkey
     cli._apply_effort_override("codex", "high")
 
     captured = capsys.readouterr()
-    assert "--effort is forwarded to the claude lane only; ignored for codex" in captured.err
+    assert "--effort is forwarded to the claude lanes only; ignored for codex" in captured.err
     assert captured.err.strip().count("\n") == 0  # exactly one line
     assert EFFORT_ENV_VAR not in os.environ
 
@@ -279,7 +279,7 @@ def test_dispatch_accepts_and_ignores_effort_for_other_agents(db, monkeypatch) -
     result = runner.invoke(cli.app, ["dispatch", "codex", "--prompt", "hi", "--effort", "high"])
 
     assert result.exit_code == 0, result.output
-    assert "--effort is forwarded to the claude lane only; ignored for codex" in result.stderr
+    assert "--effort is forwarded to the claude lanes only; ignored for codex" in result.stderr
     assert EFFORT_ENV_VAR not in os.environ
 
 

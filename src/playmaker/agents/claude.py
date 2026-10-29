@@ -7,6 +7,12 @@ Empirically:
   swallow the positional prompt, so we omit it and rely on subprocess cwd alone
 - session file: ~/.claude/projects/<cwd-with-slashes-as-dashes>/<session-id>.jsonl
 - json result fields: session_id, result, total_cost_usd, duration_ms, usage
+
+One handler class serves two lanes: `claude` (the sibling CLI on the Max
+subscription, login in the macOS Keychain) and `claude-api` (`claude --bare`,
+authenticated only through ANTHROPIC_API_KEY, which spends Console credits and
+never touches the subscription). The lane key names the `[agents.<key>]`
+section every setting is read from.
 """
 
 from __future__ import annotations
@@ -14,9 +20,12 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
+import sys
 from pathlib import Path
 
+from playmaker import state
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
 from playmaker.config import (
     agent_binary,
@@ -42,61 +51,230 @@ VALID_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 # Per-run override channel for `playmaker dispatch/continue --effort`. The CLI
 # sets this for the spawned run only; it is never persisted, so a later
-# `continue` without --effort falls back to the config value below.
+# `continue` without --effort falls back to the config value below. One
+# variable serves every claude lane: a process runs one dispatch at a time.
 EFFORT_ENV_VAR = "PLAYMAKER_CLAUDE_EFFORT"
 
+# `claude --bare` reads its credentials from exactly this variable (OAuth and
+# the Keychain login are never consulted), so a bare lane injects the key here
+# — in the child's environment only, never on the command line or in a log.
+API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 
-def permission_args() -> list[str]:
-    """Permission flags for a headless run, from [agents.claude] in config.toml."""
-    if yolo_enabled("claude"):
+# Where a bare lane finds its key: `[agents.<lane>] key_source`.
+#   keychain -> macOS Keychain generic password, service KEYCHAIN_SERVICE
+#   file     -> ~/.playmaker/secrets.env, mode 600, `ANTHROPIC_API_KEY=...`
+VALID_KEY_SOURCES = ("keychain", "file")
+DEFAULT_KEY_SOURCE = "keychain"
+KEYCHAIN_SERVICE = "playmaker-anthropic-api"
+KEYCHAIN_ADD_COMMAND = (
+    f"security add-generic-password -s {KEYCHAIN_SERVICE} -a playmaker -w"
+)
+SECRETS_FILENAME = "secrets.env"
+
+
+def permission_args(agent: str = "claude") -> list[str]:
+    """Permission flags for a headless run, from [agents.<agent>] in config.toml."""
+    if yolo_enabled(agent):
         return ["--dangerously-skip-permissions"]
 
-    mode = agent_setting("claude", "permission_mode", DEFAULT_PERMISSION_MODE)
+    mode = agent_setting(agent, "permission_mode", DEFAULT_PERMISSION_MODE)
     args = ["--permission-mode", str(mode)]
     # Comma-separated rather than variadic: `--allowedTools A B` would swallow
     # the positional prompt that follows.
-    allowed = agent_list_setting("claude", "allowed_tools")
+    allowed = agent_list_setting(agent, "allowed_tools")
     if allowed:
         args += ["--allowedTools", ",".join(allowed)]
-    disallowed = agent_list_setting("claude", "disallowed_tools")
+    disallowed = agent_list_setting(agent, "disallowed_tools")
     if disallowed:
         args += ["--disallowedTools", ",".join(disallowed)]
     return args
 
 
-def resolve_effort() -> str | None:
+def resolve_effort(agent: str = "claude") -> str | None:
     """Effective effort for this run: per-run override, else config, else none.
 
     `playmaker dispatch/continue --effort` exports EFFORT_ENV_VAR for the
-    spawned run only (never persisted); without it, `[agents.claude] effort`
+    spawned run only (never persisted); without it, `[agents.<agent>] effort`
     applies. Raises before any process starts when the value is not one of
     VALID_EFFORTS — the same fail-fast shape as a bad `--model` elsewhere.
     """
     raw = os.environ.get(EFFORT_ENV_VAR)
     if raw is None:
-        raw = agent_setting("claude", "effort", None)
+        raw = agent_setting(agent, "effort", None)
     if raw is None:
         return None
     value = str(raw).strip()
     if value not in VALID_EFFORTS:
         raise RuntimeError(
-            f"claude has no effort {raw!r}; valid efforts: {', '.join(VALID_EFFORTS)} "
-            f"([agents.claude] effort or --effort)"
+            f"{agent} has no effort {raw!r}; valid efforts: {', '.join(VALID_EFFORTS)} "
+            f"([agents.{agent}] effort or --effort)"
         )
     return value
 
 
-def effort_args() -> list[str]:
+def effort_args(agent: str = "claude") -> list[str]:
     """`["--effort", value]` when configured, else []. Raises on invalid."""
-    resolved = resolve_effort()
+    resolved = resolve_effort(agent)
     return ["--effort", resolved] if resolved is not None else []
 
 
+def bare_enabled(agent: str, *, default: bool = False) -> bool:
+    """Whether this lane runs `claude --bare`: `[agents.<agent>] bare`, else the lane default."""
+    value = agent_setting(agent, "bare")
+    return default if value is None else bool(value)
+
+
+def secrets_path() -> Path:
+    """The `file` key source: ~/.playmaker/secrets.env."""
+    return state.PLAYMAKER_HOME / SECRETS_FILENAME
+
+
+def _security(args: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+    """One `security` call; a failure becomes a RuntimeError that carries no output."""
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Keychain read of {KEYCHAIN_SERVICE!r} timed out — allow `security` access "
+            "in the macOS dialog"
+        ) from exc
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            f"Keychain read of {KEYCHAIN_SERVICE!r} failed: {type(exc).__name__}"
+        ) from exc
+
+
+def _keychain_api_key() -> str | None:
+    """The key from the macOS Keychain, or None when no entry exists.
+
+    Same shape as the Muse Code probe in quotas.py: an existence check first
+    (no secret, so no Allow dialog), then the `-w` read with a generous
+    timeout. Error messages never carry `security`'s stdout.
+    """
+    if sys.platform != "darwin" or shutil.which("security") is None:
+        return None
+    base = ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE]
+    if _security(base, timeout=10).returncode != 0:
+        return None
+    proc = _security([*base, "-w"], timeout=30)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Keychain read of {KEYCHAIN_SERVICE!r} was denied — allow `security` access "
+            f"to the item, or re-add it: {KEYCHAIN_ADD_COMMAND}"
+        )
+    key = proc.stdout.strip()
+    return key or None
+
+
+def _secrets_file_api_key() -> str | None:
+    """The key from ~/.playmaker/secrets.env, or None when the file is absent.
+
+    The file must be readable by its owner alone (mode 600): a key in a
+    world-readable file is as good as pasted into the config. Lines are
+    `NAME=value`; `export NAME=value` and quotes around the value are tolerated.
+    """
+    path = secrets_path()
+    try:
+        mode = path.stat().st_mode
+    except FileNotFoundError:
+        return None
+    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise RuntimeError(
+            f"{path} must be readable by you alone — run: chmod 600 {path}"
+        )
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.removeprefix("export ").strip()
+        name, sep, value = line.partition("=")
+        if sep and name.strip() == API_KEY_ENV_VAR:
+            value = value.strip().strip("'\"")
+            return value or None
+    return None
+
+
+def load_api_key(agent: str) -> str:
+    """The API key for a bare lane, from `[agents.<agent>] key_source`.
+
+    Raises RuntimeError — without the key or any `security` output in the
+    message — when the source is misconfigured or holds no key, so a dispatch
+    refuses before any process starts.
+    """
+    raw = agent_setting(agent, "key_source", DEFAULT_KEY_SOURCE)
+    source = str(raw).strip()
+    if source not in VALID_KEY_SOURCES:
+        raise RuntimeError(
+            f"{agent} has no key_source {raw!r}; valid sources: {', '.join(VALID_KEY_SOURCES)} "
+            f"([agents.{agent}] key_source)"
+        )
+    if source == "keychain":
+        key = _keychain_api_key()
+        if key:
+            return key
+        platform_note = "" if sys.platform == "darwin" else " (the Keychain is macOS-only)"
+        raise RuntimeError(
+            f"{agent}: no API key in the macOS Keychain, service {KEYCHAIN_SERVICE!r}"
+            f"{platform_note}. Add one: {KEYCHAIN_ADD_COMMAND}  — or set "
+            f'[agents.{agent}] key_source = "file" and put {API_KEY_ENV_VAR}=... '
+            f"in {secrets_path()} (mode 600)"
+        )
+    key = _secrets_file_api_key()
+    if key:
+        return key
+    raise RuntimeError(
+        f"{agent}: no {API_KEY_ENV_VAR} in {secrets_path()} — create it with mode 600 and one "
+        f"line: {API_KEY_ENV_VAR}=sk-ant-..."
+    )
+
+
 class ClaudeHandler:
-    name = "claude"
+    """One Claude Code lane.
+
+    `agent_key` is the lane's name and its `[agents.<key>]` config section.
+    `bare` is the lane default for `claude --bare`; `[agents.<key>] bare`
+    overrides it. A bare lane needs its API key before it can start.
+    """
+
+    def __init__(self, agent_key: str = "claude", *, bare: bool = False) -> None:
+        self.name = agent_key
+        self._bare_default = bare
+
+    @property
+    def bare(self) -> bool:
+        return bare_enabled(self.name, default=self._bare_default)
 
     def is_available(self) -> bool:
-        return shutil.which(agent_binary("claude")) is not None
+        return shutil.which(agent_binary(self.name)) is not None
+
+    def preflight(self) -> None:
+        """Raise before any session row exists when the lane cannot start.
+
+        A bare lane without its API key would spawn, fail with claude's own
+        auth error and leave a failed row behind; refusing here keeps the
+        same fail-fast shape as a bad `--effort`.
+        """
+        if self.bare:
+            load_api_key(self.name)
+
+    def _spawn_env(self) -> dict[str, str] | None:
+        """The child's environment: inherited, plus the API key on a bare lane.
+
+        None means "inherit as is" — the subscription lane's environment is
+        passed through untouched. The key goes into this mapping only; it is
+        never part of the command line, so logs and `ps` never show it.
+        """
+        if not self.bare:
+            return None
+        env = dict(os.environ)
+        env[API_KEY_ENV_VAR] = load_api_key(self.name)
+        return env
+
+    def _base_cmd(self) -> list[str]:
+        cmd = [agent_binary(self.name), "-p"]
+        if self.bare:
+            cmd.append("--bare")
+        return cmd
 
     def dispatch(
         self,
@@ -118,23 +296,23 @@ class ClaudeHandler:
         full_prompt = self._build_prompt(prompt, files or [])
         # `--verbose` is required by claude-cli when stream-json is used
         # without partial-messages; without it we get a parse-time refusal.
-        cmd = [
-            agent_binary("claude"),
-            "-p",
+        cmd = self._base_cmd() + [
             "--output-format",
             "stream-json",
             "--verbose",
         ]
-        cmd += permission_args()
+        cmd += permission_args(self.name)
         if model:
             cmd += ["--model", model]
-        cmd += effort_args()
+        cmd += effort_args(self.name)
         cmd.append(full_prompt)
+        env = self._spawn_env()
         import time as _time
         t0 = _time.monotonic()
         proc = subprocess.Popen(
             cmd,
             cwd=str(cwd),
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -196,12 +374,12 @@ class ClaudeHandler:
         if proc.returncode != 0:
             detail = stderr_buf.strip() or error_text or last_text or "".join(first_lines)[:500]
             raise RuntimeError(
-                f"claude failed (exit {proc.returncode}): {detail or '(no error output)'}"
+                f"{self.name} failed (exit {proc.returncode}): {detail or '(no error output)'}"
             )
 
         if agent_session_id is None:
             raise RuntimeError(
-                f"claude stream-json missing session_id in first events:\n"
+                f"{self.name} stream-json missing session_id in first events:\n"
                 f"{''.join(first_lines)[:500]}"
             )
 
@@ -228,31 +406,30 @@ class ClaudeHandler:
         model: str | None = None,
     ) -> DispatchResult:
         full_prompt = self._build_prompt(prompt, files or [])
-        cmd = [
-            agent_binary("claude"),
-            "-p",
+        cmd = self._base_cmd() + [
             "--resume",
             agent_session_id,
             "--output-format",
             "json",
         ]
         # See dispatch(): detached resume has no human to approve prompts either.
-        cmd += permission_args()
+        cmd += permission_args(self.name)
         if model:
             cmd += ["--model", model]
-        cmd += effort_args()
+        cmd += effort_args(self.name)
         cmd.append(full_prompt)
-        proc = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+        env = self._spawn_env()
+        proc = subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True)
         if proc.returncode != 0:
             raise RuntimeError(
-                f"claude resume failed (exit {proc.returncode}): "
+                f"{self.name} resume failed (exit {proc.returncode}): "
                 f"{proc.stderr.strip() or proc.stdout.strip()}"
             )
         try:
             data = json.loads(proc.stdout)
         except json.JSONDecodeError as e:
             raise RuntimeError(
-                f"claude resume returned non-JSON output: {proc.stdout[:500]}"
+                f"{self.name} resume returned non-JSON output: {proc.stdout[:500]}"
             ) from e
         # Claude keeps the same session_id on --resume.
         new_session_id = data.get("session_id", agent_session_id)

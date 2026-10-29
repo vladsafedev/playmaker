@@ -31,6 +31,10 @@ _FAILURE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
             r"\b429\b",
             r"too many requests",
             r"limit reached",
+            # An API key whose Console balance is empty: HTTP 400
+            # invalid_request_error, the same "lane is out" as a 429 for --fallback.
+            r"credit balance is too low",
+            r"insufficient credit",
         ),
     ),
     (

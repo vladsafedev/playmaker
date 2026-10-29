@@ -4,6 +4,8 @@ All providers go through OAuth Bearer tokens; no WebKit, no PTY.
 
 - Codex: ChatGPT JWT in ~/.codex/auth.json -> chatgpt.com/backend-api/wham/usage
 - Claude: macOS Keychain entry "Claude Code-credentials" -> api.anthropic.com/api/oauth/usage
+- Claude API (claude-api lane): no network — the local sum of cost_usd over the
+  lane's sessions in state.db since the last monthly credit reset day
 - Antigravity (agy): agy's localhost language server -> RetrieveUserQuotaSummary
   (a short-lived headless agy of our own when no running one answers); fallback
   ~/.gemini/oauth_creds.json -> daily-cloudcode-pa.googleapis.com
@@ -22,12 +24,14 @@ All providers go through OAuth Bearer tokens; no WebKit, no PTY.
 from __future__ import annotations
 
 import base64
+import calendar
 import json
 import os
 import re
 import secrets
 import shutil
 import signal
+import sqlite3
 import ssl
 import subprocess
 import sys
@@ -37,11 +41,14 @@ import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from datetime import time as dtime
 from pathlib import Path
 
-from playmaker import __version__, config
+from playmaker import __version__, config, state
 from playmaker.config import agent_binary
+from playmaker.limits import FORCE_HINT
 
 # OAuth installed-app client credentials shipped with the public gemini-cli
 # npm package — not a private secret (Google publishes them in gemini-cli's
@@ -2024,6 +2031,187 @@ def ollama_probe() -> dict:
     }
 
 
+# ---- Claude API lane: local credit counter ----------------------------------
+
+
+# The `claude-api` lane spends a monthly Console credit through `claude --bare`.
+# Console exposes no usage endpoint for an API key, so the counter is local:
+# the sum of `cost_usd` (Claude Code's own total_cost_usd per session) over
+# the lane's sessions since the last reset day. It estimates the Console
+# balance; the Console page is the source of truth.
+DEFAULT_CREDIT_RESET_DAY = 1
+
+
+@dataclass(frozen=True)
+class CreditCycle:
+    """One lane's spend inside its current monthly credit cycle."""
+
+    agent: str
+    spent_usd: float
+    sessions: int
+    cycle_start: date
+    next_reset: date
+    cap_usd: float | None
+    stop_at_usd: float | None
+    warn_below_usd: float | None
+
+    @property
+    def stop_reached(self) -> bool:
+        return self.stop_at_usd is not None and self.spent_usd >= self.stop_at_usd
+
+    @property
+    def left_usd(self) -> float | None:
+        return None if self.cap_usd is None else max(0.0, self.cap_usd - self.spent_usd)
+
+    @property
+    def low(self) -> bool:
+        """Less than `warn_below_usd` left: a mark in `playmaker quotas`, never a refusal."""
+        return (
+            self.left_usd is not None
+            and self.warn_below_usd is not None
+            and self.left_usd < self.warn_below_usd
+        )
+
+    @property
+    def pct_left(self) -> int | None:
+        if not self.cap_usd or self.cap_usd <= 0:
+            return None
+        return int(round(max(0.0, 100 - self.spent_usd / self.cap_usd * 100)))
+
+
+def _reset_date(year: int, month: int, reset_day: int) -> date:
+    """The reset day inside a month, clamped to the month's length (31 -> Feb 28)."""
+    return date(year, month, min(reset_day, calendar.monthrange(year, month)[1]))
+
+
+def credit_cycle_bounds(today: date, reset_day: int) -> tuple[date, date]:
+    """(start, next reset) of the cycle containing `today` for a monthly reset on `reset_day`."""
+    reset_day = min(max(int(reset_day), 1), 31)
+    this_month = _reset_date(today.year, today.month, reset_day)
+    if today >= this_month:
+        start = this_month
+        year, month = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
+        return start, _reset_date(year, month, reset_day)
+    year, month = (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
+    return _reset_date(year, month, reset_day), this_month
+
+
+def _float_setting_or_none(agent: str, key: str) -> float | None:
+    value = config.agent_setting(agent, key)
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def credit_cycle(agent: str, *, today: date | None = None) -> CreditCycle:
+    """This lane's cost_usd since the last reset day, against its cap and stop line.
+
+    `[agents.<agent>]`: `credit_reset_day` (day of month, default 1),
+    `monthly_cap_usd` (the credit; unset = unknown), `stop_at_usd` (dispatch
+    refuses at or above it; unset = never), `warn_below_usd` (the `low` mark
+    once less than this is left; unset = never). Sessions match on
+    `started_at`, which state.db stores in UTC — a cycle starts at 00:00 UTC
+    on the reset day.
+    """
+    try:
+        reset_day = int(config.agent_setting(agent, "credit_reset_day", DEFAULT_CREDIT_RESET_DAY))
+    except (TypeError, ValueError):
+        reset_day = DEFAULT_CREDIT_RESET_DAY
+    start, next_reset = credit_cycle_bounds(today or datetime.now(UTC).date(), reset_day)
+    since = datetime.combine(start, dtime.min, tzinfo=UTC).isoformat()
+    spent, sessions = 0.0, 0
+    try:
+        with state.connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0) AS spent, COUNT(*) AS n FROM sessions "
+                "WHERE agent = ? AND started_at >= ?",
+                (agent, since),
+            ).fetchone()
+        spent, sessions = float(row["spent"] or 0.0), int(row["n"] or 0)
+    except sqlite3.Error:
+        pass  # no state.db yet: nothing was spent through this lane
+    return CreditCycle(
+        agent=agent,
+        spent_usd=spent,
+        sessions=sessions,
+        cycle_start=start,
+        next_reset=next_reset,
+        cap_usd=_float_setting_or_none(agent, "monthly_cap_usd"),
+        stop_at_usd=_float_setting_or_none(agent, "stop_at_usd"),
+        warn_below_usd=_float_setting_or_none(agent, "warn_below_usd"),
+    )
+
+
+def credit_refusal(agent: str) -> str | None:
+    """The dispatch refusal once the lane's spend reached `stop_at_usd`, else None."""
+    if config.agent_setting(agent, "stop_at_usd") is None:
+        return None
+    cycle = credit_cycle(agent)
+    if not cycle.stop_reached:
+        return None
+    return (
+        f"{agent}: spent ${cycle.spent_usd:.2f} since {cycle.cycle_start.isoformat()} — "
+        f"at or above stop_at_usd={cycle.stop_at_usd:g} ([agents.{agent}]); "
+        f"the credit resets on {cycle.next_reset.isoformat()}\n{FORCE_HINT}"
+    )
+
+
+def claude_api_probe() -> dict:
+    """No network: the local credit counter of the `claude-api` lane."""
+    cycle = credit_cycle("claude-api")
+    since = cycle.cycle_start.isoformat()
+    if cycle.cap_usd is None or cycle.left_usd is None:
+        spent = f"spent ${cycle.spent_usd:.2f} of an unknown cap since {since}"
+    else:
+        spent = (
+            f"spent ${cycle.spent_usd:.2f} of ${cycle.cap_usd:g} since {since}, "
+            f"${cycle.left_usd:.2f} left"
+        )
+        if cycle.low:
+            spent += f" — low (below warn_below_usd=${cycle.warn_below_usd:g})"
+    parts = [spent]
+    if cycle.stop_at_usd is not None:
+        stop = f"stop at ${cycle.stop_at_usd:g}"
+        if cycle.stop_reached:
+            stop += " — reached, dispatch refuses (--force overrides)"
+        parts.append(stop)
+    parts.append(
+        f"{cycle.sessions} session(s) · local sum of cost_usd, not the Console balance"
+    )
+    next_reset_iso = datetime.combine(cycle.next_reset, dtime.min, tzinfo=UTC).isoformat()
+    windows: list[dict] = []
+    if cycle.pct_left is not None:
+        windows.append(
+            {
+                "name": "Credits",
+                "pct_left": cycle.pct_left,
+                "reset_at_iso": next_reset_iso,
+                "reset_relative": _format_relative(next_reset_iso),
+                "forecast": None,
+                "reserve_pct": None,
+            }
+        )
+    return {
+        "status": "ok",
+        "source": "local",
+        "tier": "Console credits",
+        "windows": windows,
+        "note": " · ".join(parts),
+        "spent_usd": round(cycle.spent_usd, 4),
+        "cap_usd": cycle.cap_usd,
+        "left_usd": None if cycle.left_usd is None else round(cycle.left_usd, 4),
+        "stop_at_usd": cycle.stop_at_usd,
+        "warn_below_usd": cycle.warn_below_usd,
+        "low": cycle.low,
+        "cycle_start": cycle.cycle_start.isoformat(),
+        "next_reset": cycle.next_reset.isoformat(),
+        "sessions": cycle.sessions,
+    }
+
+
 # ---- Aggregator -------------------------------------------------------------
 
 
@@ -2032,6 +2220,7 @@ def ollama_probe() -> dict:
 PROBES = {
     "codex": codex_probe,
     "claude": claude_probe,
+    "claude-api": claude_api_probe,
     "agy": antigravity_probe,
     "zai": zai_probe,
     "kimi": kimi_probe,

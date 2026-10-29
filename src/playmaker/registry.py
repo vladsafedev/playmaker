@@ -16,6 +16,9 @@ from playmaker.state import AGENTS_DIR
 
 _HANDLERS: dict[str, AgentHandler] = {
     "claude": ClaudeHandler(),
+    # Same CLI on an API key: `claude --bare` never reads the subscription login,
+    # so this lane spends Console credits and leaves the Max pool alone.
+    "claude-api": ClaudeHandler("claude-api", bare=True),
     "codex": CodexHandler(),
     "agy": AgyHandler(),
     "gemini": GeminiHandler(),
@@ -33,6 +36,11 @@ def get_handler(name: str) -> AgentHandler:
 
 def all_handlers() -> dict[str, AgentHandler]:
     return dict(_HANDLERS)
+
+
+def claude_lanes() -> tuple[str, ...]:
+    """Lanes driven by the Claude Code CLI — the ones `--effort` is forwarded to."""
+    return tuple(name for name, handler in _HANDLERS.items() if isinstance(handler, ClaudeHandler))
 
 
 def find_profile(agent_name: str, project_cwd: Path | None = None) -> Path | None:

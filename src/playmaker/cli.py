@@ -22,7 +22,7 @@ from playmaker import (
     queue as queue_mod,
 )
 from playmaker.agents.claude import EFFORT_ENV_VAR, VALID_EFFORTS
-from playmaker.registry import get_handler
+from playmaker.registry import claude_lanes, get_handler
 
 app = typer.Typer(
     name="playmaker",
@@ -251,26 +251,61 @@ def mod_install(
     console.print(f"[green]installed[/green] {MOD_NAME}@{MOD_MARKETPLACE}")
     console.print("  New Claude Code sessions load it; in a running one, type /reload-plugins.")
 
+
 def _apply_effort_override(agent: str, effort: str | None) -> None:
-    """Route `--effort` to the claude lane for this run only.
+    """Route `--effort` to a claude lane (claude, claude-api) for this run only.
 
     The value travels in EFFORT_ENV_VAR, which ClaudeHandler reads before
     each spawn — nothing is persisted, so a later `continue` without --effort
-    falls back to [agents.claude] effort. Other lanes accept the flag so
+    falls back to [agents.<lane>] effort. Other lanes accept the flag so
     scripts can pass it uniformly, and ignore it with one stderr line.
     """
     if effort is None:
         return
-    if agent != "claude":
-        err_console.print(f"--effort is forwarded to the claude lane only; ignored for {agent}")
+    if agent not in claude_lanes():
+        err_console.print(f"--effort is forwarded to the claude lanes only; ignored for {agent}")
         return
     if effort not in VALID_EFFORTS:
         err_console.print(
-            f"claude has no effort {effort!r}; valid efforts: {', '.join(VALID_EFFORTS)} "
-            "([agents.claude] effort or --effort)"
+            escape(
+                f"{agent} has no effort {effort!r}; valid efforts: {', '.join(VALID_EFFORTS)} "
+                f"([agents.{agent}] effort or --effort)"
+            )
         )
         raise typer.Exit(2)
     os.environ[EFFORT_ENV_VAR] = effort
+
+
+def _preflight(agent: str, handler: object) -> None:
+    """Refuse (exit 2) before any session row exists when the lane cannot start.
+
+    Only the claude lanes implement it today: a bare lane without its API key
+    refuses here with the fix spelled out, instead of spawning, failing on
+    claude's own auth error and leaving a failed row behind.
+    """
+    check = getattr(handler, "preflight", None)
+    if check is None:
+        return
+    try:
+        check()
+    except RuntimeError as exc:
+        # soft_wrap: the message carries a command to paste; a wrapped one does not paste.
+        err_console.print(f"[red]{escape(str(exc))}[/red]", soft_wrap=True)
+        raise typer.Exit(2) from exc
+
+
+def _refuse_if_credits_spent(agent: str) -> None:
+    """Refuse (exit 3) once the lane's spend this cycle reached `[agents.<lane>] stop_at_usd`.
+
+    The counter is quotas.credit_cycle — the local sum of cost_usd since the
+    last reset day. --force overrides, like the [limits] guards.
+    """
+    from playmaker import quotas as quotas_mod
+
+    refusal = quotas_mod.credit_refusal(agent)
+    if refusal:
+        err_console.print(f"[red]{escape(refusal)}[/red]")
+        raise typer.Exit(3)
 
 
 FALLBACK_REASONS = frozenset({"quota", "auth", "binary", "model"})
@@ -378,7 +413,7 @@ def _parallel_refusal(exc: state.LimitExceeded, max_active: int) -> str:
 @app.command()
 def dispatch(
     agent: str = typer.Argument(
-        ..., help="agent name (claude|codex|agy|gemini|kimi|muse|opencode)"
+        ..., help="agent name (claude|claude-api|codex|agy|gemini|kimi|muse|opencode)"
     ),
     prompt: str | None = typer.Option(
         None, "--prompt", "-p", help="initial prompt (or pass --prompt-file)"
@@ -407,9 +442,9 @@ def dispatch(
     effort: str | None = typer.Option(
         None,
         "--effort",
-        help="forwarded to the claude CLI's --effort (low|medium|high|xhigh|max); "
-        "overrides [agents.claude] effort for this run; accepted and ignored "
-        "for other agents",
+        help="forwarded to the claude CLI's --effort (low|medium|high|xhigh|max) on the "
+        "claude and claude-api lanes; overrides [agents.<lane>] effort for this run; "
+        "accepted and ignored for other agents",
     ),
     sync: bool = typer.Option(
         False,
@@ -469,8 +504,10 @@ def dispatch(
         err_console.print(_unavailable(agent))
         raise typer.Exit(1)
     _apply_effort_override(agent, effort)
+    _preflight(agent, handler)
     if not force:
         _refuse_if_limited()
+        _refuse_if_credits_spent(agent)
 
     cwd_resolved = cwd.expanduser().resolve()
     explicit_expectation = _expectation_from_flags(expect_changes, read_only)
@@ -885,7 +922,8 @@ def continue_(
     effort: str | None = typer.Option(
         None,
         "--effort",
-        help="override the effort for this turn; defaults to [agents.claude] effort",
+        help="override the effort for this turn (claude lanes); defaults to the lane's "
+        "[agents.<lane>] effort",
     ),
     sync: bool = typer.Option(
         False, "--sync", help="block until done and print final output (default is detached)"
@@ -933,8 +971,10 @@ def continue_(
         err_console.print(_unavailable(parent["agent"]))
         raise typer.Exit(1)
     _apply_effort_override(parent["agent"], effort)
+    _preflight(parent["agent"], handler)
     if not force:
         _refuse_if_limited()
+        _refuse_if_credits_spent(parent["agent"])
 
     cwd_resolved = (cwd or Path(parent["cwd"])).expanduser().resolve()
     effective_model = model if model is not None else parent.get("model")
@@ -2062,6 +2102,7 @@ def _render_provider(name: str, info: dict) -> None:
     label_color = {
         "codex": "blue",
         "claude": "magenta",
+        "claude-api": "magenta",
         "agy": "green",
         "gemini": "cyan",
         "zai": "yellow",
@@ -2070,6 +2111,7 @@ def _render_provider(name: str, info: dict) -> None:
         "ollama": "bright_cyan",
     }.get(name, "white")
     display = {
+        "claude-api": "Claude API (claude --bare)",
         "agy": "Antigravity (agy)",
         "zai": "Z.ai (GLM, via opencode)",
         "kimi": "Kimi Code",
@@ -2203,10 +2245,11 @@ def _unavailable(agent: str) -> str:
     Without the name this reads as "not on PATH" even when the config points
     `binary` at a path that simply does not exist.
     """
-    from playmaker.config import agent_binary
+    from playmaker.config import BINARY_DEFAULTS, agent_binary
 
     executable = agent_binary(agent)
-    hint = "" if executable == agent else f" (agents.{agent}.binary in {state.CONFIG_PATH})"
+    default = BINARY_DEFAULTS.get(agent, agent)
+    hint = "" if executable == default else f" (agents.{agent}.binary in {state.CONFIG_PATH})"
     return f"[red]agent {agent!r}: {executable!r} not found{hint}[/red]"
 
 
@@ -2316,6 +2359,30 @@ permission_mode = "acceptEdits"
 # Escape hatch: skip every check, including the working-directory boundary.
 # Only for prompts and directories you would run unattended.
 # yolo = true
+
+# The same CLI on an API key instead of the subscription. `claude --bare` reads
+# no OAuth login and no Keychain entry — auth is ANTHROPIC_API_KEY alone — so
+# this lane spends Console credits and never touches the claude lane's pool.
+# --bare also skips hooks, plugins, auto-memory and CLAUDE.md discovery: the
+# prompt carries its own context. Pass --model explicitly (fable|opus|sonnet|haiku).
+# The key never lives in this file: `key_source = "keychain"` reads the macOS
+# Keychain item added with
+#   security add-generic-password -s playmaker-anthropic-api -a playmaker -w
+# and `key_source = "file"` reads ANTHROPIC_API_KEY=... from ~/.playmaker/secrets.env
+# (mode 600). `playmaker quotas` shows the lane's spend this cycle — the sum of
+# cost_usd over its sessions since credit_reset_day — marks it `low` under
+# warn_below_usd, and dispatch refuses (exit 3, --force overrides) once that sum
+# reaches stop_at_usd. An API answer of "credit balance is too low" counts as a
+# quota refusal, so --fallback reroutes the work.
+# [agents.claude-api]
+# binary = "claude"
+# bare = true
+# key_source = "keychain"
+# effort = "high"
+# credit_reset_day = 4
+# monthly_cap_usd = 200
+# stop_at_usd = 200
+# warn_below_usd = 15
 
 [agents.codex]
 binary = "codex"

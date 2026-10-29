@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`claude-api` lane — Claude Code on an API key.** `playmaker dispatch
+  claude-api` runs `claude --bare`, which authenticates through
+  `ANTHROPIC_API_KEY` alone and never reads the OAuth login or the Keychain
+  entry, so it spends Console credits and leaves the Max subscription the
+  `claude` lane runs on untouched. The key comes from `[agents.claude-api]
+  key_source`: the macOS Keychain item `playmaker-anthropic-api` or
+  `~/.playmaker/secrets.env` (mode 600), and is injected into the worker's
+  environment only. A lane without its key refuses the dispatch (exit 2)
+  before any session row exists. `ClaudeHandler` is now parameterised by the
+  lane key, so every `[agents.<lane>]` setting (`effort`, `permission_mode`,
+  `yolo`, …) is read per lane; `--effort` is forwarded to both claude lanes.
+- **A local credit counter.** `playmaker quotas` shows the `claude-api` lane
+  as «spent $X of $CAP since <reset day>, $Y left» — the sum of `cost_usd`
+  over its sessions since `credit_reset_day` — with a `Credits` bar against
+  `monthly_cap_usd` and a `low` mark once less than `warn_below_usd` is left.
+  `dispatch` and `continue` refuse (exit 3, `--force` overrides) once the sum
+  reaches `stop_at_usd`. The API's «credit balance is too low» answer is
+  classified as a quota refusal, so `--fallback` reroutes the work.
 - **The `pm` mod — playmaker beside the chat in Claude Code.** One pane with
   every quota window (CodexBar's colors and order) and every recent worker by
   batch, with its state, lane, model, elapsed time and what its session is

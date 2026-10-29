@@ -10,7 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import playmaker.registry as registry
 
 
-@pytest.mark.parametrize("name", ["claude", "codex", "agy", "gemini", "kimi", "muse", "opencode"])
+@pytest.mark.parametrize(
+    "name", ["claude", "claude-api", "codex", "agy", "gemini", "kimi", "muse", "opencode"]
+)
 def test_get_handler_returns_named_handler(name: str) -> None:
     handler = registry.get_handler(name)
 
@@ -20,7 +22,9 @@ def test_get_handler_returns_named_handler(name: str) -> None:
 def test_all_handlers_contains_builtin_agents() -> None:
     handlers = registry.all_handlers()
 
-    assert {"claude", "codex", "agy", "gemini", "kimi", "muse", "opencode"} <= set(handlers)
+    assert {"claude", "claude-api", "codex", "agy", "gemini", "kimi", "muse", "opencode"} <= set(
+        handlers
+    )
 
 
 def test_get_handler_unknown_agent_raises() -> None:
