@@ -727,22 +727,27 @@ export const register: Register = (on, options) => {
 
               return (
                 <Box flexDirection="column" marginTop="md">
-                  <Box flexDirection="row" gap={1} alignItems="center">
-                    <Text color={statusColor(r.status)}>{statusGlyph(r.status)}</Text>
-                    <Text weight="semibold" color={lane.color}>
-                      {lane.name}
-                    </Text>
-                    {model !== '' && (
-                      <Text dimColor size="caption">
-                        {model}
+                  <Box flexDirection="row" alignItems="center">
+                    {/* As wide as the indent below, so the name starts where the prompt does. */}
+                    <Box width={2} flexShrink={0}>
+                      <Text color={statusColor(r.status)}>{statusGlyph(r.status)}</Text>
+                    </Box>
+                    <Box flexDirection="row" gap={1} alignItems="center">
+                      <Text weight="semibold" color={lane.color}>
+                        {lane.name}
                       </Text>
-                    )}
-                    <Text dimColor mono size="caption">
-                      {shortId(r.id)}
-                    </Text>
-                    <Text dimColor tabular size="caption">
-                      {meta}
-                    </Text>
+                      {model !== '' && (
+                        <Text dimColor size="caption">
+                          {model}
+                        </Text>
+                      )}
+                      <Text dimColor mono size="caption">
+                        {shortId(r.id)}
+                      </Text>
+                      <Text dimColor tabular size="caption">
+                        {meta}
+                      </Text>
+                    </Box>
                   </Box>
                   <Box paddingLeft={2}>
                     <Text size="footnote" wrap="truncate-end">

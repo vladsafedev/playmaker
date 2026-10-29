@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads as the plain Gemini weekly beside it.
 - **The `pm` mod lists the newest first (0.1.3)** — the workers inside a
   batch too, not only the batches.
+- **The `pm` mod lines a worker's name up with its prompt (0.1.4)** — the
+  status glyph sits in a column as wide as the indent below.
 - **The `claude-api` lane runs on the Claude Agent SDK, not `claude --bare`.**
   Console's promo credit pays for Agent SDK traffic and not for Claude Code's,
   so with no purchased credit every `--bare` run failed on «credit balance is
