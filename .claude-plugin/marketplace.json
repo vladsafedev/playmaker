@@ -1,0 +1,14 @@
+{
+  "name": "playmaker",
+  "owner": {
+    "name": "vladsafedev"
+  },
+  "description": "Claude Code plugins that ship with playmaker.",
+  "plugins": [
+    {
+      "name": "pm",
+      "source": "./mods/pm",
+      "description": "playmaker beside the chat: quotas and workers in a pane, a wake-up when a batch finishes, the policy tiers in the system prompt, /pm commands. Shows, carries and wakes; decides nothing."
+    }
+  ]
+}

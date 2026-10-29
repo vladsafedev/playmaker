@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The `pm` mod — playmaker beside the chat in Claude Code.** One pane with
+  every quota window (CodexBar's colors and order) and every recent worker by
+  batch, with its state, lane, model, elapsed time and what its session is
+  doing; the quota line under the prompt and beside every `playmaker dispatch`
+  result; a wake-up brief in the chat when a batch of this project finishes;
+  the policy tiers in the system prompt; `/pm board|quotas|review|wp|policy`.
+  It shows, carries and wakes — it never refuses a dispatch or picks a lane.
+  Lives at `mods/pm/`; the repository is a plugin marketplace
+  (`.claude-plugin/marketplace.json`), so `/plugin install pm --marketplace
+  vladsafedev/playmaker` installs it.
+- **`playmaker mod install`.** Copies the bundled mod (shipped in the wheel as
+  `playmaker/_mods`) to `~/.playmaker/mods`, makes that folder a local
+  marketplace `playmaker-local` and installs `pm@playmaker-local` through
+  `claude plugin`; `--no-register` only prints the two steps.
+
 ### Fixed
 
 - **Antigravity quota groups keep their own names.** The language server

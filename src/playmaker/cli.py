@@ -75,6 +75,12 @@ skill_app = typer.Typer(
 )
 app.add_typer(skill_app, name="skill")
 
+mod_app = typer.Typer(
+    help="Install the bundled pm mod (pane, quotas, wake-up) for Claude Code.",
+    no_args_is_help=True,
+)
+app.add_typer(mod_app, name="mod")
+
 worktree_app = typer.Typer(help="Inspect and remove dispatch worktrees.", no_args_is_help=True)
 app.add_typer(worktree_app, name="worktree")
 queue_app = typer.Typer(help="Manage per-thread follow-up work.", no_args_is_help=True)
@@ -137,6 +143,113 @@ def skill_install(
     console.print("  the skill reads it at plan time, so --force never clobbers your policy.")
     console.print("  Start a new Claude Code session and give it a multi-part task.")
 
+
+MOD_NAME = "pm"
+# The marketplace `mod install` writes around its copy. Its own name, so it never
+# collides with the repository's `playmaker` marketplace a checkout may have added.
+MOD_MARKETPLACE = "playmaker-local"
+
+
+def _bundled_mod_dir() -> Path:
+    """Where the pm mod ships: inside the wheel, or `mods/` in a checkout."""
+    packaged = Path(__file__).resolve().parent / "_mods" / MOD_NAME
+    if packaged.is_dir():
+        return packaged
+    return Path(__file__).resolve().parents[2] / "mods" / MOD_NAME
+
+
+@mod_app.command("path")
+def mod_path() -> None:
+    """Print the path of the bundled mod inside this installation."""
+    console.print(str(_bundled_mod_dir()))
+
+
+def _claude_plugin(args: list[str]) -> tuple[bool, str]:
+    """Run `claude plugin <args>`; (ok, output). A missing `claude` is not ok."""
+    try:
+        ran = subprocess.run(
+            ["claude", "plugin", *args], capture_output=True, text=True, timeout=120
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+    return ran.returncode == 0, (ran.stdout + ran.stderr).strip()
+
+
+@mod_app.command("install")
+def mod_install(
+    dest: Path = typer.Option(
+        Path("~/.playmaker/mods"),
+        "--dir",
+        help="folder to keep the mod in; it becomes a local marketplace",
+    ),
+    force: bool = typer.Option(False, "--force", help="overwrite an existing copy"),
+    register: bool = typer.Option(
+        True,
+        "--register/--no-register",
+        help="add the marketplace and install the plugin with `claude plugin`",
+    ),
+) -> None:
+    """Copy the pm mod into a folder and install it as a Claude Code plugin."""
+    source_dir = _bundled_mod_dir()
+    if not (source_dir / ".claude-plugin" / "plugin.json").is_file():
+        err_console.print(f"[red]bundled mod not found at {source_dir}[/red]")
+        raise typer.Exit(1)
+
+    root = dest.expanduser()
+    target_dir = root / MOD_NAME
+    if (target_dir / ".claude-plugin" / "plugin.json").exists() and not force:
+        err_console.print(
+            f"[yellow]{target_dir} already exists[/yellow] — pass --force to overwrite"
+        )
+        raise typer.Exit(1)
+
+    # Files the engine writes beside a loaded mod (its type declarations) are its
+    # own; the bundle never carries them, so a copy over them leaves them be.
+    written = 0
+    for src in sorted(p for p in source_dir.rglob("*") if p.is_file()):
+        if "__pycache__" in src.parts or src.name == ".DS_Store":
+            continue
+        dst = target_dir / src.relative_to(source_dir)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
+        written += 1
+
+    marketplace = root / ".claude-plugin" / "marketplace.json"
+    marketplace.parent.mkdir(parents=True, exist_ok=True)
+    marketplace.write_text(
+        json.dumps(
+            {
+                "name": MOD_MARKETPLACE,
+                "owner": {"name": "playmaker"},
+                "plugins": [{"name": MOD_NAME, "source": f"./{MOD_NAME}"}],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    console.print(f"[green]copied[/green] {target_dir} [dim]({written} files)[/dim]")
+
+    steps = [
+        ["marketplace", "add", str(root)],
+        ["install", f"{MOD_NAME}@{MOD_MARKETPLACE}"],
+    ]
+    if not register:
+        console.print("  Register it with:")
+        for step in steps:
+            console.print(f"    claude plugin {' '.join(step)}")
+        return
+    for step in steps:
+        ok, out = _claude_plugin(step)
+        # Adding a marketplace that is already there is not a failure here.
+        if not ok and not (step[0] == "marketplace" and "already" in out.lower()):
+            err_console.print(f"[red]claude plugin {' '.join(step)} failed[/red]: {out}")
+            console.print("  Run the remaining step yourself once `claude` is on PATH:")
+            for rest in steps[steps.index(step) :]:
+                console.print(f"    claude plugin {' '.join(rest)}")
+            raise typer.Exit(1)
+    console.print(f"[green]installed[/green] {MOD_NAME}@{MOD_MARKETPLACE}")
+    console.print("  New Claude Code sessions load it; in a running one, type /reload-plugins.")
 
 def _apply_effort_override(agent: str, effort: str | None) -> None:
     """Route `--effort` to the claude lane for this run only.

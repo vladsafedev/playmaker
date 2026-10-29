@@ -1,0 +1,43 @@
+{
+  "name": "pm",
+  "version": "0.1.0",
+  "description": "playmaker beside the chat: a board pane with workers and quotas, a wake-up when a batch finishes, the policy tiers in the system prompt, and /pm commands. Shows, carries and wakes; decides nothing.",
+  "author": {
+    "name": "vladsafedev"
+  },
+  "homepage": "https://github.com/vladsafedev/playmaker",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "wake": {
+      "title": "Будить на батч",
+      "type": "boolean",
+      "default": true,
+      "description": "Будить сессию сообщением, когда батч playmaker завершён"
+    },
+    "wakeLone": {
+      "title": "Будить на одиночный воркер",
+      "type": "boolean",
+      "default": false,
+      "description": "Будить и на воркер без батча (--sync-воркеры тоже одиночные, поэтому выключено)"
+    },
+    "quotaMinutes": {
+      "title": "Квоты, минут",
+      "type": "number",
+      "default": 5,
+      "description": "Как часто обновлять квоты, минут"
+    },
+    "policyInPrompt": {
+      "title": "Политика в промпте",
+      "type": "boolean",
+      "default": true,
+      "description": "Класть таблицу тиров из policy.md в системный промпт"
+    },
+    "quotaOnDispatch": {
+      "title": "Квоты рядом с dispatch",
+      "type": "boolean",
+      "default": true,
+      "description": "Добавлять строку квот к результату playmaker dispatch"
+    }
+  }
+}

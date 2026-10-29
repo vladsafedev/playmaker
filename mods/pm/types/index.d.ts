@@ -1,0 +1,56 @@
+// The pm mod's state contract: what it keeps in `$.state` under `pm`.
+
+export type Row = {
+  id: string
+  agent: string
+  model: string | null
+  prompt: string
+  status: string
+  startedAt: string | null
+  finishedAt: string | null
+  batchId: string | null
+  cwd: string | null
+  durationSeconds: number | null
+  failReason: string | null
+}
+
+export type QuotaWindow = {
+  name: string
+  pct: number | null
+  reset: string | null
+}
+
+export type Quota = {
+  lane: string
+  status: string
+  tier: string | null
+  windows: QuotaWindow[]
+}
+
+export type Quotas = { fetchedAt: string; lanes: Quota[] }
+
+// One line per worker out of `playmaker summary`, by session id.
+export type Note = { status: string; text: string; at: number }
+
+export type Review = {
+  wp: string
+  pid: number
+  log: string
+  startedAt: number
+  isDone: boolean
+  exitCode: string | null
+  tail: string[]
+}
+
+declare module 'claude-code' {
+  interface PluginState {
+    pm: {
+      rows: Shaped<Row[]>
+      quotas: Shaped<Quotas | null>
+      policy: string | null
+      review: Review | null
+      error: string | null
+      notes: Shaped<Record<string, Note>>
+    }
+  }
+}

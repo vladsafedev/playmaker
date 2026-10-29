@@ -223,6 +223,22 @@ Before planning, the coach reads `./.playmaker/policy.md` (repo) and
 touch in this repo, which commands are the acceptance gates. Keep your own
 rules there and `playmaker skill install --force` stays a safe upgrade.
 
+### The `pm` mod — playmaker beside the chat
+
+A Claude Code mod that puts playmaker in a pane next to the conversation: every
+quota window of every lane, and every recent worker by batch with its state and
+what its session is doing. It also wakes the coach with a short brief when a
+batch of the current project finishes, shows the quota line beside each
+`playmaker dispatch` result, and carries the policy tiers into the system prompt.
+It decides nothing: no dispatch is ever refused, no lane picked.
+
+```bash
+playmaker mod install          # from a pip/uv install
+```
+
+or, at a Claude Code prompt, `/plugin install pm --marketplace vladsafedev/playmaker`.
+Details: [`mods/pm/README.md`](mods/pm/README.md).
+
 ## Commands
 
 ```bash

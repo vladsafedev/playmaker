@@ -66,15 +66,19 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/playmaker"]
 
-# The coach skill lives at skills/ for discoverability on GitHub; ship it inside
-# the package so `playmaker skill install` works from a pip/uv install too.
+# The coach skill lives at skills/ and the pm mod at mods/ for discoverability on
+# GitHub; ship both inside the package so `playmaker skill install` and
+# `playmaker mod install` work from a pip/uv install too.
 [tool.hatch.build.targets.wheel.force-include]
 "skills" = "playmaker/_skills"
+"mods" = "playmaker/_mods"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "src/playmaker",
     "skills",
+    "mods",
+    ".claude-plugin",
     "tests",
     "README.md",
     "CHANGELOG.md",
