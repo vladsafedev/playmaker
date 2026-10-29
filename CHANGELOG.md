@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Antigravity quota groups keep their own names.** The language server
+  reports a group per model family — since October 2026 «Gemini 4 Argon»
+  beside «Gemini Models», with a weekly bucket of its own — and the window
+  name was keyed on the word «gemini», so both showed as «Gemini weekly» with
+  different numbers. The name is now the group's own, minus the word
+  «models»: `Gemini weekly`, `Claude/GPT weekly`, `Gemini 4 Argon weekly`.
+
 ## [0.15.3] - 2026-10-20
 
 ### Added

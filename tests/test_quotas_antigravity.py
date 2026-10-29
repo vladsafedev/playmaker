@@ -70,9 +70,42 @@ def test_windows_from_summary_categorized_and_ordered() -> None:
     assert by_name["Gemini weekly"]["reset_at_iso"] == "2026-07-19T13:26:30Z"
 
 
+def test_a_model_family_group_keeps_its_own_window_name() -> None:
+    # Since October 2026 the language server reports Gemini 4 Argon as a group
+    # of its own, with only a weekly bucket. It must not collapse into the
+    # plain Gemini group's "Gemini weekly".
+    summary = {
+        "groups": [
+            *_SUMMARY["groups"],
+            {
+                "displayName": "Gemini 4 Argon",
+                "buckets": [
+                    {"bucketId": "gemini-argon-wtu-weekly",
+                     "displayName": "Gemini 4 Argon Weekly Limit",
+                     "remainingFraction": 0.92, "resetTime": "2026-07-19T13:30:00Z"},
+                ],
+            },
+        ]
+    }
+    windows = quotas._antigravity_windows_from_summary(summary)
+
+    names = [w["name"] for w in windows]
+    assert names == [
+        "Gemini 5h",
+        "Gemini weekly",
+        "Claude/GPT 5h",
+        "Claude/GPT weekly",
+        "Gemini 4 Argon weekly",
+    ]
+    assert len(set(names)) == len(names)
+    assert {w["name"]: w["pct_left"] for w in windows}["Gemini 4 Argon weekly"] == 92
+
+
 def test_group_and_bucket_classifiers() -> None:
     assert quotas._antigravity_group_short("Gemini Models") == "Gemini"
     assert quotas._antigravity_group_short("Claude and GPT models") == "Claude/GPT"
+    assert quotas._antigravity_group_short("Gemini 4 Argon") == "Gemini 4 Argon"
+    assert quotas._antigravity_group_short("") == "Antigravity"
     assert quotas._antigravity_bucket_window("gemini-5h", "Five Hour Limit") == ("5h", 5 * 3600)
     assert quotas._antigravity_bucket_window("3p-weekly", "Weekly Limit") == ("weekly", 7 * 86400)
     assert quotas._antigravity_bucket_window("unknown", "Something") is None

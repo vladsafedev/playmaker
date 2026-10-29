@@ -905,12 +905,22 @@ def _antigravity_stop(proc: subprocess.Popen) -> None:
 
 # Category / bucket → short window name, and window length for forecasting.
 def _antigravity_group_short(display_name: str) -> str:
+    """The group's own name, shortened: "Gemini Models" -> "Gemini",
+    "Claude and GPT models" -> "Claude/GPT", "Gemini 4 Argon" -> "Gemini 4 Argon".
+
+    Keyed on the whole name, not on a word in it: the language server reports
+    a separate group per model family with its own weekly bucket (Gemini 4
+    Argon beside the plain Gemini group), and matching on "gemini" alone gave
+    both the same window name, so two "Gemini weekly" rows with different
+    numbers and nothing to tell them apart."""
+    name = re.sub(r"\s*\bmodels?\b", "", display_name, flags=re.IGNORECASE).strip()
+    name = re.sub(r"\s+and\s+", "/", name, flags=re.IGNORECASE)
+    if name:
+        return name
     low = display_name.lower()
-    if "gemini" in low:
-        return "Gemini"
-    if "claude" in low or "gpt" in low or "3p" in low:
+    if "3p" in low:
         return "Claude/GPT"
-    return display_name.strip() or "Antigravity"
+    return "Antigravity"
 
 
 def _antigravity_bucket_window(bucket_id: str, display_name: str) -> tuple[str, int] | None:
