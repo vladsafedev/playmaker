@@ -36,6 +36,15 @@ export type Quotas = { fetchedAt: string; lanes: Quota[] }
 // scripts' round prefixes and the worker ids. Only these wake it.
 export type Claims = { batches: string[]; prefixes: string[]; sessions: string[] }
 
+// A session this one started (`start_session`), by its desktop id.
+export type Child = { id: string; title: string }
+
+// What each session leaves for the one that started it.
+export type ClaimsFile = { claims: Claims; children: Child[] }
+
+// Whose workers the pane shows: this session (label null) and its children.
+export type Owner = { label: string | null; claims: Claims }
+
 // One line per worker out of `playmaker summary`, by session id.
 export type Note = { status: string; text: string; at: number }
 
@@ -59,6 +68,8 @@ declare module 'claude-code' {
       error: string | null
       notes: Shaped<Record<string, Note>>
       mine: Shaped<Claims>
+      children: Shaped<Child[]>
+      owners: Shaped<Owner[]>
     }
   }
 }

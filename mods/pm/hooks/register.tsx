@@ -9,11 +9,12 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderInput } from 'claude-code'
 
-import type { Claims, Note, Quota, Quotas, Review, Row } from '../types'
+import type { Child, Claims, Note, Owner, Quota, Quotas, Review, Row } from '../types'
 import {
   basename,
   batchBrief,
   batchCounts,
+  childrenOf,
   claimsOf,
   clockTime,
   condenseSummary,
@@ -26,9 +27,12 @@ import {
   laneOf,
   laneOfRow,
   loneBrief,
+  mergeChildren,
   mergeClaims,
   modelShort,
+  ownerOf,
   paneLanes,
+  parseClaimsFile,
   parseEvents,
   parseQuotas,
   parseRows,
@@ -42,6 +46,7 @@ import {
   svgBar,
   tailLines,
   tiersSection,
+  windowLabel,
 } from './playmaker'
 import type { Event } from './playmaker'
 
@@ -68,6 +73,10 @@ const mine = atom(
   { batches: [], prefixes: [], sessions: [] } as Claims,
   { shape: 'mine-1' },
 )
+const children = atom({ plugin: 'pm', key: 'children' } as const, [] as Child[], {
+  shape: 'children-1',
+})
+const owners = atom({ plugin: 'pm', key: 'owners' } as const, [] as Owner[], { shape: 'owners-1' })
 const notes = atom({ plugin: 'pm', key: 'notes' } as const, {} as Record<string, Note>, {
   shape: 'notes-2',
 })
@@ -80,6 +89,9 @@ type PaneInput = RenderInput<'Pane'>
 let bin: string | null = null
 let home = ''
 let cwd = ''
+// The desktop's id for this session (`local_…`), the one `start_session`
+// answers with; the transcript id in a terminal.
+let hostId = ''
 let lastEventId = -1
 let isPolling = false
 let isProbing = false
@@ -214,6 +226,52 @@ const refreshNotes = async ($: Engine, kept: Row[], now: number): Promise<void> 
   if (JSON.stringify(next) !== JSON.stringify(current)) await update($, notes, () => next)
 }
 
+const claimsPath = (id: string): string => `${home}/.playmaker/mod-claims/${id}.json`
+
+// Leave what this session started where the session that started it reads.
+const saveClaims = async ($: Engine): Promise<void> => {
+  if (hostId === '' || home === '') return
+  const claims = await read($, mine)
+  const kids = await read($, children)
+  if (claims.batches.length + claims.prefixes.length + claims.sessions.length + kids.length === 0) return
+  try {
+    await $.fs.write(claimsPath(hostId), JSON.stringify({ claims, children: kids }))
+  } catch {
+    // no home to write in; the pane still shows this session's own
+  }
+}
+
+// The sessions a `start_session` (or hand-off) answer names.
+const noteChildren = async ($: Engine, text: unknown, result: unknown): Promise<void> => {
+  const all = `${typeof text === 'string' ? text : ''}\n${JSON.stringify(result ?? '')}`
+  const kids = childrenOf(all.replace(/\\"/g, '"'))
+  if (kids.length === 0) return
+  await update($, children, held => mergeChildren(held, kids))
+  await saveClaims($)
+}
+
+// This session, then every session it started and theirs, three deep.
+const loadOwners = async ($: Engine): Promise<Owner[]> => {
+  const found: Owner[] = [{ label: null, claims: await read($, mine) }]
+  const seen = new Set([hostId])
+  let level = (await read($, children)).map(c => ({ ...c, via: '' }))
+  for (let depth = 0; depth < 3 && level.length > 0; depth += 1) {
+    const deeper: typeof level = []
+    for (const c of level) {
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      const file = parseClaimsFile(await readFile($, claimsPath(c.id)))
+      const label = c.title !== '' ? c.title : shortId(c.id.replace(/^local_/, ''))
+      if (file === null) continue
+      found.push({ label: c.via === '' ? label : `${c.via} › ${label}`, claims: file.claims })
+      deeper.push(...file.children.map(k => ({ ...k, via: label })))
+    }
+    level = deeper
+  }
+
+  return found
+}
+
 // playmaker's state is machine-wide and many sessions share one directory, so
 // a session is woken only for work its own Bash calls started (`mine`). Every
 // other batch shows as a toast at most.
@@ -245,7 +303,7 @@ const handleEvents = async ($: Engine, events: Event[], all: Row[], now: number)
     }
     if (ev.kind === 'status' && ev.status !== null) {
       if (ev.status === 'running') {
-        $.ui.toast(`● ${who} started${inBatch}`)
+        $.ui.toast(`• ${who} started${inBatch}`)
         continue
       }
       if (!isTerminal(ev.status)) continue
@@ -306,7 +364,13 @@ const pollSessions = async ($: Engine): Promise<void> => {
     const listed = await run($, ['list', '--json', '--limit', '80'], 20000)
     if (listed !== null) {
       all = parseRows(listed)
-      kept = keepRecent(all, now)
+      // Only workers this session or one it started launched.
+      const found = await loadOwners($)
+      if (JSON.stringify(found) !== JSON.stringify(await read($, owners))) await update($, owners, () => found)
+      kept = keepRecent(
+        all.filter(r => ownerOf(found, r.batchId, [r.id]) !== null),
+        now,
+      )
       const current = await read($, rows)
       const isLive = kept.some(r => !isTerminal(r.status))
       if (isLive || JSON.stringify(current) !== JSON.stringify(kept)) {
@@ -316,7 +380,9 @@ const pollSessions = async ($: Engine): Promise<void> => {
     const printed = await run($, ['events', '--last', '200'], 20000)
     if (printed !== null) await handleEvents($, parseEvents(printed), all, now)
     await checkReview($)
-    if (tick % 10 === 1) await refreshNotes($, kept, now)
+    // A worker that just came into view gets its line at once.
+    const noted = await read($, notes)
+    if (tick % 10 === 1 || kept.some(r => r.status !== 'pending' && noted[r.id] === undefined)) await refreshNotes($, kept, now)
   } finally {
     isPolling = false
   }
@@ -450,7 +516,7 @@ const drawQuotas = async ($: Engine, e: PaneInput) => {
           <Box flexDirection="column" marginTop="xs">
             <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
               <Text size="caption" wrap="truncate-end">
-                {w.name}
+                {windowLabel(w.name)}
               </Text>
               <Box flexDirection="row" flexShrink={0} gap={1}>
                 <Box width={isCells ? 4 : 3} justifyContent="flex-end">
@@ -503,6 +569,8 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
     home = (await $.env.get('HOME')) ?? ''
+    hostId = (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')) ?? (await $.session.id())
+    await saveClaims($)
     await $.command.register({
       name: 'pm',
       description: 'playmaker: board, quotas, review board, worker summary',
@@ -591,6 +659,7 @@ export const register: Register = (on, options) => {
       const claims = claimsOf(e.command, typeof ran.text === 'string' ? ran.text : '')
       if (claims.batches.length + claims.prefixes.length + claims.sessions.length > 0) {
         await update($, mine, held => mergeClaims(held, claims))
+        await saveClaims($)
       }
     }
     if (!quotaOnDispatch || lane === null || ran.deny !== undefined) return ran
@@ -599,6 +668,20 @@ export const register: Register = (on, options) => {
     const line = `pm: quotas at dispatch time (${clockTime(q.fetchedAt)}): ${quotaLine(q)}`
 
     return { ...ran, context: [...(ran.context ?? []), line] }
+  }).catch(($, e, next) => next(e))
+
+  // A session this one starts: its workers show here too, under its title.
+  on('tool.call', { tool: 'mcp__ccd_session__start_session' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (ran.deny === undefined) await noteChildren($, ran.text, ran.result)
+
+    return ran
+  }).catch(($, e, next) => next(e))
+  on('tool.call', { tool: 'mcp__ccd_session__hand_off_to_session' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (ran.deny === undefined) await noteChildren($, ran.text, ran.result)
+
+    return ran
   }).catch(($, e, next) => next(e))
 
   // The pane: the quotas block, then every recent worker by batch.
@@ -613,12 +696,18 @@ export const register: Register = (on, options) => {
     // The terminal cuts by cells; a graphical surface truncates by itself.
     const head = e.surface === 'terminal' ? Math.max(16, e.props.bodyColumns - 4) : 240
     const batches = groupByBatch(list)
+    const found = await read($, owners)
+    const ownerLabel = (b: { id: string | null; rows: Row[] }): string => {
+      const label = ownerOf(found, b.id, b.rows.map(r => r.id))?.label ?? null
+
+      return label === null ? '' : `↳ ${label}`
+    }
     return (
       <Box flexDirection="column">
         {quotasTree}
         {batches.length === 0 && (
           <Box marginTop="xl">
-            <Text dimColor>no workers yet</Text>
+            <Text dimColor>no workers from this session yet</Text>
           </Box>
         )}
         {batches.map(b => (
@@ -626,7 +715,7 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" gap={1} alignItems="center">
               <Text weight="semibold">{b.id ?? 'no batch'}</Text>
               <Text dimColor size="caption">
-                {batchCounts(b.rows)} · {basename(b.rows[0]?.cwd ?? null)}
+                {[batchCounts(b.rows), basename(b.rows[0]?.cwd ?? null), ownerLabel(b)].filter(x => x !== '').join(' · ')}
               </Text>
             </Box>
             {b.rows.map(r => {

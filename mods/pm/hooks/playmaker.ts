@@ -2,7 +2,7 @@
 // pane, the status line and the wake-up brief. No `$` in here, so every
 // function is testable by itself and the hooks module stays readable.
 
-import type { Quota, QuotaWindow, Quotas, Row } from '../types'
+import type { Child, ClaimsFile, Owner, Quota, QuotaWindow, Quotas, Row } from '../types'
 
 export type Event = {
   id: number
@@ -311,16 +311,17 @@ export const elapsed = (row: Row, nowMs: number): string => {
 
 export const statusGlyph = (status: string): string => {
   switch (status) {
+    // Small, so it sits with the check and the cross.
     case 'running':
-      return '●'
+      return '•'
     case 'pending':
-      return '○'
+      return '◦'
     case 'done':
       return '✓'
     case 'failed':
       return '✗'
     case 'killed':
-      return '■'
+      return '✗'
     case 'no_changes':
       return '△'
     default:
@@ -650,6 +651,59 @@ export const mergeClaims = (a: Claims, b: Claims, cap = 200): Claims => ({
 export const isClaimed = (c: Claims, batchId: string | null, memberIds: string[]): boolean =>
   (batchId !== null && (c.batches.includes(batchId) || c.prefixes.some(p => batchId.startsWith(p)))) ||
   memberIds.some(id => c.sessions.includes(id))
+
+// Sessions this one started, out of `start_session`'s (or a hand-off's)
+// answer: `Started session "<title>" (session_id: local_…, …)`. Any other
+// `local_` id in the text counts too, without a title.
+export const childrenOf = (text: string): Child[] => {
+  const found = new Map<string, string>()
+  for (const m of text.matchAll(/session "([^"]*)" \(session_id: (local_[0-9a-f-]{36})/g)) {
+    if (m[2] !== undefined) found.set(m[2], (m[1] ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim())
+  }
+  for (const m of text.matchAll(/local_[0-9a-f-]{36}/g)) {
+    if (!found.has(m[0])) found.set(m[0], '')
+  }
+
+  return [...found].map(([id, title]) => ({ id, title }))
+}
+
+export const mergeChildren = (a: Child[], b: Child[], cap = 100): Child[] => {
+  const byId = new Map(a.map(c => [c.id, c]))
+  for (const c of b) {
+    const had = byId.get(c.id)
+    byId.set(c.id, { id: c.id, title: c.title !== '' ? c.title : (had?.title ?? '') })
+  }
+
+  return [...byId.values()].slice(-cap)
+}
+
+// What a session leaves in `~/.playmaker/mod-claims/<id>.json` for the
+// session that started it.
+export const parseClaimsFile = (text: string | null): ClaimsFile | null => {
+  if (text === null) return null
+  try {
+    const d = JSON.parse(text) as Partial<ClaimsFile>
+    const c = d.claims
+    if (c === undefined || !Array.isArray(c.batches)) return null
+
+    return {
+      claims: { batches: c.batches, prefixes: c.prefixes ?? [], sessions: c.sessions ?? [] },
+      children: Array.isArray(d.children) ? d.children : [],
+    }
+  } catch {
+    return null
+  }
+}
+
+// The first owner that claims a batch: this session (label null) before
+// any child, so a row shows once under whoever started it.
+export const ownerOf = (owners: Owner[], batchId: string | null, memberIds: string[]): Owner | null =>
+  owners.find(o => isClaimed(o.claims, batchId, memberIds)) ?? null
+
+// A window's name as the pane draws it. Antigravity's Argon group has a
+// weekly bucket of its own; cut to fit, "Gemini 4 Argon wee…" read as the
+// plain Gemini weekly beside it.
+export const windowLabel = (name: string): string => name.replace(/^Gemini \d+(?:\.\d+)? Argon\b/, 'Argon')
 
 // `playmaker dispatch <lane> …` anywhere in a Bash command; the first lane.
 export const dispatchLane = (command: string): string | null => {

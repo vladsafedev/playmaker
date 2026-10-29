@@ -27,7 +27,24 @@ const ROWS = JSON.stringify([
     cwd: '/repo',
     duration_seconds: null,
   },
+  // Started by some other session in the same directory.
+  {
+    id: '5b1e0c3a-2f44-4d1e-9a0b-7d2c6e8f9a10',
+    agent: 'zai',
+    model: 'glm-5.3',
+    prompt: 'WP stranger — unrelated work',
+    status: 'running',
+    started_at: '2026-10-28T13:31:00+00:00',
+    finished_at: null,
+    batch_id: 'stranger',
+    cwd: '/repo',
+    duration_seconds: null,
+  },
 ])
+
+const SELF = 'local_2f223b17-9156-4d6a-a4b8-7c2907ae2883'
+const CHILD = 'local_1e176179-0619-4c28-926d-7e2f8ef7eebe'
+const claimsAt = (id: string) => `/Users/vlad/.playmaker/mod-claims/${id}.json`
 
 const EVENT_STATUS = JSON.stringify({
   id: 1,
@@ -76,6 +93,13 @@ const QUOTAS = JSON.stringify({
         windows: [{ name: 'Weekly', pct_left: 85, reset_relative: '5d 8h' }],
       },
     },
+    agy: {
+      status: 'ok',
+      windows: [
+        { name: 'Gemini weekly', pct_left: 96, reset_relative: '6d 3h' },
+        { name: 'Gemini 4 Argon weekly', pct_left: 0, reset_relative: '6d 18h' },
+      ],
+    },
     muse: { status: 'ok', windows: [] },
     ollama: { status: 'unsupported', windows: [] },
   },
@@ -101,16 +125,30 @@ const ok = (stdout: string) => ({
   value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
 })
 
-// The world beneath the plugin: a clock, HOME, the policy file and a
-// playmaker that answers by its arguments.
-const world = (on: On, phase: { batchDone: boolean }) => {
+// The world beneath the plugin: a clock, HOME, the policy file, the
+// sessions' claim files and a playmaker that answers by its arguments.
+const world = (on: On, phase: { batchDone: boolean }, files: Record<string, string> = {}) => {
   const clock = mock.clock(on, { now: Date.parse('2026-10-28T13:40:00Z') })
-  mock.env(on, { HOME: '/Users/vlad' })
+  mock.env(on, { HOME: '/Users/vlad', CLAUDE_CODE_HOST_SESSION_ID: SELF })
+  on('fs.write', (_, e) => {
+    files[e.path] = e.text
+
+    return { value: undefined }
+  })
   on('command.register', () => ({ value: { command: 'pm' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.panes', () => ({ value: [] }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('fs.read', () => ({ value: POLICY }))
+  on('fs.read', (_, e) => {
+    if (e.path.includes('/mod-claims/')) {
+      const text = files[e.path]
+      if (text === undefined) throw new Error('ENOENT')
+
+      return { value: text }
+    }
+
+    return { value: POLICY }
+  })
   on('process.run', (_, e) => {
     const argv = e.argv.join(' ')
     if (argv.includes('command -v')) return ok('/usr/local/bin/playmaker\n')
@@ -129,8 +167,19 @@ const world = (on: On, phase: { batchDone: boolean }) => {
 
 test('the pane lists the workers and a finished batch wakes the coach', async ($, on) => {
   const phase = { batchDone: false }
-  const clock = world(on, phase)
-  on('tool.call', () => ({ result: {} }))
+  // A session this one started has launched af-money.
+  const files: Record<string, string> = {
+    [claimsAt(CHILD)]: JSON.stringify({
+      claims: { batches: ['af-money'], prefixes: [], sessions: [] },
+      children: [],
+    }),
+  }
+  const clock = world(on, phase, files)
+  on('tool.call', (_, e) =>
+    e.tool === 'mcp__ccd_session__start_session'
+      ? { result: [{ type: 'text', text: `Started session "► Деньги в AppsFlyer" (session_id: ${CHILD}, name: af).` }] }
+      : { result: {} },
+  )
   const submitted: string[] = []
   on('prompt.submit', (_, e) => {
     submitted.push(e.text)
@@ -140,7 +189,15 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
 
   await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
   await clock.settle()
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', title: 'Деньги в AppsFlyer' })
+  // This session starts the batch itself; the label comes through a variable.
+  await $.tool.call({ tool: 'Bash', command: 'B=review-af-money-r1; playmaker dispatch codex --batch "$B" -p "x"' })
   await clock.advance(3000)
+
+  // What it started is left for the session that started it.
+  const left = JSON.parse(files[claimsAt(SELF)] ?? '{}')
+  expect(left.claims.batches).toEqual(['review-af-money-r1'])
+  expect(left.children).toEqual([{ id: CHILD, title: 'Деньги в AppsFlyer' }])
 
   for (const surface of ['terminal', 'desktop'] as const) {
     // The Workers tab: each worker with its lane, state and one-line summary.
@@ -148,8 +205,11 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     expect(await workers.find({ type: 'Text', text: /Kimi Code/ })).toBeDefined()
     expect(await workers.find({ type: 'Text', text: /review-af-money-r1/ })).toBeDefined()
     // The state is the glyph before the name, nothing else.
-    expect(await workers.find({ type: 'Text', text: /^●$/ })).toBeDefined()
+    expect(await workers.find({ type: 'Text', text: /^•$/ })).toBeDefined()
     expect(await workers.find({ type: 'Text', text: /Running/ })).toBe(undefined)
+    // The child's batch says whose it is; another session's is not here.
+    expect(await workers.find({ type: 'Text', text: /↳ Деньги в AppsFlyer/ })).toBeDefined()
+    expect(await workers.find({ type: 'Text', text: /unrelated work/ })).toBe(undefined)
     expect(await workers.find({ type: 'Text', text: /All acceptance criteria met/ })).toBeDefined()
     await workers.unmount()
 
@@ -166,14 +226,13 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     expect(await quotas.find({ type: 'Text', text: /^error$/ })).toBe(undefined)
     expect(await quotas.find({ type: 'Text', text: /^65%$/ })).toBeDefined()
     expect(await quotas.find({ type: 'Text', text: /6d 7h/ })).toBeDefined()
+    // Argon's own weekly reads as Argon, not as a cut-off Gemini weekly.
+    expect(await quotas.find({ type: 'Text', text: /^Argon weekly$/ })).toBeDefined()
     await quotas.unmount()
   }
 
   // Nothing replayed from before the session started.
   expect(submitted.length).toBe(0)
-
-  // This session starts the batch itself; the label comes through a variable.
-  await $.tool.call({ tool: 'Bash', command: 'B=review-af-money-r1; playmaker dispatch codex --batch "$B" -p "x"' })
 
   phase.batchDone = true
   await clock.advance(3000)

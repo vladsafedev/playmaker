@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `pm` mod's Workers show this session's work only (0.1.2).** A worker
+  appears when this session, one of its subagents or a session it started
+  (`start_session`, a hand-off) launched it; a child's batch is labelled
+  `↳ <its title>`, and other sessions' batches are left out. Each session
+  leaves what it started in `~/.playmaker/mod-claims/<session>.json` for the
+  one that started it, three levels deep. `killed` is drawn as a cross like
+  `failed`, running and pending as small dots, and Antigravity's
+  `Gemini 4 Argon weekly` as `Argon weekly`, so the cut-off name no longer
+  reads as the plain Gemini weekly beside it.
 - **The `claude-api` lane runs on the Claude Agent SDK, not `claude --bare`.**
   Console's promo credit pays for Agent SDK traffic and not for Claude Code's,
   so with no purchased credit every `--bare` run failed on «credit balance is
