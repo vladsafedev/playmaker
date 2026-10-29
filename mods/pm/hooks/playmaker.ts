@@ -411,8 +411,9 @@ export const groupByBatch = (rows: Row[]): Batch[] => {
     }
   }
   const batches = [...map.values()]
+  // Newest first, the batches and the workers in each.
   for (const b of batches) {
-    b.rows.sort((a, c) => (parseIso(a.startedAt) ?? 0) - (parseIso(c.startedAt) ?? 0))
+    b.rows.sort((a, c) => (parseIso(c.startedAt) ?? 0) - (parseIso(a.startedAt) ?? 0))
   }
   batches.sort((a, b) => b.startedAt - a.startedAt)
 

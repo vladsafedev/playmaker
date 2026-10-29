@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `failed`, running and pending as small dots, and Antigravity's
   `Gemini 4 Argon weekly` as `Argon weekly`, so the cut-off name no longer
   reads as the plain Gemini weekly beside it.
+- **The `pm` mod lists the newest first (0.1.3)** — the workers inside a
+  batch too, not only the batches.
 - **The `claude-api` lane runs on the Claude Agent SDK, not `claude --bare`.**
   Console's promo credit pays for Agent SDK traffic and not for Claude Code's,
   so with no purchased credit every `--bare` run failed on «credit balance is
