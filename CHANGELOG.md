@@ -42,6 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marketplace `playmaker-local` and installs `pm@playmaker-local` through
   `claude plugin`; `--no-register` only prints the two steps.
 
+### Changed
+
+- **The `claude-api` lane runs on the Claude Agent SDK, not `claude --bare`.**
+  Console's promo credit pays for Agent SDK traffic and not for Claude Code's,
+  so with no purchased credit every `--bare` run failed on «credit balance is
+  too low». The lane now runs `playmaker/runners/claude_sdk.mjs` on Node, which
+  calls the SDK's `query()` and prints the stream-json `claude -p` prints —
+  `cost_usd`, `continue`, `thread` and the credit counter work as before. The
+  SDK is installed once, pinned, with `playmaker sdk install` into
+  `~/.playmaker/sdk-runner`; `[agents.claude-api] binary` is now Node 18.14+,
+  `bare` no longer applies and `max_turns` is new. A lane without Node, the
+  pinned SDK or its key refuses (exit 2) before any session row. The worker
+  starts without the launching shell's `CLAUDE*` / `ANTHROPIC_*` variables,
+  and the runner stops a run the SDK did not authenticate with
+  `ANTHROPIC_API_KEY`.
+
 ### Fixed
 
 - **A failed quota probe keeps the last good numbers.** A 429 from a usage
