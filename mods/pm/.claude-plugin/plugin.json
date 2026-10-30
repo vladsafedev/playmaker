@@ -1,6 +1,6 @@
 {
   "name": "pm",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "playmaker beside the chat: a board pane with workers and quotas, a wake-up when a batch finishes, the policy tiers in the system prompt, and /pm commands. Shows, carries and wakes; decides nothing.",
   "author": {
     "name": "vladsafedev"
@@ -37,7 +37,12 @@
       "title": "Квоты рядом с dispatch",
       "type": "boolean",
       "default": true,
-      "description": "Добавлять строку квот к результату playmaker dispatch"
+      "description": "Добавлять строку квот к результату playmaker dispatch"    },
+    "toasts": {
+      "title": "Уведомления в Claude",
+      "type": "boolean",
+      "default": false,
+      "description": "Показывать всплывашки о воркерах и батчах внутри Claude (системные уведомления playmaker идут и без них)"
     }
   }
 }

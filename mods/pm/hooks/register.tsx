@@ -100,6 +100,12 @@ let isProbing = false
 let tick = 0
 let wake = true
 let wakeLone = false
+let toasts = false
+
+// macOS already shows playmaker's own notification; the in-app one is opt-in.
+const toast = ($: Engine, text: string): void => {
+  if (toasts) $.ui.toast(text)
+}
 
 const setError = async ($: Engine, text: string | null): Promise<void> => {
   const current = await read($, error)
@@ -276,7 +282,7 @@ const loadOwners = async ($: Engine): Promise<Owner[]> => {
 
 // playmaker's state is machine-wide and many sessions share one directory, so
 // a session is woken only for work its own Bash calls started (`mine`). Every
-// other batch shows as a toast at most.
+// other batch wakes nobody.
 const isOurs = async ($: Engine, batchId: string | null, members: Row[]): Promise<boolean> =>
   isClaimed(await read($, mine), batchId, members.map(r => r.id))
 
@@ -297,7 +303,7 @@ const handleEvents = async ($: Engine, events: Event[], all: Row[], now: number)
     if (ev.kind === 'batch' && ev.batch_id !== null) {
       const members = all.filter(r => r.batchId === ev.batch_id)
       const ours = await isOurs($, ev.batch_id, members)
-      $.ui.toast(
+      toast($,
         `batch ${ev.batch_id}: ${batchCounts(members)}${ours ? '' : ` · ${basename(members[0]?.cwd ?? null)}`}`,
       )
       if (wake && ours) void $.prompt.submit({ text: batchBrief(ev.batch_id, ev.detail, members, now, qLine) })
@@ -305,11 +311,11 @@ const handleEvents = async ($: Engine, events: Event[], all: Row[], now: number)
     }
     if (ev.kind === 'status' && ev.status !== null) {
       if (ev.status === 'running') {
-        $.ui.toast(`• ${who} started${inBatch}`)
+        toast($, `• ${who} started${inBatch}`)
         continue
       }
       if (!isTerminal(ev.status)) continue
-      $.ui.toast(`${statusGlyph(ev.status)} ${who} ${statusWord(ev.status).toLowerCase()}${inBatch}`)
+      toast($, `${statusGlyph(ev.status)} ${who} ${statusWord(ev.status).toLowerCase()}${inBatch}`)
       if (ev.batch_id === null && wake && wakeLone) {
         const row = all.find(r => r.id === ev.session_id)
         if (row !== undefined && (await isOurs($, null, [row]))) void $.prompt.submit({ text: loneBrief(row, now, qLine) })
@@ -319,7 +325,7 @@ const handleEvents = async ($: Engine, events: Event[], all: Row[], now: number)
     if (ev.kind === 'fallback') {
       const lane = typeof ev.detail?.lane === 'string' ? ev.detail.lane : '?'
       const reason = typeof ev.detail?.reason === 'string' ? ev.detail.reason : ''
-      $.ui.toast(`↷ ${who} → ${lane}${reason === '' ? '' : ` (${reason})`}${inBatch}`)
+      toast($, `↷ ${who} → ${lane}${reason === '' ? '' : ` (${reason})`}${inBatch}`)
     }
   }
 }
@@ -343,7 +349,7 @@ const checkReview = async ($: Engine): Promise<void> => {
   await update($, review, r =>
     r === null ? null : { ...r, isDone: true, exitCode: code, tail: tailLines(log, 12) },
   )
-  $.ui.toast(`review board ${current.wp}: finished, exit ${code}`)
+  toast($, `review board ${current.wp}: finished, exit ${code}`)
   if (wake) {
     void $.prompt.submit({
       text: [
@@ -568,6 +574,7 @@ export const register: Register = (on, options) => {
   const quotaMinutes = Math.max(1, Number(options.quotaMinutes ?? 5) || 5)
   const policyInPrompt = options.policyInPrompt !== false
   const quotaOnDispatch = options.quotaOnDispatch !== false
+  toasts = options.toasts === true
 
   on('session.start', async ($, e, next) => {
     cwd = e.cwd

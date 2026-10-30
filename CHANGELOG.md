@@ -63,6 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   step in under it with `↻` and its own state, id, time and summary, in the
   first turn's batch, and counts the chain as its first turn's owner's. The
   batch header still counts first turns only.
+- **The `pm` mod's in-app toasts are off by default (0.1.7).** playmaker's
+  own macOS notification already reports a finished batch, so the toasts
+  about workers, batches, fallbacks and review boards now need the `toasts`
+  setting; the wake-up brief is unchanged.
 - **The `claude-api` lane runs on the Claude Agent SDK, not `claude --bare`.**
   Console's promo credit pays for Agent SDK traffic and not for Claude Code's,
   so with no purchased credit every `--bare` run failed on «credit balance is

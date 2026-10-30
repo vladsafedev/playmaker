@@ -15,8 +15,9 @@ workers from a Claude Code session. It shows, carries and wakes; it decides noth
   `playmaker dispatch --batch …`, `review-board.sh` or `review-decision.sh` it ran
   itself, or a worker id its own call printed — the mod submits a brief to the
   chat — facts only: counts, workers, durations, directories, quotas — so the coach
-  continues without anyone typing «check». Every other batch shows as a toast; a directory shared with
-  other sessions is never enough.
+  continues without anyone typing «check». Every other batch wakes nobody; a directory shared
+  with other sessions is never enough. In-app toasts about workers and batches are off by
+  default (`toasts`), since playmaker's own macOS notification already says the same.
 - **Policy in the prompt.** The tiers section of `~/.playmaker/policy.md` and of
   `./.playmaker/policy.md` goes into the system prompt as written, once per session.
 - **Quotas beside a dispatch.** After `playmaker dispatch …` runs, the model reads the
