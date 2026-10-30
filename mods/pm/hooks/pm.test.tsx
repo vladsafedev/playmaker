@@ -27,6 +27,20 @@ const ROWS = JSON.stringify([
     cwd: '/repo',
     duration_seconds: null,
   },
+  // `playmaker continue` on the review worker: a row of its own, no batch.
+  {
+    id: '9d8c7b6a-1e2f-4a3b-8c4d-5e6f7a8b9c0d',
+    agent: 'codex',
+    model: 'gpt-5.6-terra',
+    prompt: 'Fix the finding from the board',
+    status: 'running',
+    started_at: '2026-10-28T13:39:00+00:00',
+    finished_at: null,
+    batch_id: null,
+    parent_id: 'c977dbdb-c1f9-488c-838b-86f9826acbe2',
+    cwd: '/repo',
+    duration_seconds: null,
+  },
   // Started by some other session in the same directory.
   {
     id: '5b1e0c3a-2f44-4d1e-9a0b-7d2c6e8f9a10',
@@ -210,6 +224,11 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     // The child's batch says whose it is; another session's is not here.
     expect(await workers.find({ type: 'Text', text: /↳ Деньги в AppsFlyer/ })).toBeDefined()
     expect(await workers.find({ type: 'Text', text: /unrelated work/ })).toBe(undefined)
+    // A continued turn shows under the turn it went on from, as its own row.
+    expect(await workers.find({ type: 'Text', text: /^↻$/ })).toBeDefined()
+    expect(await workers.find({ type: 'Text', text: /Fix the finding from the board/ })).toBeDefined()
+    expect(await workers.find({ type: 'Text', text: /^9d8c7b6a$/ })).toBeDefined()
+    expect(await workers.find({ type: 'Text', text: /no batch/ })).toBe(undefined)
     expect(await workers.find({ type: 'Text', text: /All acceptance criteria met/ })).toBeDefined()
     await workers.unmount()
 

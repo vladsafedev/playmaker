@@ -26,6 +26,7 @@ import {
   keepRecent,
   laneOf,
   laneOfRow,
+  linkChains,
   loneBrief,
   mergeChildren,
   mergeClaims,
@@ -47,6 +48,7 @@ import {
   tailLines,
   tiersSection,
   windowLabel,
+  withRoots,
 } from './playmaker'
 import type { Event } from './playmaker'
 
@@ -60,7 +62,7 @@ const USAGE = [
   '/pm policy — re-read policy.md',
 ].join('\n')
 
-const rows = atom({ plugin: 'pm', key: 'rows' } as const, [] as Row[], { shape: 'rows-1' })
+const rows = atom({ plugin: 'pm', key: 'rows' } as const, [] as Row[], { shape: 'rows-2' })
 // Shaped: a reload with another window layout must not read the old value.
 const quotas = atom({ plugin: 'pm', key: 'quotas' } as const, null as Quotas | null, {
   shape: 'quotas-3',
@@ -364,13 +366,14 @@ const pollSessions = async ($: Engine): Promise<void> => {
     const listed = await run($, ['list', '--json', '--limit', '80'], 20000)
     if (listed !== null) {
       all = parseRows(listed)
-      // Only workers this session or one it started launched.
+      // Only workers this session or one it started launched; a continued
+      // turn belongs to whoever owns its chain's first turn.
       const found = await loadOwners($)
       if (JSON.stringify(found) !== JSON.stringify(await read($, owners))) await update($, owners, () => found)
-      kept = keepRecent(
-        all.filter(r => ownerOf(found, r.batchId, [r.id]) !== null),
-        now,
+      const linked = linkChains(all).filter(
+        r => ownerOf(found, r.batchId, r.rootId === null ? [r.id] : [r.id, r.rootId]) !== null,
       )
+      kept = withRoots(keepRecent(linked, now), linked)
       const current = await read($, rows)
       const isLive = kept.some(r => !isTerminal(r.status))
       if (isLive || JSON.stringify(current) !== JSON.stringify(kept)) {
@@ -702,6 +705,60 @@ export const register: Register = (on, options) => {
 
       return label === null ? '' : `↳ ${label}`
     }
+    // One worker: glyph, lane, model, id, time; the prompt and what its
+    // session is doing under it. A continued turn opens with ↻.
+    const drawRow = (r: Row, isContinued: boolean) => {
+      const note = noted[r.id]
+      const when = isTerminal(r.status) ? clockTime(r.finishedAt) : ''
+      const meta = [elapsed(r, now), when].filter(s => s !== '').join(' · ')
+      const lane = laneOfRow(r.agent, r.model)
+      const model = modelShort(r.model)
+      const indent = isContinued ? 4 : 2
+
+      return (
+        <Box flexDirection="column" marginTop="md">
+          <Box flexDirection="row" alignItems="center">
+            {isContinued && (
+              <Box width={2} flexShrink={0}>
+                <Text dimColor>↻</Text>
+              </Box>
+            )}
+            {/* As wide as the indent below, so the name starts where the prompt does. */}
+            <Box width={2} flexShrink={0}>
+              <Text color={statusColor(r.status)}>{statusGlyph(r.status)}</Text>
+            </Box>
+            <Box flexDirection="row" gap={1} alignItems="center">
+              <Text weight="semibold" color={lane.color}>
+                {lane.name}
+              </Text>
+              {model !== '' && (
+                <Text dimColor size="caption">
+                  {model}
+                </Text>
+              )}
+              <Text dimColor mono size="caption">
+                {shortId(r.id)}
+              </Text>
+              <Text dimColor tabular size="caption">
+                {meta}
+              </Text>
+            </Box>
+          </Box>
+          <Box paddingLeft={indent}>
+            <Text size="footnote" wrap="truncate-end">
+              {promptHead(r.prompt, head - indent)}
+            </Text>
+          </Box>
+          {note !== undefined && note.text !== '' && (
+            <Box paddingLeft={indent}>
+              <Text dimColor size="caption" wrap="wrap">
+                {note.text}
+              </Text>
+            </Box>
+          )}
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column">
         {quotasTree}
@@ -715,55 +772,25 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" gap={1} alignItems="center">
               <Text weight="semibold">{b.id ?? 'no batch'}</Text>
               <Text dimColor size="caption">
-                {[batchCounts(b.rows), basename(b.rows[0]?.cwd ?? null), ownerLabel(b)].filter(x => x !== '').join(' · ')}
+                {[batchCounts(b.rows.filter(r => r.rootId === null)), basename(b.rows[0]?.cwd ?? null), ownerLabel(b)].filter(x => x !== '').join(' · ')}
               </Text>
             </Box>
-            {b.rows.map(r => {
-              const note = noted[r.id]
-              const when = isTerminal(r.status) ? clockTime(r.finishedAt) : ''
-              const meta = [elapsed(r, now), when].filter(s => s !== '').join(' · ')
-              const lane = laneOfRow(r.agent, r.model)
-              const model = modelShort(r.model)
-
-              return (
-                <Box flexDirection="column" marginTop="md">
-                  <Box flexDirection="row" alignItems="center">
-                    {/* As wide as the indent below, so the name starts where the prompt does. */}
-                    <Box width={2} flexShrink={0}>
-                      <Text color={statusColor(r.status)}>{statusGlyph(r.status)}</Text>
-                    </Box>
-                    <Box flexDirection="row" gap={1} alignItems="center">
-                      <Text weight="semibold" color={lane.color}>
-                        {lane.name}
-                      </Text>
-                      {model !== '' && (
-                        <Text dimColor size="caption">
-                          {model}
-                        </Text>
-                      )}
-                      <Text dimColor mono size="caption">
-                        {shortId(r.id)}
-                      </Text>
-                      <Text dimColor tabular size="caption">
-                        {meta}
-                      </Text>
-                    </Box>
-                  </Box>
-                  <Box paddingLeft={2}>
-                    <Text size="footnote" wrap="truncate-end">
-                      {promptHead(r.prompt, head)}
-                    </Text>
-                  </Box>
-                  {note !== undefined && note.text !== '' && (
-                    <Box paddingLeft={2}>
-                      <Text dimColor size="caption" wrap="wrap">
-                        {note.text}
-                      </Text>
-                    </Box>
-                  )}
+            {b.rows
+              .filter(r => r.rootId === null)
+              .map(root => (
+                <Box flexDirection="column">
+                  {drawRow(root, false)}
+                  {/* Its continuations: each a session of its own, one step in. */}
+                  {b.rows
+                    .filter(r => r.rootId === root.id)
+                    .map(r => (
+                      // A column, so the row takes the pane's width and wraps in it.
+                      <Box flexDirection="column" paddingLeft={2}>
+                        {drawRow(r, true)}
+                      </Box>
+                    ))}
                 </Box>
-              )
-            })}
+              ))}
           </Box>
         ))}
         {current !== null && (

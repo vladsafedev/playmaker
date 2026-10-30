@@ -65,6 +65,8 @@ export const parseRows = (json: string): Row[] => {
       cwd: asString(r.cwd),
       durationSeconds: asNumber(r.duration_seconds),
       failReason: asString(r.fail_reason),
+      parentId: asString(r.parent_id),
+      rootId: null,
     })
   }
 
@@ -394,6 +396,35 @@ export const keepRecent = (
   kept.sort((a, b) => (parseIso(b.startedAt) ?? 0) - (parseIso(a.startedAt) ?? 0))
 
   return kept.slice(0, cap)
+}
+
+// `playmaker continue` makes a row of its own, with `parent_id` and no
+// batch. Each such row learns its chain's first turn (the oldest ancestor
+// in the list) and sits in that turn's batch.
+export const linkChains = (rows: Row[]): Row[] => {
+  const byId = new Map(rows.map(r => [r.id, r]))
+  return rows.map(r => {
+    let root = r
+    for (let step = 0; step < 50 && root.parentId !== null; step += 1) {
+      const up = byId.get(root.parentId)
+      if (up === undefined) break
+      root = up
+    }
+
+    return root === r ? r : { ...r, rootId: root.id, batchId: root.batchId }
+  })
+}
+
+// Continuations kept without their first turn get it back, so every chain
+// hangs off a row that is drawn.
+export const withRoots = (kept: Row[], all: Row[]): Row[] => {
+  const ids = new Set(kept.map(r => r.id))
+  const roots = kept
+    .map(r => r.rootId)
+    .filter((id): id is string => id !== null && !ids.has(id))
+  const back = all.filter(r => roots.includes(r.id))
+
+  return [...kept, ...back]
 }
 
 export type Batch = { id: string | null; rows: Row[]; startedAt: number }

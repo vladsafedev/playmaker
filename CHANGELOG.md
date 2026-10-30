@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   batch too, not only the batches.
 - **The `pm` mod lines a worker's name up with its prompt (0.1.4)** — the
   status glyph sits in a column as wide as the indent below.
+- **The `pm` mod shows continued turns under the turn they went on from
+  (0.1.6).** `playmaker continue` makes a row of its own with `parent_id` and
+  no batch; the mod finds the chain's first turn, draws each continuation one
+  step in under it with `↻` and its own state, id, time and summary, in the
+  first turn's batch, and counts the chain as its first turn's owner's. The
+  batch header still counts first turns only.
 - **The `claude-api` lane runs on the Claude Agent SDK, not `claude --bare`.**
   Console's promo credit pays for Agent SDK traffic and not for Claude Code's,
   so with no purchased credit every `--bare` run failed on «credit balance is

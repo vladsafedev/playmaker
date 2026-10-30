@@ -12,6 +12,10 @@ export type Row = {
   cwd: string | null
   durationSeconds: number | null
   failReason: string | null
+  // The turn `playmaker continue` went on from, and the first turn of that
+  // chain as the mod found it; both null on a first turn.
+  parentId: string | null
+  rootId: string | null
 }
 
 export type QuotaWindow = {
