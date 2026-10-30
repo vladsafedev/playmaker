@@ -29,13 +29,34 @@ workers from a Claude Code session. It shows, carries and wakes; it decides noth
 
 ## Install
 
-From GitHub, at the prompt of a Claude Code session:
+At the prompt of a Claude Code session:
 
 ```
 /plugin install pm --marketplace vladsafedev/playmaker
 ```
 
-From a pip/uv install of playmaker, a copy that matches the CLI's version:
+or from a terminal:
+
+```bash
+claude plugin install pm --marketplace vladsafedev/playmaker
+```
+
+The first install adds the `playmaker` marketplace (this repository) to your user
+settings. Then run `/reload-plugins` in an open session, or start a new one; the
+pane opens with `/pm board`.
+
+To update later:
+
+```bash
+claude plugin marketplace update playmaker
+```
+
+```bash
+claude plugin update pm@playmaker
+```
+
+From a pip/uv install of playmaker, a copy that matches the CLI's version
+(registered as `pm@playmaker-local`):
 
 ```bash
 playmaker mod install
@@ -45,13 +66,17 @@ From a checkout, read straight from the folder (edits apply on `/reload-plugins`
 
 ```bash
 claude plugin marketplace add /path/to/playmaker
+```
+
+```bash
 claude plugin install pm@playmaker
 ```
 
 Needs `playmaker` on PATH (or in `~/.local/bin`); `/pm review` needs the
-`playmaker-coach` skill (`playmaker skill install`). Options (`/config`): wake on
-batch, wake on a lone worker, quota refresh interval, policy in prompt, quotas
-beside dispatch.
+`playmaker-coach` skill (`playmaker skill install`). Options, set with `--config <key>=<value>` on install or on the plugin's page in
+`/plugin`: `wake` (wake on a finished batch), `wakeLone` (on a lone worker),
+`quotaMinutes` (quota refresh interval), `policyInPrompt`, `quotaOnDispatch`,
+`toasts` (in-app toasts, off by default).
 
 ## Developing
 

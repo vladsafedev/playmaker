@@ -232,11 +232,14 @@ batch this session started finishes, shows the quota line beside each
 `playmaker dispatch` result, and carries the policy tiers into the system prompt.
 It decides nothing: no dispatch is ever refused, no lane picked.
 
-```bash
-playmaker mod install          # from a pip/uv install
+Install it from GitHub, at a Claude Code prompt:
+
+```
+/plugin install pm --marketplace vladsafedev/playmaker
 ```
 
-or, at a Claude Code prompt, `/plugin install pm --marketplace vladsafedev/playmaker`.
+then `/reload-plugins` (or a new session) and `/pm board`. From a pip/uv install of
+playmaker, `playmaker mod install` puts in a copy that matches the CLI's version.
 Details: [`mods/pm/README.md`](mods/pm/README.md).
 
 ## Commands

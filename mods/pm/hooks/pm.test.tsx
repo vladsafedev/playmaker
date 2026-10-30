@@ -7,11 +7,11 @@ const ROWS = JSON.stringify([
     id: 'c977dbdb-c1f9-488c-838b-86f9826acbe2',
     agent: 'codex',
     model: 'gpt-5.6-terra',
-    prompt: 'review af-money, lens correctness',
+    prompt: 'review search-cache, lens correctness',
     status: 'done',
     started_at: '2026-10-28T13:36:26+00:00',
     finished_at: '2026-10-28T13:37:14+00:00',
-    batch_id: 'review-af-money-r1',
+    batch_id: 'review-search-cache-r1',
     cwd: '/repo',
     duration_seconds: 48,
   },
@@ -19,11 +19,11 @@ const ROWS = JSON.stringify([
     id: '0a2ffe97-983b-4cd9-8ce8-b0eb0401e705',
     agent: 'kimi',
     model: 'kimi-code/k3-256k',
-    prompt: 'WP af-money — AppsFlyer as a destination of money events',
+    prompt: 'WP search-cache — a cache for search results',
     status: 'running',
     started_at: '2026-10-28T13:30:00+00:00',
     finished_at: null,
-    batch_id: 'af-money',
+    batch_id: 'search-cache',
     cwd: '/repo',
     duration_seconds: null,
   },
@@ -56,9 +56,9 @@ const ROWS = JSON.stringify([
   },
 ])
 
-const SELF = 'local_2f223b17-9156-4d6a-a4b8-7c2907ae2883'
-const CHILD = 'local_1e176179-0619-4c28-926d-7e2f8ef7eebe'
-const claimsAt = (id: string) => `/Users/vlad/.playmaker/mod-claims/${id}.json`
+const SELF = 'local_00000000-0000-4000-8000-00000000000a'
+const CHILD = 'local_00000000-0000-4000-8000-00000000000b'
+const claimsAt = (id: string) => `/home/dev/.playmaker/mod-claims/${id}.json`
 
 const EVENT_STATUS = JSON.stringify({
   id: 1,
@@ -66,7 +66,7 @@ const EVENT_STATUS = JSON.stringify({
   session_id: 'c977dbdb-c1f9-488c-838b-86f9826acbe2',
   agent: 'codex',
   model: null,
-  batch_id: 'review-af-money-r1',
+  batch_id: 'review-search-cache-r1',
   kind: 'status',
   status: 'done',
   prev_status: 'running',
@@ -79,7 +79,7 @@ const EVENT_BATCH = JSON.stringify({
   session_id: null,
   agent: null,
   model: null,
-  batch_id: 'review-af-money-r1',
+  batch_id: 'review-search-cache-r1',
   kind: 'batch',
   status: 'done',
   prev_status: null,
@@ -143,7 +143,7 @@ const ok = (stdout: string) => ({
 // sessions' claim files and a playmaker that answers by its arguments.
 const world = (on: On, phase: { batchDone: boolean }, files: Record<string, string> = {}) => {
   const clock = mock.clock(on, { now: Date.parse('2026-10-28T13:40:00Z') })
-  mock.env(on, { HOME: '/Users/vlad', CLAUDE_CODE_HOST_SESSION_ID: SELF })
+  mock.env(on, { HOME: '/home/dev', CLAUDE_CODE_HOST_SESSION_ID: SELF })
   on('fs.write', (_, e) => {
     files[e.path] = e.text
 
@@ -181,17 +181,17 @@ const world = (on: On, phase: { batchDone: boolean }, files: Record<string, stri
 
 test('the pane lists the workers and a finished batch wakes the coach', async ($, on) => {
   const phase = { batchDone: false }
-  // A session this one started has launched af-money.
+  // A session this one started has launched search-cache.
   const files: Record<string, string> = {
     [claimsAt(CHILD)]: JSON.stringify({
-      claims: { batches: ['af-money'], prefixes: [], sessions: [] },
+      claims: { batches: ['search-cache'], prefixes: [], sessions: [] },
       children: [],
     }),
   }
   const clock = world(on, phase, files)
   on('tool.call', (_, e) =>
     e.tool === 'mcp__ccd_session__start_session'
-      ? { result: [{ type: 'text', text: `Started session "► Деньги в AppsFlyer" (session_id: ${CHILD}, name: af).` }] }
+      ? { result: [{ type: 'text', text: `Started session "► Кэш поиска" (session_id: ${CHILD}, name: sc).` }] }
       : { result: {} },
   )
   const submitted: string[] = []
@@ -203,26 +203,26 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
 
   await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
   await clock.settle()
-  await $.tool.call({ tool: 'mcp__ccd_session__start_session', title: 'Деньги в AppsFlyer' })
+  await $.tool.call({ tool: 'mcp__ccd_session__start_session', title: 'Кэш поиска' })
   // This session starts the batch itself; the label comes through a variable.
-  await $.tool.call({ tool: 'Bash', command: 'B=review-af-money-r1; playmaker dispatch codex --batch "$B" -p "x"' })
+  await $.tool.call({ tool: 'Bash', command: 'B=review-search-cache-r1; playmaker dispatch codex --batch "$B" -p "x"' })
   await clock.advance(3000)
 
   // What it started is left for the session that started it.
   const left = JSON.parse(files[claimsAt(SELF)] ?? '{}')
-  expect(left.claims.batches).toEqual(['review-af-money-r1'])
-  expect(left.children).toEqual([{ id: CHILD, title: 'Деньги в AppsFlyer' }])
+  expect(left.claims.batches).toEqual(['review-search-cache-r1'])
+  expect(left.children).toEqual([{ id: CHILD, title: 'Кэш поиска' }])
 
   for (const surface of ['terminal', 'desktop'] as const) {
     // The Workers tab: each worker with its lane, state and one-line summary.
     const workers = await $.ui.mount({ ...PANE, surface })
     expect(await workers.find({ type: 'Text', text: /Kimi Code/ })).toBeDefined()
-    expect(await workers.find({ type: 'Text', text: /review-af-money-r1/ })).toBeDefined()
+    expect(await workers.find({ type: 'Text', text: /review-search-cache-r1/ })).toBeDefined()
     // The state is the glyph before the name, nothing else.
     expect(await workers.find({ type: 'Text', text: /^•$/ })).toBeDefined()
     expect(await workers.find({ type: 'Text', text: /Running/ })).toBe(undefined)
     // The child's batch says whose it is; another session's is not here.
-    expect(await workers.find({ type: 'Text', text: /↳ Деньги в AppsFlyer/ })).toBeDefined()
+    expect(await workers.find({ type: 'Text', text: /↳ Кэш поиска/ })).toBeDefined()
     expect(await workers.find({ type: 'Text', text: /unrelated work/ })).toBe(undefined)
     // A continued turn shows under the turn it went on from, as its own row.
     expect(await workers.find({ type: 'Text', text: /^↻$/ })).toBeDefined()
@@ -257,7 +257,7 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
   await clock.advance(3000)
   expect(submitted.length).toBe(1)
   const brief = submitted[0] ?? ''
-  expect(brief.includes('Batch review-af-money-r1 finished: 1/1')).toBe(true)
+  expect(brief.includes('Batch review-search-cache-r1 finished: 1/1')).toBe(true)
   expect(brief.includes('codex gpt-5.6-terra c977dbdb')).toBe(true)
   expect(brief.includes('codex 97')).toBe(true)
   // Facts only: the brief never tells the coach what to do next.
@@ -306,10 +306,10 @@ test('the review board this session ran claims its rounds', async ($, on) => {
   const submitted = await wakes(
     $,
     on,
-    '~/.claude/skills/playmaker-coach/scripts/review-board.sh --auto af-money main --impl-id 0a2ffe97',
+    '~/.claude/skills/playmaker-coach/scripts/review-board.sh --auto search-cache main --impl-id 0a2ffe97',
   )
   expect(submitted.length).toBe(1)
-  expect((submitted[0] ?? '').startsWith('Batch review-af-money-r1 finished')).toBe(true)
+  expect((submitted[0] ?? '').startsWith('Batch review-search-cache-r1 finished')).toBe(true)
 })
 
 test('the system prompt carries the policy tiers, verbatim, after the engine', async ($, on) => {

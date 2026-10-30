@@ -61,7 +61,7 @@ wheels = [
 
 [[package]]
 name = "playmaker-cli"
-version = "0.15.3"
+version = "0.16.0"
 source = { editable = "." }
 dependencies = [
     { name = "rich" },
