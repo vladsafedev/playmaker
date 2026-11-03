@@ -193,6 +193,7 @@ const LANES: Lane[] = [
   { lane: 'kimi', name: 'Kimi Code', color: '#F2E55C' },
   { lane: 'muse', name: 'Muse Code', color: '#2F6BFF' },
   { lane: 'manus', name: 'Manus', color: '#A78BFA' },
+  { lane: 'perplexity', name: 'Perplexity', color: '#20B8CD' },
   { lane: 'claude-api', name: 'Claude Platform', color: '#D98B6A' },
   { lane: 'gemini', name: 'Gemini', color: '#6FCF7A' },
   { lane: 'ollama', name: 'Ollama', color: '#888780' },
