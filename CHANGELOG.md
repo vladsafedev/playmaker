@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Decision reviews paste a per-lens role file into the seat's prompt** —
   `./.playmaker/roles/<lens>.md`, else `~/.playmaker/roles/<lens>.md` — so a role
   is visible in the saved prompt, never hidden on the provider side.
+- **A later `review-board.sh --auto` run checks acceptance against the whole
+  package.** The WP's first base is kept as `package_base` in its `board.env`;
+  a run started from a wip commit runs the precheck against it, over the spec's
+  SCOPE plus `--paths`, while reviewers still get the delta. `--package-base REF`
+  sets it by hand.
 
 ## [0.16.0] - 2026-10-30
 
