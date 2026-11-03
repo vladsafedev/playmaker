@@ -2134,6 +2134,7 @@ def _render_provider(name: str, info: dict) -> None:
         "gemini": "cyan",
         "zai": "yellow",
         "kimi": "cyan",
+        "manus": "bright_magenta",
         "muse": "bright_blue",
         "ollama": "bright_cyan",
     }.get(name, "white")
@@ -2142,6 +2143,7 @@ def _render_provider(name: str, info: dict) -> None:
         "agy": "Antigravity (agy)",
         "zai": "Z.ai (GLM, via opencode)",
         "kimi": "Kimi Code",
+        "manus": "Manus",
         "muse": "Muse Code",
         "ollama": "Ollama (local, via opencode)",
     }.get(name, name.capitalize())

@@ -1917,6 +1917,146 @@ def muse_probe() -> dict:
     return {"status": "ok", **base, "windows": [session, week]}
 
 
+# ---- Manus -----------------------------------------------------------------
+
+_MANUS_USAGE_URL = "https://api.manus.ai/v2/usage.availableCredits"
+_MANUS_KEYCHAIN_SERVICE = "playmaker-manus-api"
+_MANUS_KEYCHAIN_ACCOUNT = "playmaker"
+_MANUS_ADD_KEY_COMMAND = (
+    "security add-generic-password -s playmaker-manus-api -a playmaker -w"
+)
+_MANUS_CREDIT_FIELDS = {
+    "total_credits",
+    "free_credits",
+    "periodic_credits",
+    "addon_credits",
+    "pro_monthly_credits",
+    "event_credits",
+    "refresh_credits",
+    "max_refresh_credits",
+}
+
+
+def _manus_load_key() -> str | None:
+    """Return the configured Manus API key without exposing command output."""
+    env_key = os.environ.get("MANUS_API_KEY", "").strip()
+    if env_key:
+        return env_key
+    if sys.platform != "darwin":
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                "security",
+                "find-generic-password",
+                "-s",
+                _MANUS_KEYCHAIN_SERVICE,
+                "-a",
+                _MANUS_KEYCHAIN_ACCOUNT,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    key = proc.stdout.strip()
+    return key or None
+
+
+def _manus_number(value: object) -> int | None:
+    """An API integer, accepting the live API's digit-string representation."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _manus_http_error(exc: Exception) -> dict:
+    """Map a Manus request failure without echoing its body or credentials."""
+    match = re.search(r"HTTP (\d{3})", str(exc))
+    code = int(match.group(1)) if match else None
+    if code in (401, 403):
+        return {"status": "error", "error": "Manus API key was rejected"}
+    if code is not None:
+        return {"status": "error", "error": f"Manus API returned HTTP {code}"}
+    return {"status": "error", "error": "Manus API request failed"}
+
+
+def manus_probe() -> dict:
+    """Manus API v2 monthly subscription and add-on credit balance."""
+    key = _manus_load_key()
+    if key is None:
+        return {
+            "status": "unsupported",
+            "reason": f"no Manus API key — add one: {_MANUS_ADD_KEY_COMMAND}",
+        }
+    try:
+        response = _http_json(
+            _MANUS_USAGE_URL,
+            headers={"x-manus-api-key": key},
+            timeout=15.0,
+        )
+    except Exception as exc:
+        return _manus_http_error(exc)
+    if not isinstance(response, dict):
+        return {"status": "error", "error": "unexpected Manus usage payload"}
+    if _MANUS_CREDIT_FIELDS.intersection(response):
+        payload = response
+    else:
+        payload = response.get("data", response)
+    if not isinstance(payload, dict):
+        return {"status": "error", "error": "unexpected Manus usage payload"}
+    if not _MANUS_CREDIT_FIELDS.intersection(payload):
+        return {"status": "error", "error": "unexpected Manus credits payload"}
+
+    total = _manus_number(payload.get("total_credits"))
+    monthly = _manus_number(payload.get("periodic_credits"))
+    addon = _manus_number(payload.get("addon_credits"))
+    monthly_cap = _manus_number(payload.get("pro_monthly_credits"))
+    windows: list[dict] = []
+    if monthly is not None and monthly_cap is not None and monthly_cap > 0:
+        reset_at = _manus_number(payload.get("current_period_end"))
+        reset_iso = _epoch_to_iso(reset_at)
+        raw_pct_left = max(0.0, min(100.0, monthly / monthly_cap * 100))
+        pct_left = round(raw_pct_left)
+        window_seconds = 30 * 86400
+        forecast = None
+        if reset_at is not None:
+            reset_ts = float(reset_at)
+            if reset_ts > 1e12:
+                reset_ts /= 1000.0
+            elapsed = max(0.0, window_seconds - (reset_ts - time.time()))
+            forecast = _forecast_label(
+                100 - raw_pct_left, window_seconds, elapsed
+            )
+        windows.append(
+            {
+                "name": "Monthly",
+                "pct_left": pct_left,
+                "reset_at_iso": reset_iso,
+                "reset_relative": _format_relative(reset_iso),
+                "forecast": forecast,
+                "reserve_pct": None,
+            }
+        )
+
+    def credits(value: int | None) -> str:
+        return f"{value or 0:,}".replace(",", " ")
+
+    note = (
+        f"{credits(total)} credits "
+        f"({credits(monthly)} monthly + {credits(addon)} add-on)"
+    )
+    return {"status": "ok", "windows": windows, "note": note}
+
+
 # ---- Ollama (local, unmetered) ----------------------------------------------
 
 # Ollama's own API, not the OpenAI-compatible /v1 shim that opencode dispatches
@@ -2224,6 +2364,7 @@ PROBES = {
     "agy": antigravity_probe,
     "zai": zai_probe,
     "kimi": kimi_probe,
+    "manus": manus_probe,
     "muse": muse_probe,
     "ollama": ollama_probe,
 }
