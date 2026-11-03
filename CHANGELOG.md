@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A `manus` lane on the Manus API v2.** `playmaker dispatch manus --read-only`
+  runs a task in Manus's cloud sandbox over HTTP and returns its final result;
+  `--model` is the Manus agent profile (`lite`, `standard` by default, `max`,
+  `max-medium` … `max-ultra`). The prompt is sent exactly as given; a long one
+  goes as an attached `prompt.md`, `--files` as attachments. A task that stops
+  to ask returns `[manus waiting: <type>] …` for `playmaker continue`.
+  Attachments are saved per task under the state dir. Key: the Keychain item
+  `playmaker-manus-api`, or `MANUS_API_KEY`.
+- **`playmaker quotas` shows Manus credits** — the monthly allowance left and
+  the add-on balance.
+- **Decision reviews paste a per-lens role file into the seat's prompt** —
+  `./.playmaker/roles/<lens>.md`, else `~/.playmaker/roles/<lens>.md` — so a role
+  is visible in the saved prompt, never hidden on the provider side.
+
 ## [0.16.0] - 2026-10-30
 
 ### Added
