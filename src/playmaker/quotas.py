@@ -2171,7 +2171,7 @@ def ollama_probe() -> dict:
     }
 
 
-# ---- Claude API lane: local credit counter ----------------------------------
+# ---- Local credit counters --------------------------------------------------
 
 
 # The `claude-api` lane spends Console credit through the Claude Agent SDK.
@@ -2299,9 +2299,9 @@ def credit_refusal(agent: str) -> str | None:
     )
 
 
-def claude_api_probe() -> dict:
-    """No network: the local credit counter of the `claude-api` lane."""
-    cycle = credit_cycle("claude-api")
+def _local_credit_probe(agent: str, *, tier: str, balance_name: str) -> dict:
+    """No network: one lane's local spend counter for its configured cycle."""
+    cycle = credit_cycle(agent)
     since = cycle.cycle_start.isoformat()
     if cycle.cap_usd is None or cycle.left_usd is None:
         spent = f"spent ${cycle.spent_usd:.2f} of an unknown cap since {since}"
@@ -2319,7 +2319,7 @@ def claude_api_probe() -> dict:
             stop += " — reached, dispatch refuses (--force overrides)"
         parts.append(stop)
     parts.append(
-        f"{cycle.sessions} session(s) · local sum of cost_usd, not the Console balance"
+        f"{cycle.sessions} session(s) · local sum of cost_usd, not the {balance_name} balance"
     )
     next_reset_iso = datetime.combine(cycle.next_reset, dtime.min, tzinfo=UTC).isoformat()
     windows: list[dict] = []
@@ -2337,7 +2337,7 @@ def claude_api_probe() -> dict:
     return {
         "status": "ok",
         "source": "local",
-        "tier": "Console credits",
+        "tier": tier,
         "windows": windows,
         "note": " · ".join(parts),
         "spent_usd": round(cycle.spent_usd, 4),
@@ -2352,6 +2352,20 @@ def claude_api_probe() -> dict:
     }
 
 
+def claude_api_probe() -> dict:
+    """No network: the local credit counter of the `claude-api` lane."""
+    return _local_credit_probe(
+        "claude-api", tier="Console credits", balance_name="Console"
+    )
+
+
+def perplexity_probe() -> dict:
+    """No network: the local credit counter of the `perplexity` lane."""
+    return _local_credit_probe(
+        "perplexity", tier="prepaid USD balance", balance_name="Perplexity"
+    )
+
+
 # ---- Aggregator -------------------------------------------------------------
 
 
@@ -2361,6 +2375,7 @@ PROBES = {
     "codex": codex_probe,
     "claude": claude_probe,
     "claude-api": claude_api_probe,
+    "perplexity": perplexity_probe,
     "agy": antigravity_probe,
     "zai": zai_probe,
     "kimi": kimi_probe,

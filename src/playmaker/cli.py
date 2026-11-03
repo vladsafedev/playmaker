@@ -2272,6 +2272,7 @@ def _render_provider(name: str, info: dict) -> None:
         "codex": "blue",
         "claude": "magenta",
         "claude-api": "magenta",
+        "perplexity": "bright_cyan",
         "agy": "green",
         "gemini": "cyan",
         "zai": "yellow",
@@ -2282,6 +2283,7 @@ def _render_provider(name: str, info: dict) -> None:
     }.get(name, "white")
     display = {
         "claude-api": "Claude API (Agent SDK)",
+        "perplexity": "Perplexity",
         "agy": "Antigravity (agy)",
         "zai": "Z.ai (GLM, via opencode)",
         "kimi": "Kimi Code",
@@ -2557,6 +2559,21 @@ permission_mode = "acceptEdits"
 # monthly_cap_usd = 200
 # stop_at_usd = 200
 # warn_below_usd = 15
+
+# A prepaid balance with no reset — the cycle is a monthly budget you set.
+# The key stays in the macOS Keychain when added with
+# `security add-generic-password -s playmaker-perplexity-api -a playmaker -w`,
+# or comes from PERPLEXITY_API_KEY.
+# [agents.perplexity]
+# key_source = "keychain"
+# model = "low"  # effort: fast|low|medium|high|xhigh|ultra-preview, optionally @<version>
+# Sent verbatim as the run's instructions.
+# instructions_file = "~/.playmaker/perplexity-instructions.md"
+# poll_seconds = 3
+# max_wait_minutes = 20
+# monthly_cap_usd = 20
+# stop_at_usd = 20
+# warn_below_usd = 3
 
 [agents.codex]
 binary = "codex"
