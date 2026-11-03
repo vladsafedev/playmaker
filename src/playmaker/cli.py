@@ -440,7 +440,7 @@ def _parallel_refusal(exc: state.LimitExceeded, max_active: int) -> str:
 @app.command()
 def dispatch(
     agent: str = typer.Argument(
-        ..., help="agent name (claude|claude-api|codex|agy|gemini|kimi|muse|opencode)"
+        ..., help="agent name (claude|claude-api|codex|agy|gemini|kimi|manus|muse|opencode)"
     ),
     prompt: str | None = typer.Option(
         None, "--prompt", "-p", help="initial prompt (or pass --prompt-file)"
@@ -528,6 +528,7 @@ def dispatch(
     prompt = _resolve_prompt(prompt, prompt_file)
     handler = get_handler(agent)
     if not handler.is_available():
+        _preflight(agent, handler)
         err_console.print(_unavailable(agent))
         raise typer.Exit(1)
     _apply_effort_override(agent, effort)
@@ -995,6 +996,7 @@ def continue_(
 
     handler = get_handler(parent["agent"])
     if not handler.is_available():
+        _preflight(parent["agent"], handler)
         err_console.print(_unavailable(parent["agent"]))
         raise typer.Exit(1)
     _apply_effort_override(parent["agent"], effort)

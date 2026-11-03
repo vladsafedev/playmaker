@@ -1,0 +1,21 @@
+{
+ "ok": true,
+ "request_id": "29e5b7cb-e02d-4f06-9fd2-34ba819cf4ba",
+ "task": {
+  "agent_profile": "manus-1.6",
+  "created_at": "1793680337",
+  "created_by_api_key": {
+   "id": "SnGzZEYfZyVnqxpp8DysJq",
+   "name": "playmaker"
+  },
+  "has_running_background_jobs": false,
+  "id": "GxoNTnVqvuJgeFVihZ6ye5",
+  "is_archived": false,
+  "share_visibility": "private",
+  "status": "stopped",
+  "task_type": "standard",
+  "task_url": "https://example.invalid/redacted",
+  "title": "playmaker probe — product lens (standard)",
+  "updated_at": "1793680414"
+ }
+}
