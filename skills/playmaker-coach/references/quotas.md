@@ -23,6 +23,9 @@ several tiers with independent buckets, and the whole point of pulling quotas is
   separate buckets — the cheapest way to buy two independent opinions. Requires agy's local daemon;
   if the table says "daemon offline" it fell back to a coarse Gemini-only view.
 - **Codex:** top-tier versus lighter modes, where the account plan carries them.
+- **Manus:** `Monthly` is the periodic credits left from the monthly allowance, plus the add-on
+  balance. Credits are not USD (`cost_usd` stays empty); the credits response is top-level and may
+  omit `credit_usage`.
 - **opencode:** the quota belongs to the *plan behind the provider*, not to the CLI — it appears
   under that provider (e.g. a GLM coding plan's session and weekly credit windows) and reads
   unsupported without a credential. A dispatch pointed at a **local** model spends nothing and never

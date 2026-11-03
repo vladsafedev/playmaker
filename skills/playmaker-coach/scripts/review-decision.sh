@@ -110,10 +110,22 @@ cp "$question" "$dir/question.md"
 if [[ $opus -eq 1 ]]; then note "--opus adds a coordinator-bucket seat; use it deliberately."; fi
 
 build_prompt() { # lane lens output-path
-  local lane="$1" lens="$2" out="$3"
+  local lane="$1" lens="$2" out="$3" role_file=""
+  if [[ -f "$cwd/.playmaker/roles/$lens.md" ]]; then
+    role_file="$cwd/.playmaker/roles/$lens.md"
+  elif [[ -f "$HOME/.playmaker/roles/$lens.md" ]]; then
+    role_file="$HOME/.playmaker/roles/$lens.md"
+  fi
   {
     echo "You are one independent senior seat in a decision review. Change nothing — read-only."
     echo "One session only. Answer within ${deadline_arg}. Your lens: ${lens}."
+    if [[ -n "$role_file" ]]; then
+      echo
+      echo "ROLE FOR THE ${lens} LENS:"
+      cat "$role_file"
+      # a file without a final newline must not merge with the next line
+      if [[ -n "$(tail -c1 "$role_file")" ]]; then echo; fi
+    fi
     echo "Your job is to find WHAT BREAKS in the concrete artefact, not to summarize it or vote by taste."
     echo "Cite the artefact (a heading, path, diff hunk, number, or quoted option) in every break's where field."
     echo

@@ -37,6 +37,14 @@ The default is ten minutes; `[decision_review] deadline` in `.playmaker/config.t
 personal config, and `--deadline` overrides both. Seats are dispatched in parallel, read-only, in
 batch `decision-<slug>`. A failed or late seat is simply `no answer`, never substituted.
 
+### Per-lens roles
+
+To make a lens-specific role explicit, put its Markdown in
+`./.playmaker/roles/<lens>.md`; the personal fallback is `~/.playmaker/roles/<lens>.md`. The script
+copies the selected file verbatim into that seat's saved prompt immediately after its lens line,
+under `ROLE FOR THE <lens> LENS:`. This is how a `manus` `product` seat receives its role: Manus and
+the lane add no hidden role or persona. No role file leaves the prompt unchanged.
+
 ## Contract and result
 
 Each seat returns exactly one JSON object:

@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/playmaker-cli.svg?cacheSeconds=3600)](https://pypi.org/project/playmaker-cli/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Run Claude Code, Codex, Antigravity, Kimi Code, Muse Code and opencode as parallel sub-agents from one terminal — and spend separate quotas instead of one.**
+**Run Claude Code, Codex, Antigravity, Kimi Code, Muse Code, Manus and opencode as parallel sub-agents from one terminal — and spend separate quotas instead of one.**
 
 You stay in your Claude Code session doing the part only you can do. `playmaker`
 fans the rest out to other agent CLIs as detached processes, tracks them,
@@ -170,6 +170,7 @@ playmaker agents          # which agent CLIs are reachable
 | **opencode** | `brew install sst/tap/opencode` (or see [opencode.ai](https://opencode.ai)) | `--model provider/model`, e.g. `zai-coding-plan/glm-5.2`; roster from `opencode models`, providers from `opencode auth login` |
 | **Kimi Code CLI** | `npm i -g @moonshot-ai/kimi-code` | needs Node ≥ 22.19 (a wrapper that pins a newer Node is fine — point `[agents.kimi] binary` at it); `--model kimi-code/k3-256k` — 256k window at half the quota cost of `k3`; log in once with `kimi login --region global`; model ids from `~/.kimi-code/config.toml` |
 | **Muse Code CLI** | `curl -fsSL https://dev.meta.ai/install.sh \| sh` | self-updating launcher in `~/.local/bin` (point `[agents.muse] binary` at it if a detached dispatch can't find it); log in once with `muse login` or set `META_API_KEY`; `--model muse-spark-1.3` — omit it and Muse's own default from `~/.config/muse/settings.json` applies |
+| **Manus (`manus`)** | Manus API v2 cloud agent — no CLI; add its key with `security add-generic-password -s playmaker-manus-api -a playmaker -w` or set `MANUS_API_KEY` | always `--read-only`; `--model` is the agent profile: `lite`, `standard` (default), `max`, `max-medium`, `max-high`, `max-extra`, or `max-ultra` |
 | **Gemini CLI** (legacy) | `npm i -g @google/gemini-cli` | still supported, superseded by `agy` |
 
 At least one is required; `playmaker agents` tells you which it can see.

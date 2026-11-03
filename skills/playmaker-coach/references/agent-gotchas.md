@@ -49,6 +49,25 @@ line from `agy models` / `opencode models` rather than typing it.
 - The model roster depends on the account plan, and an unavailable name fails the whole dispatch.
   **Omitting `--model` is the safe default here** — it uses whatever the account actually has.
 
+## manus
+
+- Always dispatch Manus with `--read-only`: it runs in its own cloud sandbox and cannot see or
+  change the checkout; a write dispatch ends `no_changes`. Send inputs in the prompt and with
+  `--files` (each attachment is up to 20 MB); prompts over 16,000 characters become `prompt.md`.
+- `--model` is the Manus agent profile: `lite`, `standard` (default), `max`, `max-medium`,
+  `max-high`, `max-extra`, or `max-ultra`. The lane sends the prompt unchanged: neither it nor
+  Manus adds a role or persona. `[agents.manus] project_id` only groups tasks in the Manus web app.
+- If output begins `[manus waiting: <type>]`, answer with `playmaker continue <id> --prompt "…"`.
+  The lane never confirms actions on Manus's side. Its final `result` is the output; downloaded
+  attachments live under the session state directory and nothing is written to the repo.
+- Configure `[agents.manus] model`, `project_id`, `poll_seconds` (10), and `max_wait_minutes` (30;
+  expiry stops the task). Use the macOS Keychain item `playmaker-manus-api` for account `playmaker`,
+  or `MANUS_API_KEY`.
+- Cost is Manus credits, not USD, so `cost_usd` is empty. `playmaker quotas` shows monthly credits
+  remaining from the allowance plus the add-on balance. Measured 2026-11-03: a short product review
+  took about 75 seconds on lite and standard; lite cost 1 credit. API timestamps are digit strings,
+  credits are top-level fields, and `credit_usage` can be absent.
+
 ## opencode
 
 - Models are `provider/model` and the default is invisible: without `--model` it falls through to
