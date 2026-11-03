@@ -1,0 +1,43 @@
+{
+ "http": 200,
+ "body": {
+  "background": true,
+  "completed_at": null,
+  "created_at": 1793705296,
+  "effort": "low@2026-10-24.0",
+  "error": null,
+  "frequency_penalty": 0,
+  "id": "resp_e2d11434-ec16-463e-9ea4-20ae19596be4",
+  "incomplete_details": null,
+  "instructions": null,
+  "max_output_tokens": null,
+  "max_tool_calls": null,
+  "metadata": {},
+  "model": "low",
+  "object": "response",
+  "output": [],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "preset": "low@2026-10-24.0",
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "reasoning": null,
+  "safety_identifier": null,
+  "service_tier": "default",
+  "status": "queued",
+  "store": true,
+  "temperature": 1,
+  "text": {
+   "format": {
+    "type": "text"
+   }
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "",
+  "usage": null,
+  "user": null
+ }
+}

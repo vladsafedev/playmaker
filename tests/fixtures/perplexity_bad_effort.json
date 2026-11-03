@@ -1,0 +1,11 @@
+{
+ "http": 400,
+ "body": {
+  "error": {
+   "message": "Invalid effort 'turbo': the effort name or version does not exist.",
+   "type": "invalid_request",
+   "code": 400,
+   "param": "effort"
+  }
+ }
+}

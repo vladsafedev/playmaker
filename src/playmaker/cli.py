@@ -502,7 +502,11 @@ def _parallel_refusal(exc: state.LimitExceeded, max_active: int) -> str:
 @app.command()
 def dispatch(
     agent: str = typer.Argument(
-        ..., help="agent name (claude|claude-api|codex|agy|gemini|kimi|manus|muse|opencode)"
+        ...,
+        help=(
+            "agent name "
+            "(claude|claude-api|codex|agy|gemini|kimi|manus|muse|opencode|perplexity)"
+        ),
     ),
     prompt: str | None = typer.Option(
         None, "--prompt", "-p", help="initial prompt (or pass --prompt-file)"

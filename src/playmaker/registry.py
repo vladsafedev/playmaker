@@ -14,6 +14,7 @@ from playmaker.agents.kimi import KimiHandler
 from playmaker.agents.manus import ManusHandler
 from playmaker.agents.muse import MuseHandler
 from playmaker.agents.opencode import OpencodeHandler
+from playmaker.agents.perplexity import PerplexityHandler
 from playmaker.state import AGENTS_DIR
 
 _HANDLERS: dict[str, AgentHandler] = {
@@ -29,6 +30,7 @@ _HANDLERS: dict[str, AgentHandler] = {
     "manus": ManusHandler(),
     "muse": MuseHandler(),
     "opencode": OpencodeHandler(),
+    "perplexity": PerplexityHandler(),
 }
 
 

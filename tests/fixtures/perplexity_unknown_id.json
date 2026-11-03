@@ -1,0 +1,10 @@
+{
+ "http": 404,
+ "body": {
+  "error": {
+   "message": "resource not found",
+   "type": "not_found",
+   "code": 404
+  }
+ }
+}

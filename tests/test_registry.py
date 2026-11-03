@@ -11,7 +11,19 @@ import playmaker.registry as registry
 
 
 @pytest.mark.parametrize(
-    "name", ["claude", "claude-api", "codex", "agy", "gemini", "kimi", "manus", "muse", "opencode"]
+    "name",
+    [
+        "claude",
+        "claude-api",
+        "codex",
+        "agy",
+        "gemini",
+        "kimi",
+        "manus",
+        "muse",
+        "opencode",
+        "perplexity",
+    ],
 )
 def test_get_handler_returns_named_handler(name: str) -> None:
     handler = registry.get_handler(name)
@@ -32,6 +44,7 @@ def test_all_handlers_contains_builtin_agents() -> None:
         "manus",
         "muse",
         "opencode",
+        "perplexity",
     } <= set(handlers)
 
 

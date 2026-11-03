@@ -1,0 +1,350 @@
+{
+ "http": 200,
+ "body": {
+  "background": true,
+  "completed_at": 1793705489,
+  "created_at": 1793705489,
+  "effort": "low@2026-10-24.0",
+  "error": null,
+  "frequency_penalty": 0,
+  "id": "resp_e16580cc-92c2-4203-b09d-8ed3bce52a97",
+  "incomplete_details": null,
+  "instructions": null,
+  "max_output_tokens": null,
+  "max_tool_calls": null,
+  "metadata": {},
+  "model": "openai/gpt-6-luna",
+  "object": "response",
+  "output": [
+   {
+    "queries": null,
+    "results": [
+     {
+      "date": "2022-01-06",
+      "id": 1,
+      "last_updated": "2026-10-30",
+      "snippet": "httpx · PyPI\n# httpx 0.21.3\nThe next generation HTTP client.\npip install httpx==0.21.3\nCopy PIP instructions\n**HTTPX** *- A next-generation HTTP client for Python.*\nHTTPX is a fully featured HTTP client library for Python 3.\nIt includes **an integrated\ncommand line client**, has support for both **HTTP/1.1 and HTTP/2**, and provides both **sync\nand async APIs**.\n**Note**: *The 0.21 release includes some improvements to the integrated command-line client.\nThis latest version integrates against a re-designed version of `httpcore`.\nBoth packages ought to automatically update to the required versions, but if you are seeing any issues then you should ensure that you have `httpx==0.21.*` and `httpcore==0.14.*` installed.\nSee the CHANGELOG for more details.*\nInstall HTTPX using pip:\n```\n...\nHTTPX requires Python 3.6+.\n…\n## 0.21.3 (6th January, 2022)\n### Fixed\n- Fix streaming uploads using `SyncByteStream` or `AsyncByteStream`.\nRegression in 0.12.2.\n(#2016)\n...\n## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nJan 6, 2022\nNewer release available (0.28.1)\n…\n## Requires\n**Python** >=3.6\n...\n…\n### 0.28.1\nDec 6, 2024\n2 release files No provenance\n…\n### 0.21.3 This release\nJan 6, 2022\n2 release files No provenance\n### 0.21.2\nJan 5, 2022",
+      "source": "web",
+      "title": "httpx 0.21.3 - PyPI",
+      "url": "https://pypi.org/project/httpx/0.21.3/"
+     },
+     {
+      "date": "2026-08-31",
+      "id": 2,
+      "last_updated": "2026-10-26",
+      "snippet": "httpx · PyPI\nThis release is a pre-release and may not be stable for production use.\n# httpx 1.0.dev6\nHTTP, for Python.\npip install httpx==1.0.dev6\n...\n## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nAug 31, 2026\nStable release available (0.28.1)\n...\n- **Released:**\nAug 31, 2026\nStable release available (0.28.1)\n...\n|--|--|--|--|--|\n|httpx-1.0.dev6.tar.gz|29.9 kB|Aug 31, 2026|Without provenance|Details|\n...\n|File|Interpreter|ABI|Platform|Reset|\n...\n|httpx-1.0.dev6-py3-none-any.whl 37.9 kB Aug 31, 2026 Without provenance|Python 3|none|any|Details|\n...\n|Download URL|httpx-1.0.dev6.tar.gz|\n|--|--|\n|Upload date|Aug 31, 2026|\n...\nPre-release\n1.0.dev6 This release\nAug 31, 2026\n2 release files No provenance\nPre-release\n1.0.dev5\nAug 21, 2026\n...\nPre-release\n1.0.dev1\nJul 2, 2025\n2 release files No provenance\n0.28.1\nDec 6, 2024\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx 1.0.dev6",
+      "url": "https://pypi.org/project/httpx/1.0.dev6/"
+     },
+     {
+      "date": "2026-10-27",
+      "id": 3,
+      "last_updated": "2026-11-02",
+      "snippet": "httpx-secure · PyPI\n# httpx-secure 2.0.0\nConnection-level SSRF protection for existing HTTPX async clients\n...\nBlock requests to private and non-global IP addresses in an existing HTTPX\n`AsyncClient`.\nAdd your own destination rules without changing HTTPX's request\nAPI.\nPython 3.11+, with asyncio or Trio.\n...\nData verified by PyPI on Oct 27, 2026\nData provided by the project maintainers, verified at the time the release was uploaded to PyPI.\n...\n## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nOct 27, 2026\nLatest release\n...\n### 2.0.0 This release\nOct 27, 2026\n2 release files Full provenance",
+      "source": "web",
+      "title": "httpx-secure",
+      "url": "https://pypi.org/project/httpx-secure/"
+     },
+     {
+      "date": "2020-01-09",
+      "id": 4,
+      "last_updated": "2026-11-02",
+      "snippet": "httpx · PyPI\n# httpx 0.11.0\nThe next generation HTTP client.\npip install httpx==0.11.0\n...\n**HTTPX** *- A next-generation HTTP client for Python.*\nHTTPX is a fully featured HTTP client for Python 3, which provides sync and async APIs, and support for both HTTP/1.1 and HTTP/2.\n**Note**: *HTTPX should be considered in beta.\nWe believe we've got the public API to\na stable point now, but would strongly recommend pinning your dependencies to the `0.11.*`\nrelease, so that you're able to properly review API changes between package updates.\nA 1.0 release is expected to be issued sometime on or before April 2020.*\n...\n## 0.11.0 (January 9th, 2019)\nThe 0.11 release reintroduces our sync support, so that `httpx` now supports both a standard thread-concurrency API, and an async API.\n...\nWe believe the API is now pretty much stable, and are aiming for a 1.0 release sometime on or before April 2020.\n...\nData sourced directly from PyPI's database.\n- **Released:**\nJan 9, 2020\nNewer release available (0.28.1)\n…\n...\n|File|Size|Uploaded|Provenance|Actions|\n|--|--|--|--|--|\n|httpx-0.11.0.tar.gz|65.2 kB|Jan 9, 2020|Without provenance|Details for httpx-0.11.0.tar.gz|\n...\n|File|Interpreter|ABI|Platform|Actions Reset|\n|--|--|--|--|--|\n|httpx-0.11.0-py2.py3-none-any.whl 68.7 kB Jan 9, 2020 Without provenance|Python 2, Python 3|none|any|Details for httpx-0.11.0-py2.py3-none-any.whl|\n...\n|Download URL|httpx-0.11.0-py2.py3-none-any.whl|\n|--|--|\n|Upload date|Jan 9, 2020|\n...\nThis release\n### 0.11.0 This release\nJan 9, 2020\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx 0.11.0 - PyPI",
+      "url": "https://pypi.org/project/httpx/0.11.0/"
+     },
+     {
+      "date": "2026-08-31",
+      "id": 5,
+      "last_updated": "2026-10-29",
+      "snippet": "httpx · PyPI\n# httpx 0.7.3\nThe next generation HTTP client.\npip install httpx==0.7.3\nCopy PIP instructions\n**HTTPX** *- A next-generation HTTP client for Python.*\n**Note**: *This project should be considered as an \"alpha\" release.\nIt is substantially API complete, but there are still some areas that need more work.*\n...\n## 0.7.3 (September 20, 2019)\n### Added\n- HTTP Proxy support.\n(Pulls #259, #353)\n- Add Digest authentication.\n...\nData sourced directly from PyPI's database.\n- **Released:**\nSep 20, 2019\nNewer release available (0.28.1)\n...\n## Classifiers\n- Development Status\n- 3 - Alpha\n...\n|File|Size|Uploaded|Provenance|Actions|\n|--|--|--|--|--|\n|httpx-0.7.3.tar.gz|52.2 kB|Sep 20, 2019|Without provenance|Details for httpx-0.7.3.tar.gz|\n...\n### 0.28.1\nDec 6, 2024\n...\n### 0.7.3 This release\nSep 20, 2019\n1 release file No provenance",
+      "source": "web",
+      "title": "httpx 0.7.3",
+      "url": "https://pypi.org/project/httpx/0.7.3/"
+     },
+     {
+      "date": "2024-10-05",
+      "id": 6,
+      "last_updated": "2026-10-05",
+      "snippet": "httpx_request · PyPI\n# httpx_request 0.0.8.3\nhttpx request extension.\n...\n- **Released:**\nOct 5, 2024\nNewer release available (0.1.9.1)\n...\n## Release files for httpx_request 0.0.8.3\n...\n### Source distribution (sdist)\n**Source distribution for httpx_request 0.0.8.3**\n|File|Size|Uploaded| |\n|--|--|--|--|\n|** httpx_request-0.0.8.3.tar.gz|3.5 kB|Oct 5, 2024|Details|\n### Built distribution (wheel)\n**Table of built distributions (wheels) for httpx_request 0.0.8.3**\n|File|Interpreter|ABI|Platform|Reset|\n|--|--|--|--|--|\n|** httpx_request-0.0.8.3-py3-none-any.whl 4.8 kB ** Oct 5, 2024|Python 3|none|any|Details|\n...\n## Release history Release notifications | RSS feed\n0.1.9.1\n**\nApr 15, 2026\n** 2 release files\n0.1.9\n**\nFeb 14, 2026\n** 2 release files\n...\nAug 29, 2025\n...\n0.1.8.3\n...\nThis release\n0.0.8.3 This release\n**",
+      "source": "web",
+      "title": "httpx_request",
+      "url": "https://pypi.org/project/httpx_request/0.0.8.3/"
+     },
+     {
+      "date": "2024-08-27",
+      "id": 7,
+      "last_updated": "2026-10-31",
+      "snippet": "httpx · PyPI\n# httpx 0.27.2\nThe next generation HTTP client.\npip install httpx==0.27.2\nCopy PIP instructions\n**HTTPX** *- A next-generation HTTP client for Python.*\nHTTPX is a fully featured HTTP client library for Python 3.\n...\n## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nAug 27, 2024\nNewer release available (0.28.1)\n...\n|File|Size|Uploaded|Provenance|Actions|\n|--|--|--|--|--|\n|httpx-0.27.2.tar.gz|144.2 kB|Aug 27, 2024|Without provenance|Details for httpx-0.27.2.tar.gz|\n...\n|File|Interpreter|ABI|Platform|Actions Reset|\n|--|--|--|--|--|\n|httpx-0.27.2-py3-none-any.whl 76.4 kB Aug 27, 2024 Without provenance|Python 3|none|any|Details for httpx-0.27.2-py3-none-any.whl|\n...\n### 0.28.1\nDec 6, 2024\n2 release files No provenance\n### 0.28.0\nNov 28, 2024\n2 release files No provenance\nThis release\n### 0.27.2 This release\nAug 27, 2024\n2 release files No provenance\n### 0.27.1\nAug 27, 2024\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx",
+      "url": "https://pypi.org/project/httpx/0.27.2/"
+     },
+     {
+      "date": "2021-08-19",
+      "id": 8,
+      "last_updated": "2026-11-03",
+      "snippet": "# httpx 0.19.0\nThe next generation HTTP client.\npip install httpx==0.19.0\nCopy PIP instructions\n**HTTPX** *- A next-generation HTTP client for Python.*\nHTTPX is a fully featured HTTP client for Python 3, which provides sync and async APIs, and support for both HTTP/1.1 and HTTP/2.\n**Note**: *HTTPX should be considered in beta.\nWe believe we've got the public API to\na stable point now, but would strongly recommend pinning your dependencies to the `0.19.*`\nrelease, so that you're able to properly review API changes between package updates.\nA 1.0 release is expected to be issued sometime in 2021.*\n...\n…\n## 0.19.0 (19th June, 2021)\n...\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nAug 19, 2021\nNewer release available (0.28.1)\n…\n...\n|File|Interpreter|ABI|Platform|Actions Reset|\n|--|--|--|--|--|\n|httpx-0.19.0-py3-none-any.whl 77.3 kB Aug 19, 2021 Without provenance|Python 3|none|any|Details for httpx-0.19.0-py3-none-any.whl|\n...\n### 1.0.dev6\nAug 31, 2026\n...\n### 0.28.1\nDec 6, 2024\n...\n…\n### 0.19.0 This release\nAug 19, 2021\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx 0.19.0 - PyPI",
+      "url": "https://pypi.org/project/httpx/0.19.0/"
+     },
+     {
+      "date": "2020-09-02",
+      "id": 9,
+      "last_updated": "2026-10-29",
+      "snippet": "httpx · PyPI\n# httpx 0.14.3\nThe next generation HTTP client.\npip install httpx==0.14.3\nCopy PIP instructions\n**HTTPX** *- A next-generation HTTP client for Python.*\nHTTPX is a fully featured HTTP client for Python 3, which provides sync and async APIs, and support for both HTTP/1.1 and HTTP/2.\n**Note**: *HTTPX should be considered in beta.\nWe believe we've got the public API to\na stable point now, but would strongly recommend pinning your dependencies to the `0.14.*`\nrelease, so that you're able to properly review API changes between package updates.\nA 1.0 release is expected to be issued sometime in late 2020.*\n...\n…\n## 0.14.3 (September 2nd, 2020)\n...\n## 0.14.0 (August 7th, 2020)\nThe 0.14 release includes a range of improvements to the public API, intended on preparing for our upcoming 1.0 release.\n- Our HTTP/2 support is now fully optional.\n...\n- Our HSTS support has now been removed.\n...\n- **Released:**\nSep 2, 2020\nNewer release available (0.28.1)\n...\n### 0.14.3 This release\nSep 2, 2020\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx 0.14.3",
+      "url": "https://pypi.org/project/httpx/0.14.3/"
+     },
+     {
+      "date": "2020-10-06",
+      "id": 10,
+      "last_updated": "2026-11-01",
+      "snippet": "# httpx 0.16.0\nThe next generation HTTP client.\npip install httpx==0.16.0\n...\n**HTTPX** *- A next-generation HTTP client for Python.*\n...\n**Note**: *HTTPX should be considered in beta.\nWe believe we've got the public API to\na stable point now, but would strongly recommend pinning your dependencies to the `0.16.*`\nrelease, so that you're able to properly review API changes between package updates.\nA 1.0 release is expected to be issued sometime in late 2020.*\n...\n…\n## 0.16.0 (October 6th, 2020)\n...\n## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nOct 6, 2020\nNewer release available (0.28.1)\n…\n|File|Interpreter|ABI|Platform|Actions Reset|\n|--|--|--|--|--|\n|httpx-0.16.0-py3-none-any.whl 65.4 kB Oct 6, 2020 Without provenance|Python 3|none|any|Details for httpx-0.16.0-py3-none-any.whl|\n...\n|Download URL|httpx-0.16.0-py3-none-any.whl|\n...\n|Upload date|Oct 6, 2020|\n...\n### 0.16.1\nOct 8, 2020\n2 release files No provenance\nThis release\n### 0.16.0 This release\nOct 6, 2020\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx 0.16.0 - PyPI",
+      "url": "https://pypi.org/project/httpx/0.16.0/"
+     },
+     {
+      "date": "2026-11-02",
+      "id": 11,
+      "last_updated": "2026-11-02",
+      "snippet": "# anthropic 2.4.0\nThe official Python library for the anthropic API\n...\n- **Released:**\nNov 2, 2026\nLatest release\n...\n|File|Interpreter|ABI|Platform|Actions Reset|\n|--|--|--|--|--|\n|anthropic-2.4.0-py3-none-any.whl 2.3 MB Nov 2, 2026 Without provenance|Python 3|none|any|Details for anthropic-2.4.0-py3-none-any.whl|\n...\n### 2.4.0 This release\nNov 2, 2026\n2 release files No provenance",
+      "source": "web",
+      "title": "anthropic",
+      "url": "https://pypi.org/project/anthropic/"
+     },
+     {
+      "date": "2026-10-27",
+      "id": 12,
+      "last_updated": "2026-10-28",
+      "snippet": "# Microsoft and others scramble to patch Node.js flaw which could be the next PHP-level issue\n## Fixes and patches\nBrotli can be found in all sorts of software, all of which is now at risk.\nThat includes Node.js, brotlicffi, HTTP clients such as Requests, urllib3, httpx and aiohttp, but also other apps that use Brotli decoders such as Bun and Envoy deployments.\n...\n*BleepingComputer* reports that PyPI packages containing the fixes became available two days later, on October 23.\nHere is a detailed list of patched versions:",
+      "source": "web",
+      "title": "Microsoft and others scramble to patch Node.js flaw which could be the next PHP-level issue - NewsBreak",
+      "url": "https://www.newsbreak.com/techradar-512895/4970377925926-microsoft-and-others-scramble-to-patch-node-js-flaw-which-could-be-the-next-php-level-issue"
+     },
+     {
+      "date": "2026-10-29",
+      "id": 13,
+      "last_updated": "2026-11-02",
+      "snippet": "# Poetry vs uv: Choosing a Python Package Manager\n## Poetry: The One That Fixed It First.\npoetry add httpx # add a dependency and update the lockfile",
+      "source": "web",
+      "title": "Poetry vs uv: Choosing a Python Package Manager - HackerNoon",
+      "url": "https://hackernoon.com/poetry-vs-uv-choosing-a-python-package-manager"
+     },
+     {
+      "date": "2026-10-30",
+      "id": 14,
+      "last_updated": "2026-10-31",
+      "snippet": "# Robotics\n## The Week’s 10 Biggest Funding Rounds: Physical AI And Predictions Lead The Lineup",
+      "source": "web",
+      "title": "Robotics Archives - Crunchbase News",
+      "url": "https://news.crunchbase.com/sections/robotics/?trk=article-ssr-frontend-pulse_little-text-block/page/19//page/2//page/3//page/3//page/19//page/19//page/19//page/2//page/2//page/2//page/2//page/19//page/19//page/3//page/2//page/19//page/3//page/2//page/3//page/3//page/2//page/3//page/2//page/19//page/3//page/3//page/2//page/3//page/19//page/3//page/19//page/3//page/2//page/3//page/3//page/19//page/2//page/19//page/2//page/2//page/19//page/2//page/2//page/2//page/2//page/3//page/3//page/19//page/2//page/3//page/2//page/19//page/3//page/19//page/2//page/2//page/19//page/2//page/19//page/19//page/3//page/3//page/2//page/19//page/2//page/3//page/19//page/2//page/2//page/2//page/3//page/3//page/3//page/3//page/2//page/3//page/19//page/3//page/19//page/19//page/3//page/2//page/2//page/2//page/3//page/2//page/2//page/2//page/2//page/3//page/3//page/19//page/2//page/3//page/3//page/3//page/2//page/19//page/2//page/3//page/2//page/2//page/3//page/2//page/19//page/2//page/3//page/3//page/19//page/2//page/19//page/3//page/19//page/3//page/2//page/3//page/3//page/2//page/3//page/19//page/2//page/19//page/3//page/2//page/19//page/19//page/3//page/3//page/3//page/3//page/19//page/3//page/19//page/3//page/3//page/19//page/19//page/3//page/19//page/19//page/3//page/19//page/19//page/3//page/3//page/3//page/19//page/3//page/19//page/19//page/3//page/19//page/19//page/19//page/3//page/3//page/3//page/19//page/19//page/2//page/3//page/19//page/3//page/3//page/2//page/3//page/3//page/3//page/19/"
+     }
+    ],
+    "type": "search_results"
+   },
+   {
+    "queries": [
+     "httpx 0.28.1 PyPI release date"
+    ],
+    "results": [
+     {
+      "date": "2024-12-06",
+      "id": 15,
+      "last_updated": "2026-10-29",
+      "snippet": "# httpx 0.28.1\n...\n## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nDec 6, 2024\nLatest release\n...\n|File|Size|Uploaded|Provenance|Actions|\n|--|--|--|--|--|\n|httpx-0.28.1.tar.gz|141.4 kB|Dec 6, 2024|Without provenance|Details for httpx-0.28.1.tar.gz|\n...\n### 0.28.1 This release\nDec 6, 2024\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx",
+      "url": "https://pypi.org/project/httpx/"
+     },
+     {
+      "date": "2022-05-23",
+      "id": 16,
+      "last_updated": "2026-11-03",
+      "snippet": "## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nMay 23, 2022\nNewer release available (0.28.1)\n…\n...\n### 0.28.1\nDec 6, 2024\n2 release files No provenance",
+      "source": "web",
+      "title": "0.23.0",
+      "url": "https://pypi.org/project/httpx/0.23.0/"
+     },
+     {
+      "date": "2026-08-31",
+      "id": 17,
+      "last_updated": "2026-10-29",
+      "snippet": "PyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nMar 18, 2015\nNewer release available (0.28.1)\n...\n### 0.28.1\nDec 6, 2024\n2 release files No provenance\n...\nThis release\n### 0.0.1 This release\nMar 18, 2015",
+      "source": "web",
+      "title": "httpx 0.0.1",
+      "url": "https://pypi.org/project/httpx/0.0.1/"
+     },
+     {
+      "date": "2019-10-10",
+      "id": 18,
+      "last_updated": "2026-11-01",
+      "snippet": "## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nOct 10, 2019\nNewer release available (0.28.1)\n...\n### 0.28.1\nDec 6, 2024\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx 0.7.5 - PyPI",
+      "url": "https://pypi.org/project/httpx/0.7.5/"
+     },
+     {
+      "date": "2020-01-09",
+      "id": 19,
+      "last_updated": "2026-11-02",
+      "snippet": "## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nJan 9, 2020\nNewer release available (0.28.1)\n…\n...\n|Download URL|httpx-0.11.0-py2.py3-none-any.whl|\n|--|--|\n|Upload date|Jan 9, 2020|\n...\n### 0.28.1\nDec 6, 2024\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx 0.11.0 - PyPI",
+      "url": "https://pypi.org/project/httpx/0.11.0/"
+     },
+     {
+      "date": "2026-08-31",
+      "id": 20,
+      "last_updated": "2026-11-01",
+      "snippet": "# httpx\n...\n1.0.0.dev6\n...\nPackage metadata as of August 31, 2026.\n### Published\nAugust 31, 2026\n...\n### Links\n...\n- 1.0.0.dev6August 31, 2026\n...\n- 0.28.1December 6, 2024\n- 0.28.0November 28, 2024",
+      "source": "web",
+      "title": "httpx | PyPI | Open Source Insights",
+      "url": "https://deps.dev/pypi/httpx"
+     },
+     {
+      "id": 21,
+      "last_updated": "2026-09-30",
+      "snippet": "tom@tomchristie.com\nWed, 02 Jul 2025 18:49:48 GMT\n0.28.1\nhttps://pypi.org/project/httpx/0.28.1/\nThe next generation HTTP client.\ntom@tomchristie.com\nFri, 06 Dec 2024 15:37:21 GMT\n0.28.0\nhttps://pypi.org/project/httpx/0.28.0/\nThe next generation HTTP client.",
+      "source": "web",
+      "title": "PyPI recent updates for httpx",
+      "url": "https://pypi.org/rss/project/httpx/releases.xml"
+     },
+     {
+      "date": "2025-08-04",
+      "id": 22,
+      "last_updated": "2026-10-20",
+      "snippet": "# httpx 1.0.dev2\n...\n- **Released:**\nAug 4, 2025\nStable release available (0.28.1)\n...\n- **Released:**\nAug 4, 2025\n...\n|File|Size|Uploaded|Provenance| |\n|--|--|--|--|--|\n|** httpx-1.0.dev2.tar.gz|889.8 kB|Aug 4, 2025|** Without provenance|Details|\n...\n|Download URL|** httpx-1.0.dev2.tar.gz|\n|--|--|\n|Upload date|Aug 4, 2025|\n...\n0.28.1\n**\nDec 6, 2024",
+      "source": "web",
+      "title": "httpx 1.0.dev2 - PyPI",
+      "url": "https://pypi.org/project/httpx/1.0.dev2/"
+     },
+     {
+      "date": "2024-12-06",
+      "id": 23,
+      "last_updated": "2026-10-06",
+      "snippet": "## Version 0.28.1\nVersion 0.28.1 Latest\nlovelydinosaur released this\n06 Dec 15:36\n0.28.1\n`26d48e0`\nThis commit was created on GitHub.com and signed with GitHub’s **verified signature**.\nGPG key ID: B5690EEEBB952194\nVerified\n## 0.28.1 (6th December, 2024)\n- Fix SSL case where `verify=False` together with client side certificates.\n...\n- 👍 12 reactions",
+      "source": "web",
+      "title": "Releases · encode/httpx - GitHub",
+      "url": "https://github.com/encode/httpx/releases"
+     },
+     {
+      "date": "2023-04-11",
+      "id": 24,
+      "last_updated": "2026-11-03",
+      "snippet": "## Key dates\nPyPI data\nData sourced directly from PyPI's database.\n- **Released:**\nApr 11, 2023\nNewer release available (0.28.1)\n...\n### 0.28.1\nDec 6, 2024\n2 release files No provenance",
+      "source": "web",
+      "title": "httpx 0.24.0",
+      "url": "https://pypi.org/project/httpx/0.24.0/"
+     },
+     {
+      "date": "2026-11-02",
+      "id": 25,
+      "last_updated": "2026-11-02",
+      "snippet": "- **Released:**\nNov 2, 2026\nLatest release\n...\n### 0.28.1\nJun 14, 2024\n2 release files No provenance",
+      "source": "web",
+      "title": "anthropic",
+      "url": "https://pypi.org/project/anthropic/"
+     },
+     {
+      "date": "2026-10-29",
+      "id": 26,
+      "last_updated": "2026-11-02",
+      "snippet": "[project]\ndependencies = [\n## A Recipe and a Receipt\n\"httpx>=0.27\",",
+      "source": "web",
+      "title": "Poetry vs uv: Choosing a Python Package Manager - HackerNoon",
+      "url": "https://hackernoon.com/poetry-vs-uv-choosing-a-python-package-manager"
+     },
+     {
+      "date": "2026-10-31",
+      "id": 27,
+      "last_updated": "2026-11-02",
+      "snippet": "# Your LLM Serving Engine Ships Every 13 Days: Reading vLLM's Breaking-Change Lists as Upgrade Risk Data\n## What did vLLM list as breaking changes from 0.28 to 0.32?\n|Release|Date|Items|Examples|\n...\n|0.28.0|2026-08-26|4|bitsandbytes moved to an out-of-tree plugin; `calculate_kv_scales` removed|",
+      "source": "web",
+      "title": "Your LLM Serving Engine Ships Every 13 Days: Reading vLLM's ...",
+      "url": "https://dev.to/wolfsea2357/your-llm-serving-engine-ships-every-13-days-reading-vllms-breaking-change-lists-as-upgrade-risk-1815"
+     }
+    ],
+    "type": "search_results"
+   },
+   {
+    "content": [
+     {
+      "annotations": [],
+      "text": "httpx 0.28.1 was released on December 6, 2024. [web:15]",
+      "type": "output_text"
+     }
+    ],
+    "id": "msg_45825b93-547d-4c10-811f-938f859340a3",
+    "role": "assistant",
+    "status": "completed",
+    "type": "message"
+   }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "preset": "low@2026-10-24.0",
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "reasoning": null,
+  "safety_identifier": null,
+  "service_tier": "default",
+  "status": "completed",
+  "store": true,
+  "temperature": 1,
+  "text": {
+   "format": {
+    "type": "text"
+   }
+  },
+  "tool_choice": "auto",
+  "tools": [
+   {
+    "type": "web_search"
+   },
+   {
+    "type": "fetch_url"
+   }
+  ],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "",
+  "usage": {
+   "cost": {
+    "cache_creation_cost": 0.00087,
+    "cache_read_cost": 8e-05,
+    "currency": "USD",
+    "input_cost": 0,
+    "output_cost": 4e-05,
+    "tool_calls_cost": 0.001,
+    "tool_calls_cost_details": {
+     "search_web": 0.001
+    },
+    "total_cost": 0.00199
+   },
+   "input_tokens": 14945,
+   "input_tokens_details": {
+    "cache_creation_input_tokens": 6963,
+    "cache_read_input_tokens": 7976,
+    "cached_tokens": 7976
+   },
+   "output_tokens": 78,
+   "output_tokens_details": {
+    "reasoning_tokens": 0
+   },
+   "tool_calls_details": {
+    "search_web": {
+     "cost_usd": 0.001,
+     "invocation": 1
+    }
+   },
+   "total_tokens": 15023
+  },
+  "user": null
+ }
+}

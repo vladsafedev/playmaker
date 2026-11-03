@@ -1,0 +1,945 @@
+{
+ "http": 200,
+ "body": {
+  "background": true,
+  "completed_at": null,
+  "created_at": 1793705318,
+  "effort": "high@2026-10-28.0",
+  "error": {
+   "code": "cancelled",
+   "message": "cancelled",
+   "type": "cancelled"
+  },
+  "frequency_penalty": 0,
+  "id": "resp_5d09db48-df6b-4dcc-9971-2f963df134f1",
+  "incomplete_details": {
+   "reason": "cancelled"
+  },
+  "instructions": null,
+  "max_output_tokens": null,
+  "max_tool_calls": null,
+  "metadata": {},
+  "model": "high",
+  "object": "response",
+  "output": [
+   {
+    "queries": [
+     "new open source vector databases launched 2024 github",
+     "vector database new open source 2024 2025 github stars",
+     "2024 vector database newly launched open source rust"
+    ],
+    "results": [
+     {
+      "date": "2025-12-02",
+      "id": 16,
+      "last_updated": "2026-10-30",
+      "snippet": "# 7 Years, 2 Major Rebuilds, 40K+ GitHub Stars: The Rise of Milvus as the Leading Open-Source Vector Database\nIn June 2025, Milvus reached 35,000 GitHub stars.\nFast-forward just a few months, and we’ve now crossed 40,000—proof not only of momentum but of a global community that keeps pushing the future of vector and multimodal search forward.\n...\n- **2019:** We open-sourced Milvus 0.10.\n...\n- **2024–2025:** Zilliz (the team behind Milvus) was named a leader by Forrester, surged past 30,000 stars, and is now beyond 40,000.\nIt became the backbone for multimodal search, RAG systems, agentic workflows, and billion-scale retrieval across industries—education, finance, creative production, scientific research, and more.",
+      "source": "web",
+      "title": "7 Years, 2 Major Rebuilds, 40K+ GitHub Stars: The Rise of ...",
+      "url": "https://milvus.io/blog/milvus-exceeds-40k-github-stars.md"
+     },
+     {
+      "date": "2026-02-05",
+      "id": 17,
+      "last_updated": "2026-10-31",
+      "snippet": "- Star18 (18)You must be signed in to star a repository\n...\n### Stars\n**18** stars\n...\n# Awesome Vector Search (Open-Source, 2024+)\nCurated list of **open-source vector-native databases, databases with vector column support, vector search & indexing libraries, cloud services, benchmarks, and research papers**.\nAll GitHub links for databases & libraries; lists ordered by **fork count (descending)**.\n## Vector-Native Databases\n...\n|Name (GitHub)|Stars|Forks|Last Commit|Status|Description|\n|--|--|--|--|--|--|\n|**Milvus**|~43k|~4k|2026-01|Active|Distributed, cloud-native vector database|\n|**Qdrant**|~29k|~2k|2025-10|Active|Rust-powered vector DB with hybrid filtering|\n|**ChromaDB**|~26k|~2k|2026-01|Active|Embedding-first vector store for LLM/RAG workloads|\n|**Endee.io**|~1k|~1.1k|2026-03|Active|cost-efficient, high-throughput vector search - scaling to 1B+ vectors per node|\n|**Weaviate**|~16k|~1k|2026-01|Active|Schema-aware vector DB with GraphQL|\n|**LanceDB**|~9k|~800|2026-01|Active|Data-lake-native vector database built on Apache Arrow|\n|**Vespa**|~7k|~700|2026-02|Active|Large-scale search engine with native vector support|\n|**Vald**|~2k|~90|2026-01|Active|Kubernetes-native distributed vector search|\n...\n|Name (GitHub)|Stars|Forks|Last Commit|Status|Description|\n|--|--|--|--|--|--|\n|**Redisearch**|~6k|~570|2025-11|Active|Redis module supporting ANN vector search|\n|**pgvectorscale**|~3k|~120|2025-11|Active|Production-grade scaling & indexing layer for pgvector|",
+      "source": "web",
+      "title": "vindwi/awesome-vector-search: A curated list of ... - GitHub",
+      "url": "https://github.com/vindwi/awesome-vector-search"
+     },
+     {
+      "date": "2026-04-03",
+      "id": 18,
+      "last_updated": "2026-10-27",
+      "snippet": "OpenViking is an open-source context database initiated and maintained by ByteDance’s Volcano Engine Viking team, dedicated to building robust context engineering infrastructure for the AI Agent ecosystem.\n...\n|Time Period|Milestone|Technical Breakthroughs and Industry Impact|\n|--|--|--|\n|**2024**|Released developer-facing product matrix: VikingDB, Viking Knowledge Base, Viking Memory Base|Officially provided on Volcano Engine public cloud; successfully supported thousands of enterprise customers building AI-native applications; marked the successful transition from internal tooling to commercial products|\n...\n- **Main repository**: `https://github.com/volcengine/openviking`",
+      "source": "web",
+      "title": "OpenViking-memory-DB-for-agents-/docs/en/about/01-about-us.md at main · iralaPraveen/OpenViking-memory-DB-for-agents-",
+      "url": "https://github.com/iralaPraveen/OpenViking-memory-DB-for-agents-/blob/main/docs/en/about/01-about-us.md"
+     },
+     {
+      "date": "2023-03-21",
+      "id": 19,
+      "last_updated": "2026-11-03",
+      "snippet": "GitHub - dangkhoasdc/awesome-vector-database: A curated list of awesome works related to high dimensional structure/vector search & database · GitHub\n- - GitHub Universe\n...\n## Multidimensional data / Vectors\n- ArcadeDB - open-source multi-model database with native vector embedding support alongside graph, document, key-value and time series models",
+      "source": "web",
+      "title": "dangkhoasdc/awesome-vector-database",
+      "url": "https://github.com/dangkhoasdc/awesome-vector-database"
+     },
+     {
+      "date": "2023-05-30",
+      "id": 20,
+      "last_updated": "2026-10-05",
+      "snippet": "| |Name|Open Source|License|GitHub stars|Developed in (language)|Summary|Business Model|Embeds / Uses|founding date / first released date|In-memory Unterstützung|Sharding|Index Types|Consistency Model|Benchmarks (Performance?)|Approximate Nearest Neighbor (ANN) Vector Databases|Funding|Who's behind it|HQ in| |\n| |ObjectBox|Y|Apache-2.0| |C++, supports native language APIs in Java, Flutter / Dart, Swift, Python, GoLang, and C++|ObjectBox is an on-device vector database for Edge AI on Mobile, IoT, Embedded and other commodity devices|Free to use; paid Data Sync|HNSW built and optimized from scratch for efficiency / speed on devices with limited resources|development of the initial on-device database started in 2015; released the vector search to become the first on-device vector database for productive use early in 2024|Y|N|HNSW|Transactionally safe, ACID| |Y|Seed in 2018|ObjectBox|🇪🇺| |\n| |Marqo AI|Y|Apache-2.0|2.8k ⭐|Python|A tensor-based cloud-native commercial Open Source search and analytics engine.|Open SaaS|Tensor-based|❔| |Y|HNSW| |-| |undisclosed preseed in May 2022|S2Search Australia Pty Ltd|🇦🇺| |\n| |Weaviate|Y|BSD|5.6k ⭐|Assembly, C++, GoLang|Weaviate is a commercial Open Source cloud-native vector database that stores both objects and vectors.|Open SaaS|❔|started in 2018 as a traditional graph database, first released in 2019|N|Y, static sharding|a custom HNSW PQ algorithm that supports CRUD|Eventual Consistency|not comparative, just evaluating their own performance|Y (multiple ANN algorithms as long as they support full CRUD)|67.7M USD, series B|SeMI Technologies|🇪🇺| |",
+      "source": "web",
+      "title": "Vector databases - a look at the AI database market",
+      "url": "https://objectbox.io/vector-database/"
+     },
+     {
+      "date": "2024-05-09",
+      "id": 21,
+      "last_updated": "2026-03-06",
+      "snippet": "### 6 releases (3 breaking)\n|0.4.1|May 9, 2024|\n|--|--|\n|0.4.0|May 3, 2024|\n|0.3.1|Mar 10, 2024|\n|0.3.0|Feb 20, 2024|\n|0.1.0|Feb 19, 2024|\n...\nThe package provides a vector database allowing for efficient search of nearest\nneighbors.",
+      "source": "web",
+      "title": "Vector — Rust database // Lib.rs",
+      "url": "https://lib.rs/crates/vector"
+     },
+     {
+      "date": "2025-12-05",
+      "id": 22,
+      "last_updated": "2026-11-02",
+      "snippet": "GitHub - alibaba/zvec: A lightweight, lightning-fast, in-process vector database · GitHub\n...\n2. zvec\n...\n- Fork1k (1k)\n- Star16.2k (16.2k)\n...\n**Zvec** is an open-source, in-process vector database — lightweight, lightning-fast, and designed to embed directly into applications.\nBattle-tested within Alibaba Group, it delivers production-grade, low-latency and scalable similarity search with minimal setup.",
+      "source": "web",
+      "title": "alibaba/zvec: A lightweight, lightning-fast, in-process vector ...",
+      "url": "https://github.com/alibaba/zvec"
+     },
+     {
+      "date": "2026-06-21",
+      "id": 23,
+      "last_updated": "2026-10-30",
+      "snippet": "- Star0 (0)\n...\n### Stars\n**0** stars\n...\n## Self-Hosted Vector Databases\nProduction-ready vector databases you can deploy on your own infrastructure.\n- **Milvus** `Official` — Open-source distributed vector database with GPU support and cloud-native architecture.\n- **Qdrant** `Official` — Open-source vector database in Rust with filtering, quantization, and hybrid search.\n...\n- **Chroma** `Official` — AI-native open-source embedding database for local and production deployments.",
+      "source": "web",
+      "title": "Enterprise-AI-Atlas/awesome-vector-databases",
+      "url": "https://github.com/Enterprise-AI-Atlas/awesome-vector-databases"
+     },
+     {
+      "date": "2024-09-10",
+      "id": 24,
+      "last_updated": "2026-10-24",
+      "snippet": "## Weaviate vector database\n##### Sep 10, 2024 (0:13:38)\nWe've updated Verba, our open-source Retrieval Augmented Generation (RAG) app, to the next version.\n...\nGitHub: https://github.com/weaviate/verba",
+      "source": "web",
+      "title": "Chat With Your Data With Verba",
+      "url": "http://www.youtube.com/watch?v=2VCy-YjRRhA"
+     },
+     {
+      "id": 25,
+      "last_updated": "2026-10-03",
+      "snippet": "SQLRite — an embedded SQL + vector database in Rust\n...\nv0.14.0 · MIT licensed · open source\n# SQLRite — an embedded SQL + vector database in Rust.\nSQLRite is a from-scratch SQLite alternative — a single-file embedded database in Rust with a real B-tree, write-ahead log, transactions, JOINs, aggregates, HNSW vector search, BM25 full-text search, and bindings for six languages.\nBuilt to teach what databases actually do.\nPhases 0–11 shipped — concurrent writes live· v0.14.0 on crates.io · PyPI · npm· Rust 2024 edition\nsqlrite — repl — in-memory\n...\nEvery phase is independently usable and merges to main before the next starts. Eleven phases shipped through v0.10.0; the remaining list at the bottom is small, well-scoped follow-ups.\n...\nRust 2024 edition, resolver 3, every dependency on current majors.\n...\nSQLRite is open source under MIT. Pull requests, issues, and database trivia all welcome.",
+      "source": "web",
+      "title": "SQLRite — an embedded SQL + vector database in Rust",
+      "url": "https://www.sqlritedb.com/"
+     },
+     {
+      "date": "2026-05-28",
+      "id": 26,
+      "last_updated": "2026-11-02",
+      "snippet": "- Star3 (3)You must be signed in to star a repository\n...\n### Stars\n**3** stars\n...\n# Open Source Vector Databases\n|Database|Description|Official Website|\n|--|--|--|\n|Milvus|Distributed vector database built for billion-scale similarity search.|https://milvus.io|\n|Qdrant|Rust-based production-ready vector database with advanced filtering.|https://qdrant.tech|\n|Weaviate|AI-native vector database supporting hybrid search and generative AI.|https://weaviate.io|\n|ChromaDB|Lightweight vector database designed for LLM applications.|https://www.trychroma.com|\n|LanceDB|Embedded vector database built on Apache Arrow.|https://lancedb.com|\n|Vespa|Large-scale search engine supporting vector and structured search.|https://vespa.ai|\n|Vald|Kubernetes-native distributed vector search engine.|https://vald.vdaas.org|\n|Vearch|Distributed vector retrieval system for AI applications.|https://vearch.readthedocs.io|\n|Epsilla|Local-first AI-native vector database.|https://epsilla.com|\n|DeepLake|Vector database and data lake for multimodal AI.|https://activeloop.ai|",
+      "source": "web",
+      "title": "Ratnesh-181998/vector-database",
+      "url": "https://github.com/Ratnesh-181998/vector-database"
+     },
+     {
+      "date": "2025-09-07",
+      "id": 27,
+      "last_updated": "2026-11-01",
+      "snippet": "This curated collection features 150+ exceptional open-source AI projects with a combined 3M+ stars across 16 specialized categories.\nEach project is ranked using a comprehensive quality score derived from GitHub metrics, community engagement, and ecosystem impact.\n...\n…\n## Vector Databases & Search\n*Vector databases, embedding stores, and semantic search solutions.*\n**faiss** (🥇46 · ⭐ 34K) - A library for efficient similarity search and clustering of dense vectors.\n`MIT` - GitHub (👨‍💻 200 · 🔀 3.8K · 📥 2.6K · 📦 19K · 📋 2.4K - 13% open · ⏱️ 03.01.2025):\n…\n- PyPI (📥 2.9M / month): `pip install faiss-cpu`\n**milvus** (🥇44 · ⭐ 32K) - A cloud-native vector database, storage for next generation AI applications.\n`Apache-2` - GitHub (👨‍💻 310 · 🔀 2.9K · 📥 74K · 📋 13K - 5% open · ⏱️ 07.01.2025):\n…\n- PyPI (📥 1.3M / month): `pip install pymilvus`\n**chroma** (🥈42 · ⭐ 17K) - The AI-native open-source embedding database.\n`Apache-2` - GitHub (👨‍💻 160 · 🔀 1.5K · 📦 34K · 📋 1.7K - 32% open · ⏱️ 06.01.2025):\n…\n- PyPI (📥 4.7M / month): `pip install chromadb`\n**qdrant** (🥈41 · ⭐ 23K) - Qdrant - High-performance, massive-scale Vector Database for the next generation of AI.\n`Apache-2` - GitHub (👨‍💻 140 · 🔀 1.4K · 📥 13K · 📦 1.2K · 📋 1.5K - 16% open · ⏱️ 07.01.2025):\n…\n- PyPI (📥 1.9M / month): `pip install qdrant-client`\n**weaviate** (🥈40 · ⭐ 12K) - Weaviate is an open source vector database that stores both objects and vectors.\n`BSD-3` - GitHub (👨‍💻 100 · 🔀 760 · 📥 8.7K · 📋 1.7K - 13% open · ⏱️ 06.01.2025):\n…\n- PyPI (📥 700K / month): `pip install weaviate-client`\n**vespa** (🥉38 · ⭐ 6K) - The open big data serving engine.\n`Apache-2` - GitHub (👨‍💻 220 · 🔀 610 · 📥 8.7K · 📋 1.6K - 13% open · ⏱️ 07.01.2025):\n…\n- PyPI (📥 24K / month): `pip install pyvespa`\n**pgvector** (🥉36 · ⭐ 13K) - Open-source vector similarity search for Postgres.\n`❗️PostgreSQL` - GitHub (👨‍💻 37 · 🔀 620 · 📥 1.5K · 📋 360 - 6% open · ⏱️ 03.01.2025):\n…\ngit clone https://github.com/pgvector/pgvector\n…\n**tavily** (🥈32 · ⭐ 1.8K) - Search API optimized for LLMs and AI agents.\n`MIT` - GitHub (👨‍💻 12 · 🔀 160 · 📦 4.9K · 📋 42 - 19% open · ⏱️ 19.12.2024):\n…\n## Contributing\nContributions are encouraged and always welcome!",
+      "source": "web",
+      "title": "Itadori91/best-of-ai-open-source - GitHub",
+      "url": "https://github.com/itadori91/best-of-ai-open-source"
+     },
+     {
+      "id": 28,
+      "last_updated": "2026-09-10",
+      "snippet": "---\ntitle: \"PostgreSQL and Pgvector: Now Faster Than Pinecone, 75% Cheaper, and 100% Open Source\"\npublished: 2024-06-11T08:08:00.000-04:00\nupdated: 2025-12-09T14:06:09.000-05:00\nexcerpt: \"Introducing pgvectorscale, an open-source PostgreSQL extension that supercharges pgvector’s vector search performance for large-scale vector workloads.\"\ntags: AI, Announcements & Releases, PostgreSQL, Blog, pgvector\nauthors: Avthar Sewrathan, John Pruitt, Matvey Arye\n---\n> **TimescaleDB is now Tiger Data.**\n_Introducing pgvectorscale, a new open-source extension that makes PostgreSQL an even better database for AI applications.\nPgvectorscale builds upon pgvector to unlock large-scale, high-performance AI use cases previously only achievable with specialized vector databases like Pinecone._\n...\n[**Pgvectorscale**](https://github.com/timescale/pgvectorscale/) **is an open-source** [**PostgreSQL extension**](https://www.tigerdata.com/blog/top-8-postgresql-extensions) **that builds on pgvector, enabling greater performance and scalability** (keep reading for the actual numbers).\n...\nLicensed under the [open-source PostgreSQL License](https://github.com/timescale/pgvectorscale/blob/main/LICENSE), pgvectorscale complements pgvector by leveraging the pgvector data type and distance functions, further enriching the PostgreSQL ecosystem for building AI applications.\n...\nAfter getting good initial feedback from Timescale customers on an early version of this index released in October 2023, we’ve further refined the StreamingDiskANN index based on continued feedback and decided to make it open source and free so that all developers using PostgreSQL for AI can benefit from it.\n...\nPgvectorscale is open source under the PostgreSQL License and is available for you to use in your AI projects today.\nYou can find installation instructions on the [pgvectorscale GitHub repository](https://github.com/timescale/pgvectorscale/).",
+      "source": "web",
+      "title": "Pgvector Is Now Faster than Pinecone at 75% Less Cost",
+      "url": "https://www.tigerdata.com/blog/pgvector-is-now-as-fast-as-pinecone-at-75-less-cost"
+     },
+     {
+      "date": "2026-11-03",
+      "id": 29,
+      "last_updated": "2026-11-03",
+      "snippet": "Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search\n...\nStar 35.4k\nQdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI.\n...\n### weaviate / weaviate\nStar 16.9k\nWeaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.",
+      "source": "web",
+      "title": "vector-database · GitHub Topics",
+      "url": "https://github.com/topics/vector-database?o=desc&s=stars"
+     },
+     {
+      "id": 30,
+      "last_updated": "2026-11-01",
+      "snippet": "# vectordb 0.4.10\nLanceDB: A serverless, low-latency vector database for AI applications\n...\n- all releases: 2m 32s Average build duration of **successful** builds in releases after 2024-10-23.\n...\n# LanceDB Rust\nLanceDB Rust SDK, a serverless vector database.",
+      "source": "web",
+      "title": "vectordb 0.4.10",
+      "url": "https://docs.rs/crate/vectordb/latest"
+     }
+    ],
+    "type": "search_results"
+   },
+   {
+    "queries": [
+     "new open source vector databases launched 2025 github",
+     "2026 new open source vector database github",
+     "new open source embedding vector database 2025"
+    ],
+    "results": [
+     {
+      "date": "2026-11-03",
+      "id": 31,
+      "last_updated": "2026-11-03",
+      "snippet": "# The Milvus Project\nThe open source vector database designed for AI applications\n- 1.3k followers\n...\n1. milvus milvus Public\nMilvus is a high-performance, cloud-native vector database built for scalable vector ANN search\n...\n2. bootcamp bootcamp Public\n...\nA lightweight version of Milvus\n...\n- Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search\nmilvus-io/milvus's past year of commit activity\nGo 46,569 Apache-2.0 4,326 1,102 (13 issues need help) 421 Updated Nov 3, 2026",
+      "source": "web",
+      "title": "The Milvus Project · GitHub",
+      "url": "https://github.com/milvus-io"
+     },
+     {
+      "date": "2025-10-01",
+      "id": 32,
+      "last_updated": "2026-10-09",
+      "snippet": "**Berlin, October 1, 2025** – Wikimedia Deutschland has announced that the Wikidata Embedding Project is now publicly available.\nThis new vector database makes the structured knowledge from Wikidata — the world’s largest free and open knowledge graph — directly accessible for building generative AI applications.\n...\nThe database is publicly and freely accessible at: https://wd-vectordb.wmcloud.org/\n...\nThe Embedding Project introduces a vector-based semantic search that bridges this gap — transforming structured data into a format that LLMs can more easily access with natural language.\nA vector database stores and compares information as high-dimensional numerical representations (vectors), allowing AI systems to find concepts based on meaning — not just keywords.\nThe project supports the Model Context Protocol (MCP), a framework that bridges generative AI systems with structured databases like Wikidata, enabling developers to build new tools with simplified, standards-based access to verified knowledge.\n...\nSince September 2024, Wikimedia Deutschland, Jina.AI, and DataStax (an IBM company) have been transforming Wikidata items into multilingual vector representations using Jina’s embedding model (which supports 100+ languages and 8,192-token input) and storing them in DataStax’s scalable vector database, Astra DB, for semantic search and AI applications.\n...\nIt now includes fast similarity search, reranking for more accurate results, and initial language support in English,  French and Arabic — with many more planned.\nThe infrastructure uses the Jina Embeddings V3 model, making Wikidata’s structured data directly usable by LLMs and autonomous agents.",
+      "source": "web",
+      "title": "Wikidata:Embedding Project/October 1 2025 Release",
+      "url": "https://www.wikidata.org/wiki/Wikidata:Embedding_Project/October_1_2025_Release"
+     },
+     {
+      "date": "2026-10-15",
+      "id": 33,
+      "last_updated": "2026-10-15",
+      "snippet": "### oceanbase / seekdb\n...\nThe AI-Native Search Database.\nBest for agent storage, it unifies vector, text, structured, and semi-structured data into a single engine.\nThis all-in-one database makes agents smarter, easier to run, and more stable.\n...\n### sochdb / sochdb\nStar 48\nSochDB is a high-performance embedded, ACID-compliant vector database purpose-built for AI agents and memory",
+      "source": "web",
+      "title": "vector-databases · GitHub Topics",
+      "url": "https://github.com/topics/vector-databases"
+     },
+     {
+      "date": "2026-06-06",
+      "id": 34,
+      "last_updated": "2026-10-30",
+      "snippet": "## Graph-Based ANN Indexes\nVSAG is an open-source framework that speeds up graph-based ANN search through cache-friendly memory layout, automatic parameter tuning without index rebuilds, and low-precision hardware-aware distance computation.",
+      "source": "web",
+      "title": "github.com › revectores › awesome-vector-dbGitHub - revectores/awesome-vector-db: Curated papers on ...",
+      "url": "https://github.com/revectores/awesome-vector-db"
+     },
+     {
+      "date": "2026-11-03",
+      "id": 35,
+      "last_updated": "2026-11-03",
+      "snippet": "Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search\n...\nQdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI.\nAlso available in the cloud https://cloud.qdrant.io/\n...\n### weaviate / weaviate\nStar 16.9k\nWeaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.\n...\nOceanBase is the unified distributed database for the AI era — open-source, multi-model, one engine for your most demanding workloads.",
+      "source": "web",
+      "title": "vector-database · GitHub Topics",
+      "url": "https://github.com/topics/vector-database"
+     },
+     {
+      "date": "2026-02-05",
+      "id": 36,
+      "last_updated": "2026-10-31",
+      "snippet": "# Awesome Vector Search (Open-Source, 2024+)\nCurated list of **open-source vector-native databases, databases with vector column support, vector search & indexing libraries, cloud services, benchmarks, and research papers**.\nAll GitHub links for databases & libraries; lists ordered by **fork count (descending)**.\n...\n|Name (GitHub)|Stars|Forks|Last Commit|Status|Description|\n|--|--|--|--|--|--|\n|**Milvus**|~43k|~4k|2026-01|Active|Distributed, cloud-native vector database|\n|**Qdrant**|~29k|~2k|2025-10|Active|Rust-powered vector DB with hybrid filtering|\n|**ChromaDB**|~26k|~2k|2026-01|Active|Embedding-first vector store for LLM/RAG workloads|\n|**Endee.io**|~1k|~1.1k|2026-03|Active|cost-efficient, high-throughput vector search - scaling to 1B+ vectors per node|\n|**Weaviate**|~16k|~1k|2026-01|Active|Schema-aware vector DB with GraphQL|\n|**LanceDB**|~9k|~800|2026-01|Active|Data-lake-native vector database built on Apache Arrow|\n|**Vespa**|~7k|~700|2026-02|Active|Large-scale search engine with native vector support|\n|**Vald**|~2k|~90|2026-01|Active|Kubernetes-native distributed vector search|\n...\n|Name (GitHub)|Stars|Forks|Last Commit|Status|Description|\n|--|--|--|--|--|--|\n|**Redisearch**|~6k|~570|2025-11|Active|Redis module supporting ANN vector search|\n|**pgvectorscale**|~3k|~120|2025-11|Active|Production-grade scaling & indexing layer for pgvector|",
+      "source": "web",
+      "title": "vindwi/awesome-vector-search: A curated list of ... - GitHub",
+      "url": "https://github.com/vindwi/awesome-vector-search"
+     },
+     {
+      "date": "2026-10-07",
+      "id": 37,
+      "last_updated": "2026-10-19",
+      "snippet": "Vector stores and hybrid search engines for embeddings.\n...\n### 🥇 Milvus score 82 · ⭐ 46k · Apache-2.0 · Oct 2026\n**Distributed vector database with dense, sparse and hybrid search at scale.**\nMilvus is a distributed vector database (Go and C++, LF AI & Data Foundation) that separates compute and storage on Kubernetes, with a Standalone Docker mode and pip-installable Milvus Lite.\nIt offers HNSW, IVF, FLAT, SCANN and DiskANN indexes, GPU CAGRA, sparse BM25 and learned-sparse vectors for hybrid search, metadata filtering, multi-tenancy, hot/cold storage, auth, TLS and RBAC.\n...\n### 🥈 Meilisearch score 75 · ⭐ 60k · custom license · Oct 2026\n...\n### 🥉 Qdrant score 69 · ⭐ 35k · Apache-2.0 · Oct 2026\n**Rust vector database with payload filtering, REST and gRPC.**\nQdrant is a Rust vector database exposing REST (OpenAPI 3.0) and gRPC on port 6333 for storing points (vectors plus JSON payload) and searching with dense, sparse and multivector (ColBERT) embeddings, rich payload filters and hybrid fusion (RRF, DBSF).\nIt adds quantization, on-disk storage, sharding and replication, multitenancy, GPU-accelerated indexing and a web UI.\n...\n### #⁠5 Chroma score 62 · ⭐ 30k · Apache-2.0 · Oct 2026\n**Embedding database with a four-function API for Python and JavaScript.**\nChroma is an embedding database with a four-function API (create collection, add, query, get) that tokenizes, embeds and indexes documents itself or accepts your own vectors, with metadata and document filters.\n...\n### #⁠6 Weaviate score 62 · ⭐ 17k · custom license · Oct 2026\n...\nWeaviate is a Go vector database that stores objects with their vectors and serves hybrid BM25 plus semantic search, filtering, built-in RAG and reranking through REST, gRPC and GraphQL APIs.\n...\n### #⁠7 zvec score 60 · ⭐ 16k · Apache-2.0 · Oct 2026\n**In-process vector database library with hybrid and full-text search.**\nZvec is a C++ vector database that embeds in the application process instead of running as a server.\nIt stores dense and sparse vectors with a write-ahead log, and combines vector similarity, full-text search and structured filters in one query.\n...\n### #⁠8 leann score 60 · ⭐ 13k · MIT · Oct 2026\n**Vector index that recomputes embeddings on demand to cut storage.**\nLEANN is a Python vector database that stores a pruned graph and recomputes embeddings at query time instead of storing them.\n...\n### #⁠9 HelixDB score 60 · ⭐ 6.2k · Apache-2.0 · Oct 2026\n**Rust graph database with native vector and BM25 search.**\nHelixDB is a Rust database that combines a labeled property graph, approximate nearest-neighbor vector search and BM25 full-text search in one transactional engine.\n...\n### #⁠11 turbovec score 54 · ⭐ 17k · MIT · Oct 2026\n...\n### #⁠12 Vespa score 42 · ⭐ 7.1k · Apache-2.0 · Oct 2026\n**Serving engine for vectors, tensors, text and ML ranking at scale.**\nVespa is a serving platform that indexes vectors, tensors, text and structured data, selects a subset at query time, evaluates machine-learned ranking models over it and returns results in under 100 ms while the corpus changes, across many nodes.",
+      "source": "web",
+      "title": "best-of-ai/reviews/vector-db.md at main · archestack/best-of-ai",
+      "url": "https://github.com/archestack/best-of-ai/blob/main/reviews/vector-db.md"
+     },
+     {
+      "date": "2026-05-28",
+      "id": 38,
+      "last_updated": "2026-11-02",
+      "snippet": "# Open Source Vector Databases\n|Database|Description|Official Website|\n|--|--|--|\n|Milvus|Distributed vector database built for billion-scale similarity search.|https://milvus.io|\n|Qdrant|Rust-based production-ready vector database with advanced filtering.|https://qdrant.tech|\n|Weaviate|AI-native vector database supporting hybrid search and generative AI.|https://weaviate.io|\n|ChromaDB|Lightweight vector database designed for LLM applications.|https://www.trychroma.com|\n|LanceDB|Embedded vector database built on Apache Arrow.|https://lancedb.com|\n|Vespa|Large-scale search engine supporting vector and structured search.|https://vespa.ai|\n|Vald|Kubernetes-native distributed vector search engine.|https://vald.vdaas.org|\n|Vearch|Distributed vector retrieval system for AI applications.|https://vearch.readthedocs.io|\n|Epsilla|Local-first AI-native vector database.|https://epsilla.com|\n|DeepLake|Vector database and data lake for multimodal AI.|https://activeloop.ai|\n|Marqo|Tensor search engine combining AI models and vector search.|https://marqo.ai|\n|NucliaDB|Semantic search and knowledge retrieval platform.|https://nuclia.com|\n...\n|Pathway Vector Store|Real-time vector retrieval for streaming data.|https://pathway.com|\n|Txtai|Semantic search platform with vector indexing.|https://github.com/neuml/txtai|\n|USearch|High-performance SIMD-optimized vector search library.|https://unum-cloud.github.io/usearch|\n|SPTAG|Microsoft's ANN library for large-scale vector search.|https://github.com/microsoft/SPTAG|",
+      "source": "web",
+      "title": "Ratnesh-181998/vector-database",
+      "url": "https://github.com/Ratnesh-181998/vector-database"
+     },
+     {
+      "date": "2026-09-30",
+      "id": 39,
+      "last_updated": "2026-11-01",
+      "snippet": "- Weaviate — Open-source, cloud-native vector database written in Go that stores objects and vectors together, combining vector similarity search with keyword filtering, generative (RAG) search, and reranking in a single query interface.\nAdvanced hybrid search combining semantic and keyword (BM25) search; Built-in generative search (RAG) and reranking capabilities; Automatic vectorization at import via integrated embedding models; Horizontal scaling, multi-tenancy, replication, and RBAC.\n✅ verified 2026-09-30\n...\n- Milvus — High-performance, cloud-native vector database (Apache 2.0) built for scalable ANN search, organizing and searching vast amounts of unstructured data with a distributed, Kubernetes-native architecture.\nAll major vector index types (HNSW, IVF, FLAT, DiskANN) with GPU indexing support; Hybrid search combining dense vectors with native full-text/BM25 and sparse embeddings; Real-time streaming updates with horizontal scaling and high availability; Multi-tenancy, RBAC, TLS, and hot/cold storage tiers.\n✅ verified 2026-09-30",
+      "source": "web",
+      "title": "awesome-rag/README.md at main · Awesome-llms-labs/awesome-rag",
+      "url": "https://github.com/Awesome-llms-labs/awesome-rag/blob/main/README.md"
+     },
+     {
+      "date": "2026-10-16",
+      "id": 40,
+      "last_updated": "2026-11-02",
+      "snippet": "- ### chroma\nPublic\nthe AI-native open-source embedding database\nRust\n•\nApache License 2.0\n2.6k2.6k forks in voyage-ai/chroma•00 stars in voyage-ai/chroma•00 issues in voyage-ai/chroma•00 pull requests in voyage-ai/chroma•Updated Jul 17, 2026Jul 17, 2026\n- ### weaviate\nPublic\nWeaviate is an open source vector database that stores both objects and vectors, allowing for combining vector search with structured filtering with the fault-t…\nGo\nBSD 3-Clause \"New\" or \"Revised\" License\n1.4k1.4k forks in voyage-ai/weaviate•00 stars in voyage-ai/weaviate•00 issues in voyage-ai/weaviate•00 pull requests in voyage-ai/weaviate•Updated Jul 1, 2026Jul 1, 2026\n...\n- ### redisvl\nPublic\nRedis Vector Library (RedisVL) enables Redis as a realtime vector database for LLM Applications.\n...\n- ### lancedb\nPublic\nDeveloper-friendly, serverless vector database for AI applications.\nEasily add long-term memory to your LLM apps!\n...\n- ### weaviate-io\nPublic\nWebsite for the Weaviate vector database\nMDX\n•145145 forks in voyage-ai/weaviate-io•00 stars in voyage-ai/weaviate-io•00 issues in voyage-ai/weaviate-io•00 pull requests in voyage-ai/weaviate-io•Updated Nov 4, 2025Nov 4, 2025",
+      "source": "web",
+      "title": "voyage-ai repositories",
+      "url": "https://github.com/orgs/voyage-ai/repositories"
+     },
+     {
+      "date": "2025-12-16",
+      "id": 41,
+      "last_updated": "2026-11-02",
+      "snippet": "Between May and October 2026 several engines shipped or extended 1 to 8-bit vector storage, mostly as opt-in or preview options rather than defaults.\n...\n|Engine|Feature|Status|Footprint|\n|--|--|--|--|\n|Qdrant|TurboQuant with Hadamard rotation (1.18, May 2026); Turbo4 storage type keeps only the 4-bit form (1.19, August 2026); `turbo8` and `turbo16` vector datatypes (1.20, October 2026)|Opt-in|From 36 bits per coordinate in 1.18 (float32 original plus 4-bit copy) to 4 bits with Turbo4, a ninefold cut|\n|Weaviate|4-bit Rotational Quantization (1.39, August 2026), adding to the 8-bit and 1-bit RQ it already had; 1.40 (October 2026) adds \"RQ4 centered quantization\"|Preview in 1.39, HNSW only; the 1.40 notes give no status label, so confirm before relying on it|1,536-dim vector from 6,144 bytes to 784 bytes (7.84x)|\n...\n|**Qdrant**|Open source / Cloud (Rust, high-perf)|Self-hosted control, strong filtered search; vendor benchmarks cite ~12ms p99 at 10M vectors; 1.20 (October 2026) adds BM25 scoring on the full-text index, a `code` tokenizer, and per-element nested payload indexes|Per GB (cloud) or free|\n|**Weaviate**|Open source / Cloud|Native hybrid (BM25 + dense + metadata) in a single query, MMR diversity and Boost API (GA in 1.39), multimodal; 1.40 (October 2026) makes namespaces GA as a licensed feature, stops creating an implicit legacy vector index (auto-schema creates a `default` named vector), and defaults the vectorizer to none, so schemas that relied on the old defaults change on upgrade|Per dimension-hour|\n|**Milvus**|Open source / Cloud (Zilliz)|Distributed scale; 3.0 (July 2026) adds External Collections over Parquet, Iceberg, Lance and Vortex in object storage, plus online column backfill|Free (self-host) or Zilliz Cloud|",
+      "source": "web",
+      "title": "04-vector-databases.md",
+      "url": "https://github.com/ombharatiya/ai-system-design-guide/blob/main/06-retrieval-systems/04-vector-databases.md"
+     },
+     {
+      "date": "2026-10-31",
+      "id": 42,
+      "last_updated": "2026-11-02",
+      "snippet": "# pgvector\nOpen-source vector similarity search for Postgres\n...\n1. pgvector pgvector\nOpen-source vector similarity search for Postgres\n...\n- Open-source vector similarity search for Postgres\npgvector/pgvector's past year of commit activity\nC 23,569 1,379 10 6 Updated Oct 31, 2026",
+      "source": "web",
+      "title": "pgvector",
+      "url": "https://github.com/pgvector"
+     },
+     {
+      "date": "2026-11-02",
+      "id": 43,
+      "last_updated": "2026-11-03",
+      "snippet": "Nov 3, 2026\n...\n### milvus-io / milvus\nStar 46.6k\nMilvus is a high-performance, cloud-native vector database built for scalable vector ANN search\n...\n### qdrant / qdrant\nStar 35.4k\nQdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI.\nAlso available in the cloud https://cloud.qdrant.io/\n...\n### weaviate / weaviate\nStar 16.9k\nWeaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.\n...\nOceanBase is the unified distributed database for the AI era — open-source, multi-model, one engine for your most demanding workloads.",
+      "source": "web",
+      "title": "vector-search · GitHub Topics",
+      "url": "https://github.com/topics/vector-search"
+     },
+     {
+      "date": "2023-06-26",
+      "id": 44,
+      "last_updated": "2026-10-30",
+      "snippet": "***Editor's note, January 6, 2025:***  *AlloyDB now supports the* *ScaNN index*  *in addition to open source pgvector, bringing twelve years of Google Research to PostgreSQL for improved vector search performance and accuracy.*",
+      "source": "web",
+      "title": "Unlock the power of gen AI with the pgvector PostgreSQL ...",
+      "url": "https://cloud.google.com/blog/products/databases/announcing-vector-support-in-postgresql-services-to-power-ai-enabled-applications"
+     },
+     {
+      "date": "2026-10-29",
+      "id": 45,
+      "last_updated": "2026-10-30",
+      "snippet": "**SAN FRANCISCO, CA / ACCESS Newswire / October 20, 2026 /** AI agents forget.\n...\nCognitum One^™^, Inc. (cognitum.one) today launched RuVector^™^ commercially, adding licensing, enterprise support and deployment services to the open-source project.",
+      "source": "web",
+      "title": "Cognitum One Launches Commercial RuVector, the Self- ...",
+      "url": "https://www.theglobeandmail.com/investing/markets/markets-news/ACCESS%20Newswire/8233410/cognitum-one-launches-commercial-ruvector-the-self-learning-database-giving-ai-agents-memory-that-persists-connects-and-improves/"
+     }
+    ],
+    "type": "search_results"
+   },
+   {
+    "queries": [
+     "github awesome vector databases open source list vector databases",
+     "vector database github stars comparison 2025 2026",
+     "open source vector databases github stars list 2025 2026"
+    ],
+    "results": [
+     {
+      "date": "2026-06-21",
+      "id": 1,
+      "last_updated": "2026-10-14",
+      "snippet": "# Awesome Vector Databases\nA curated registry of vector databases, vector stores, vector-search libraries, and benchmarks for AI, RAG, and semantic-search applications.\n...\n## Self-Hosted Vector Databases\nProduction-ready vector databases you can deploy on your own infrastructure.\n- **Milvus** `Official` — Open-source distributed vector database with GPU support and cloud-native architecture.\n- **Qdrant** `Official` — Open-source vector database in Rust with filtering, quantization, and hybrid search.\n- **Weaviate** `Official` — Open-source vector search engine with modular AI integrations.\n- **pgvector** `Official` — PostgreSQL extension for vector similarity search with HNSW and IVFFlat indexes.\n...\n- **Chroma** `Official` — AI-native open-source embedding database for local and production deployments.",
+      "source": "web",
+      "title": "awesome-vector-databases/README.md at main - GitHub",
+      "url": "https://github.com/Enterprise-AI-Atlas/awesome-vector-databases/blob/main/README.md"
+     },
+     {
+      "date": "2023-04-21",
+      "id": 2,
+      "last_updated": "2026-10-31",
+      "snippet": "# awesome-vector-database\nA curated list of awesome vector databases for storing, managing, and searching high-dimensional data.\nThis list includes open-source and commercial solutions, as well as databases that support different types of data and machine learning models.\n## Table of Contents\n- Cottontail DB\n...\n## Open Source Databases\n- Description: Faiss is a library developed by Facebook AI Research that provides efficient similarity search and clustering of dense vectors.\n...\n- Description: Milvus is an open-source vector database built for AI and analytics applications.\nIt supports multiple index types and provides powerful scalability and performance.\nMilvus is designed for managing massive high-dimensional data and enables efficient similarity search and analytics.",
+      "source": "web",
+      "title": "mileszim/awesome-vector-database",
+      "url": "https://github.com/mileszim/awesome-vector-database"
+     },
+     {
+      "date": "2026-06-21",
+      "id": 3,
+      "last_updated": "2026-10-30",
+      "snippet": "GitHub - Enterprise-AI-Atlas/awesome-vector-databases: Curated vector databases, vector search engines, and embedding storage systems for AI.\n...\n- Star0 (0)\n...\n**0** stars\n...\nA curated registry of vector databases, vector stores, vector-search libraries, and benchmarks for AI, RAG, and semantic-search applications.\n...\n- **Milvus** `Official` — Open-source distributed vector database with GPU support and cloud-native architecture.\n- **Qdrant** `Official` — Open-source vector database in Rust with filtering, quantization, and hybrid search.",
+      "source": "web",
+      "title": "Enterprise-AI-Atlas/awesome-vector-databases",
+      "url": "https://github.com/Enterprise-AI-Atlas/awesome-vector-databases"
+     },
+     {
+      "date": "2023-03-21",
+      "id": 4,
+      "last_updated": "2026-11-03",
+      "snippet": "A curated list of awesome works related to high dimensional structure/vector search & database\n...\n# Libraries & Engines\n## Multidimensional data / Vectors\n- ArcadeDB - open-source multi-model database with native vector embedding support alongside graph, document, key-value and time series models",
+      "source": "web",
+      "title": "dangkhoasdc/awesome-vector-database",
+      "url": "https://github.com/dangkhoasdc/awesome-vector-database"
+     },
+     {
+      "date": "2014-07-04",
+      "id": 5,
+      "last_updated": "2026-10-31",
+      "snippet": "# Awesome Big Data\n## Vector Databases\n- Chroma - open-source embedding database for AI applications.\n- Infinity - AI-native database for hybrid vector, sparse vector, tensor, full-text, and structured search.\n- LanceDB - open-source embedded vector database built on the Lance columnar format.\n- Milvus - open-source vector database for scalable similarity search.\n- Qdrant - vector database and similarity search engine with REST, gRPC, and client SDKs.\n- Weaviate - open-source vector database for semantic search with structured filtering.\n- Zvec - open-source, in-process vector database for dense, sparse, and hybrid similarity search.",
+      "source": "web",
+      "title": "A curated list of awesome big data frameworks, ressources ...",
+      "url": "https://github.com/oxnr/awesome-bigdata"
+     },
+     {
+      "date": "2026-10-15",
+      "id": 6,
+      "last_updated": "2026-10-15",
+      "snippet": "# vector-databases\n## Here are 66 public repositories matching this topic...\n### sochdb / sochdb\nSochDB is a high-performance embedded, ACID-compliant vector database purpose-built for AI agents and memory",
+      "source": "web",
+      "title": "vector-databases · GitHub Topics",
+      "url": "https://github.com/topics/vector-databases"
+     },
+     {
+      "date": "2026-05-28",
+      "id": 7,
+      "last_updated": "2026-11-02",
+      "snippet": "# Open Source Vector Databases\n|Database|Description|Official Website|\n|--|--|--|\n|Milvus|Distributed vector database built for billion-scale similarity search.|https://milvus.io|\n|Qdrant|Rust-based production-ready vector database with advanced filtering.|https://qdrant.tech|\n|Weaviate|AI-native vector database supporting hybrid search and generative AI.|https://weaviate.io|\n|ChromaDB|Lightweight vector database designed for LLM applications.|https://www.trychroma.com|\n|LanceDB|Embedded vector database built on Apache Arrow.|https://lancedb.com|\n...\n|Vald|Kubernetes-native distributed vector search engine.|https://vald.vdaas.org|\n...\n|DeepLake|Vector database and data lake for multimodal AI.|https://activeloop.ai|\n...\n# Feature Comparison\n|Feature|Pinecone|Qdrant|Milvus|Weaviate|ChromaDB|\n|--|--|--|--|--|--|",
+      "source": "web",
+      "title": "Ratnesh-181998/vector-database",
+      "url": "https://github.com/Ratnesh-181998/vector-database"
+     },
+     {
+      "date": "2026-02-05",
+      "id": 8,
+      "last_updated": "2026-10-31",
+      "snippet": "# Awesome Vector Search (Open-Source, 2024+)\nCurated list of **open-source vector-native databases, databases with vector column support, vector search & indexing libraries, cloud services, benchmarks, and research papers**.\nAll GitHub links for databases & libraries; lists ordered by **fork count (descending)**.\n## Vector-Native Databases\n...\nPurpose-built systems where **vector search is a first-class, core workload**.\n|Name (GitHub)|Stars|Forks|Last Commit|Status|Description|\n|--|--|--|--|--|--|\n|**Milvus**|~43k|~4k|2026-01|Active|Distributed, cloud-native vector database|\n|**Qdrant**|~29k|~2k|2025-10|Active|Rust-powered vector DB with hybrid filtering|\n|**ChromaDB**|~26k|~2k|2026-01|Active|Embedding-first vector store for LLM/RAG workloads|\n|**Endee.io**|~1k|~1.1k|2026-03|Active|cost-efficient, high-throughput vector search - scaling to 1B+ vectors per node|\n|**Weaviate**|~16k|~1k|2026-01|Active|Schema-aware vector DB with GraphQL|\n|**LanceDB**|~9k|~800|2026-01|Active|Data-lake-native vector database built on Apache Arrow|\n|**Vespa**|~7k|~700|2026-02|Active|Large-scale search engine with native vector support|\n|**Vald**|~2k|~90|2026-01|Active|Kubernetes-native distributed vector search|\n...\nGeneral-purpose databases that **add vector similarity search as a feature or extension**.\n|Name (GitHub)|Stars|Forks|Last Commit|Status|Description|\n|--|--|--|--|--|--|\n|**ClickHouse**|~46k|~8k|2026-01|Active|Columnar analytical DB with native vector search functions|\n|**DuckDB**|~36k|~3k|2026-01|Active|Analytical DB with integrated vector similarity search|\n|**pgvector**|~20k|~1k|2026-01|Active|PostgreSQL extension for vector similarity|\n|**Redisearch**|~6k|~570|2025-11|Active|Redis module supporting ANN vector search|\n|**pgvectorscale**|~3k|~120|2025-11|Active|Production-grade scaling & indexing layer for pgvector|",
+      "source": "web",
+      "title": "vindwi/awesome-vector-search: A curated list of ... - GitHub",
+      "url": "https://github.com/vindwi/awesome-vector-search"
+     },
+     {
+      "date": "2026-10-31",
+      "id": 9,
+      "last_updated": "2026-10-31",
+      "snippet": "## Here are 181 public repositories matching this topic...\n### milvus-io / milvus\nStar 46.5k\nMilvus is a high-performance, cloud-native vector database built for scalable vector ANN search\n...\n### weaviate / weaviate\nStar 16.9k\nWeaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.\n...\nStar 2.1k\nAI-native HTAP database with Git-for-Data and built-in vector search, serving as the data and memory backbone for intelligent agents and applications.\n...\n### philippgille / chromem-go\nStar 1.1k\nEmbeddable vector database for Go with Chroma-like interface and zero third-party dependencies.\nIn-memory with optional persistence.\n...\nStar 474\n...\nStar 198\nContext intelligence layer for LLM agents: persistent memory with write-time dedup, sensitivity tagging, conflict detection, and hierarchical decay.\n...\nStar 227",
+      "source": "web",
+      "title": "vector-database · GitHub Topics",
+      "url": "https://github.com/topics/vector-database?l=go&o=desc&s=forks"
+     },
+     {
+      "date": "2023-04-21",
+      "id": 10,
+      "last_updated": "2026-10-30",
+      "snippet": "A curated list of awesome vector databases for storing, managing, and searching high-dimensional data.\nThis list includes open-source and commercial solutions, as well as databases that support different types of data and machine learning models.\n...\n- Open Source Databases - Faiss\n- Annoy\n- Milvus\n- HNSWLIB\n- NMSLIB\n- Cottontail DB\n- Vexvaut\n...\n- Description: Faiss is a library developed by Facebook AI Research that provides efficient similarity search and clustering of dense vectors.\nIt is designed for use with large-scale, high-dimensional data and supports several index types and algorithms for various use cases.\n...\n- Description: Milvus is an open-source vector database built for AI and analytics applications.\nIt supports multiple index types and provides powerful scalability and performance.\nMilvus is designed for managing massive high-dimensional data and enables efficient similarity search and analytics.\n...\n- Description: Non-Metric Space Library (NMSLIB) is an open-source, highly efficient library for similarity search and nearest neighbor search in generic metric and non-metric spaces.\n...\n- Description: Weaviate is an open-source, GraphQL-based vector search engine that enables similarity search on high-dimensional data.",
+      "source": "web",
+      "title": "awesome-vector-database/README.md at main · mileszim/awesome-vector-database",
+      "url": "https://github.com/mileszim/awesome-vector-database/blob/main/README.md"
+     },
+     {
+      "date": "2026-09-29",
+      "id": 11,
+      "last_updated": "2026-10-27",
+      "snippet": "The open source projects on this list are ordered by number of github stars.\n...\n|#|Project|Stars|\n|--|--|--|\n|1|anything-llm|67,493|\n|2|MeiliSearch|59,639|\n|3|serviette|58,769|\n|4|llama_index|52,639|\n|5|Milvus|46,471|\n|6|PageIndex|39,563|\n|7|qdrant|35,205|\n...\n|9|RAG_Techniques|29,993|\n|10|Weaviate|16,910|\n|11|memvid|16,607|\n|12|langchain4j|13,290|\n|13|LEANN|13,105|\n|14|txtai|13,026|\n|15|claude-context|12,644|\n|16|lancedb|11,743|\n...\n|18|oceanbase|10,352|\n|19|databend|9,477|\n|20|paradedb|9,436|\n|21|deeplake|9,258|\n|22|MariaDB|8,444|\n|23|deep-searcher|8,348|",
+      "source": "web",
+      "title": "Top 23 vector-database Open-Source Projects | LibHunt",
+      "url": "https://www.libhunt.com/topic/vector-database"
+     },
+     {
+      "date": "2026-10-19",
+      "id": 12,
+      "last_updated": "2026-11-02",
+      "snippet": "| |Software|Licence|Type|GitHub stars|Latest release|Docker|SSO|Managed cloud|\n|--|--|--|--|--|--|--|--|--|\n|1|Qdrant Rust|Apache-2.0 Permissive|Vector database|35k|Oct 2026(Actively maintained)|Yes|Paid only|Usage-based|\n|2|Milvus Go / C++|Apache-2.0 Permissive|Vector database|47k|Oct 2026(Actively maintained)|Yes|Paid only|Usage-based|\n|3|pgvector C (Postgres extension)|PostgreSQL Permissive|Postgres extension|24k|Oct 2026(Actively maintained)|Yes|Via plugin|None|\n|4|Weaviate Go|BSD-3-Clause / Weaviate License Open core|Vector database|17k|Oct 2026(Actively maintained)|Yes|Free edition|$45/month|\n|5|Chroma Rust / Python|Apache-2.0 Permissive|Vector database|30k|May 2026(Actively maintained)|Yes|No|Usage-based|\n|6|LanceDB Rust|Apache-2.0 Open core|Embedded vector database|12k|Oct 2026(Actively maintained)|No|No|Price on request|\n|7|OpenSearch Java / Lucene and Faiss|Apache-2.0 Permissive|Search engine with vector search|14k|Sep 2026(Actively maintained)|Yes|Free edition|None|\n|8|Vespa Java / C++|Apache-2.0 Permissive|Search engine with vector search|7.2k|Nov 2026(Actively maintained)|Yes|No|Usage-based|",
+      "source": "web",
+      "title": "9 Best Open Source Vector Databases in 2026 (Tested) - Geekflare",
+      "url": "https://geekflare.com/open-source/vector-database/"
+     },
+     {
+      "id": 13,
+      "last_updated": "2026-10-15",
+      "snippet": "awesome-vector-database\nA curated list of awesome works related to high dimensional structure/vector search & database\nhttps://github.com/dangkhoasdc/awesome-vector-database",
+      "source": "web",
+      "title": "Data",
+      "url": "https://awesome.ecosyste.ms/lists/dangkhoasdc%2Fawesome-vector-database"
+     },
+     {
+      "date": "2021-04-09",
+      "id": 14,
+      "last_updated": "2026-11-03",
+      "snippet": "GitHub - currentslab/awesome-vector-search: Collections of vector search related libraries, service and research papers · GitHub\n...\n### Standalone Service\n- Apache Cassandra 5.0 – Vector search (cep-30), Strict Serialisable ACID (cep-15), horizontally scaling database\n- Qdrant - Vector Similarity Search Engine with extended filtering support\n- Vald - A Highly Scalable Distributed Vector Search Engine\n- Milvus - A cloud-native vector database with high-performance and high scalability.\n- Weaviate - A cloud-native, real-time vector search engine\n- Omnigraph - Typed graph database where agents branch and merge like Git.\nS3-native, Rust, traversal + vector + BM25 in one runtime\n- OpenDistro Elasticsearch KNN - A machine learning plugin which supports an approximate k-NN search algorithm for Open Distro for Elasticsearch\n- Elastiknn - Elasticsearch plugin for nearest neighbor search\n- Epsilla - A High Performance Vector Database Management System, Hippocampus For AI\n- Vearch - A scalable distributed system for efficient similarity search of deep learning vectors\n- pgANN - Fast Approximate Nearest Neighbor (ANN) searches with a PostgreSQL database\n...\n- TensorDB - High Performance Vector Database Supporting Heterogeneous Computing\n- JVector - a pure Java, zero dependency, embedded vector search engine, used by DataStax Astra DB and Apache Cassandra.\n...\n- LangStream - LangStream is an open-source project that combines the best of event-based architectures with the latest Gen AI technologies.\n- CassIO - CassIO is the ultimate solution for seamlessly integrating Apache Cassandra® with generative artificial intelligence and other machine learning workloads\n- JVector - A pure Java, zero dependency, embedded vector search engine used by some of the advanced distributed databases such as DataStax Astra DB & Apache Cassandra™\n...\n- pgvector - Open-source vector similarity search extension for Postgres\n...\n- Chroma - The open-source embedding database for building LLM apps in Python or JavaScript with memory",
+      "source": "web",
+      "title": "currentslab/awesome-vector-search: Collections of ...",
+      "url": "https://github.com/currentslab/awesome-vector-search"
+     },
+     {
+      "date": "2026-08-09",
+      "id": 15,
+      "last_updated": "2026-11-02",
+      "snippet": "|Repository|Focus|\n...\n|**awesome-vector-databases**|Vector databases and embedding storage systems|\n...\n5. awesome-vector-databases awesome-vector-databases Public\nCurated vector databases, vector search engines, and embedding storage systems for AI.",
+      "source": "web",
+      "title": "Enterprise AI Atlas - GitHub",
+      "url": "https://github.com/Enterprise-AI-Atlas/"
+     }
+    ],
+    "type": "search_results"
+   },
+   {
+    "contents": [
+     {
+      "snippet": "vector-database · GitHub Topics · GitHub\n\n# vector-database\n\n## Here are 8,859 public repositories matching this topic...\n\n### Mintplex-Labs / anything-llm\n\nStar 67.9k\n\nStop renting your intelligence. Own it with AnythingLLM. Everything you need for a powerful local-first agent experience\n\nai-agents multimodal rag vector-database llm localai local-ai agentic-workflow agentic-ai computer-use self-hosted-ai agent-orchestration agent-harness hermes-agent agent-computer\n\n- Updated\n  Nov 3, 2026\n- JavaScript\n\n### meilisearch / meilisearch\n\nStar 59.8k\n\nA lightning-fast search engine API bringing AI-powered hybrid search to your sites and applications.\n\nsearch api search-engine database ai fuzzy-search full-text-search vectors instantsearch semantic-search enterprise-search geosearch typo-tolerance site-search faceting search-as-you-type vector-search app-search vector-database hybrid-search\n\n- Updated\n  Nov 3, 2026\n- Rust\n\n### pathwaycom / serviette\n\nStar 58.7k\n\nA no-code RAG server that keeps answers in sync with your documents. Works with 8 vector databases. Built on Pathway.\n\nreal-time mongodb self-hosted semantic-search pathway no-code pinecone document-search live-data rag weaviate milvus vector-database duckdb qdrant llm pgvector chromadb document-qa retrieval-augmented-generation\n\n- Updated\n  Nov 2, 2026\n- Python\n\n### run-llama / llama_index\n\nStar 52.8k\n\nLlamaIndex is the document processing platform for AI\n\napplication data framework agents fine-tuning multi-agents rag vector-database llm llamaindex\n\n- Updated\n  Oct 26, 2026\n- Python\n\n### milvus-io / milvus\n\nStar 46.6k\n\nMilvus is a high-performance, cloud-native vector database built for scalable vector ANN search\n\ngolang distributed nearest-neighbor-search cloud-native image-search vector-similarity faiss anns rag hnsw vector-search vector-database llm embedding-database embedding-store vector-store embedding-similarity diskann\n\n- Updated\n  Nov 3, 2026\n- Go\n\n### volcengine / OpenViking\n\nStar 41.4k\n\nSelf-evolving Context Database for AI Agents. Unify Agent Memory, Knowledge RAG and Skills.\n\nmemory memory-management knowledge-base vector-database agentic-rag self-evolving agent-memory context-database agent-context agent-plugins dsh-plugin\n\n- Updated\n  Nov 3, 2026\n- Python\n\n### VectifyAI / PageIndex\n\nStar 40k\n\n📑 PageIndex: Document Index for Vectorless, Reasoning-based RAG\n\ninformation-retrieval ai retrieval agents reasoning ai-agents rag vector-database llm retrieval-augmented-generation agentic-ai context-engineering\n\n- Updated\n  Nov 3, 2026\n- Python\n\n### qdrant / qdrant\n\nStar 35.4k\n\nQdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI. Also available in the cloud https://cloud.qdrant.io/\n\nsearch search-engine machine-learning neural-network nearest-neighbor-search image-search recommender-system search-engines similarity-search ai-search knn-algorithm mlops hnsw vector-search vector-database neural-search vector-search-engine embeddings-similarity hybrid-search ai-search-engine\n\n- Updated\n  Nov 2, 2026\n- Rust\n\n### topoteretes / cognee\n\nStar 33k\n\nCognee is the open-source AI memory platform for agents. Give your AI agents persistent long-term memory with small models for free\n\nopen-source ai knowledge knowledge-graph help-wanted graph-database memory-management ai-agents contributions-welcome cognitive-architecture good-first-issue good-first-pr vector-database graph-rag ai-memory cognitive-memory agent-skills agent-memory context-engineering\n\n- Updated\n  Nov 3, 2026\n- Python\n\n### NirDiamant / RAG_Techniques\n\nStar 30.2k\n\nThis repository showcases various advanced techniques for Retrieval-Augmented Generation (RAG) systems. Each technique has a detailed notebook tutorial.\n\npython nlp machine-learning ai tutorials embeddings openai gpt semantic-search rag vector-database llm llms generative-ai langchain llama-index retrieval-augmented-generation agentic-rag\n\n- Updated\n  Nov 2, 2026\n- Jupyter Notebook\n\n### memvid / memvid\n\nStar 17.4k\n\nMemory layer for AI Agents. Replace complex RAG pipelines with a serverless, single-file memory layer. Give your agents instant retrieval and long-term memory.\n\npython nlp opencv machine-learning embedded ai offline-first memory context knowledge-graph video-processing knowledge-base semantic-search faiss rag vector-database llm mv2 retrieval-augmented-generation memvid\n\n- Updated\n  Jul 14, 2026\n- Rust\n\n### weaviate / weaviate\n\nStar 16.9k\n\nWeaviate is an open-source vector database that stores both objects and vectors, allowing for the combination of vector search with structured filtering with the fault tolerance and scalability of a cloud-native database​.\n\nsearch-engine information-retrieval grpc nearest-neighbor-search semantic-search-engine image-search recommender-system vectors approximate-nearest-neighbor-search semantic-search similarity-search mlops hnsw weaviate vector-search vector-database neural-search vector-search-engine hybrid-search generative-search\n\n- Updated\n  Nov 3, 2026\n- Go\n\n### alibaba / zvec\n\nStar 16.2k\n\nA lightweight, lightning-fast, in-process vector database\n\nsearch-engine embedded local db fts fulltext-search semantic-search similarity-search faiss rag hnsw vector-database vector-db llm-memory agent-skills\n\n- Updated\n  Nov 3, 2026\n- C++\n\n### StarTrail-org / LEANN\n\nStar 13.8k\n\n[MLsys2026 Best Paper]: https://arxiv.org/abs/2506.08276. RAG on Everything with LEANN. Enjoy 97% storage savings while running a fast, accurate, and 100% private RAG application on your personal device.\n\npython privacy ai offline-first localstorage vectors faiss rag vector-search vector-database llm langchain llama-index retrieval-augmented-generation ollama gpt-oss\n\n- Updated\n  Nov 2, 2026\n- Python\n\n### langchain4j / langchain4j\n\nStar 13.3k\n\nLangChain4j is an idiomatic, open-source Java library for building LLM-powered applications on the JVM. It offers a unified API over popular LLM providers and vector stores, and makes implementing tool calling (including MCP support), agents and RAG easy. It integrates seamlessly with enterprise Java frameworks like Quarkus and Spring Boot.\n\njava embeddings gemini openai chroma llama gpt pinecone onnx huggingface milvus vector-database openai-api llm llms chatgpt langchain anthropic pgvector ollama\n\n- Updated\n  Nov 2, 2026\n- Java\n\n### neuml / txtai\n\nStar 13.1k\n\n💡 All-in-one AI framework for semantic search, LLM orchestration and language model workflows\n\npython search nlp search-engine information-retrieval ai transformers embeddings language-model agents semantic-search ai-agents sentence-embeddings rag vector-search vector-database txtai large-language-models llm retrieval-augmented-generation\n\n- Updated\n  Nov 2, 2026\n- Python\n\n### zilliztech / claude-context\n\nStar 12.7k\n\nCode search MCP for Claude Code. Make entire codebase the context for any coding agent.\n\nnodejs agent typescript mcp code-search openai vscode-extension code-generation cursor merkle-tree semantic-search embedding rag vector-database gemini-cli agentic-rag voyage-ai ai-coding vibe-coding claude-code\n\n- Updated\n  Jul 14, 2026\n- TypeScript\n\n### lancedb / lancedb\n\nStar 11.8k\n\nDeveloper-friendly OSS embedded retrieval library for multimodal AI. Search More; Manage Less.\n\nsearch-engine nearest-neighbor-search image-search recommender-system approximate-nearest-neighbor-search semantic-search similarity-search vector-database\n\n- Updated\n  Nov 3, 2026\n- Rust\n\n### oramasearch / orama\n\nStar 10.6k\n\n🌌 A complete search engine and RAG pipeline in your browser, server or edge network with support for full-text, vector, and hybrid search in less than 2kb.\n\njavascript search search-engine node typescript vector data-structures full-text search-algorithm typo-tolerance vector-search vector-database vector-search-engine algiorithm vector-database-embedding\n\n- Updated\n  Oct 18, 2026\n- TypeScript\n\n### oceanbase / oceanbase\n\nStar 10.4k\n\nOceanBase is the unified distributed database for the AI era — open-source, multi-model, one engine for your most demanding workloads.\n\nmysql database scalable analytics vector olap distributed-database cloud-native vectors fulltext-support paxos fulltext fulltext-search hacktoberfest htap oltp vector-search oceanbase vector-database mysql-compatibility\n\n- Updated\n  Oct 31, 2026\n- C++",
+      "title": "vector-database · GitHub Topics",
+      "url": "https://github.com/topics/vector-database?o=desc&s=stars"
+     }
+    ],
+    "type": "fetch_url_results"
+   },
+   {
+    "contents": [
+     {
+      "snippet": "best-of-ai/reviews/vector-db.md at main · archestack/best-of-ai · GitHub\n\n1. archestack\n2. best-of-ai\n\n## Repository navigation\n\n## Expand file tree\n\nmain\n\n1. best-of-ai\n2. /reviews\n\n# vector-db.md\n\n## Latest commit\n\n## History\n\nHistory\n\n223 lines (160 loc) · 21.4 KB\n\nmain\n\n1. best-of-ai\n2. /reviews\n\n# vector-db.md\n\n223 lines (160 loc) · 21.4 KB\n\n# 🧮 Vector databases reviews · Best of Open-Source AI\n\nVector stores and hybrid search engines for embeddings. Back to the leaderboard.\n\n~🌐 Also on the web: Vector databases on archestack.com, each project on its own page.~\n\n### 🥇 Milvus score 82 · ⭐ 46k · Apache-2.0 · Oct 2026\n\n**Distributed vector database with dense, sparse and hybrid search at scale.**\n\nMilvus is a distributed vector database (Go and C++, LF AI & Data Foundation) that separates compute and storage on Kubernetes, with a Standalone Docker mode and pip-installable Milvus Lite. It offers HNSW, IVF, FLAT, SCANN and DiskANN indexes, GPU CAGRA, sparse BM25 and learned-sparse vectors for hybrid search, metadata filtering, multi-tenancy, hot/cold storage, auth, TLS and RBAC.\n\n- **+** Index types HNSW, IVF, FLAT, SCANN, DiskANN plus GPU CAGRA\n- **+** Dense, sparse (BM25, SPLADE, BGE-M3) and hybrid search in one collection\n- **+** Multi-tenancy at database, collection, partition or partition-key level\n\n- **+** Mandatory auth, TLS and RBAC; Milvus Lite via pip for local dev\n- **−** Distributed mode is Kubernetes-native with several microservices to operate\n- **−** No port, RAM or Docker command in the README; install lives in docs\n- **−** Zilliz is the major contributor and promotes its managed cloud\n\n- **−** Source build needs Go 1.21+, CMake, GCC 11+ and Python 3.8 to 3.11\n\n~GPU optional · Compose · Compose runs Milvus, MinIO · Models: any embedding model or service; pymilvus[model] wraps embedding and reranking models · Repo · Demo ↗ · 📖 Docs ↗ · 🌐 Site ↗ · 📊 Score breakdown ↗~\n\n### 🥈 Meilisearch score 75 · ⭐ 60k · custom license · Oct 2026\n\n**Rust search engine API with full-text, vector and hybrid search.**\n\nMeilisearch is a Rust search engine with a REST API that combines full-text search (typo tolerance, facets, geosearch) with vector and hybrid search, returning results as you type. It adds API keys with fine-grained permissions, tenant tokens for multi-tenancy, conversational search and MCP and LangChain integrations. The Community Edition is MIT; sharding and S3 snapshots require the Enterprise Edition.\n\n- **+** Search-as-you-type under 50 ms with typo tolerance and faceting\n- **+** Hybrid semantic plus full-text ranking in one engine\n- **+** API keys with fine-grained permissions and tenant tokens for multi-tenancy\n- **+** REST API with official SDKs; MCP and LangChain integrations\n\n- **−** Sharding, S3 snapshots and search-rule previews are Enterprise Edition (BSL or commercial)\n- **−** Anonymized telemetry is on by default and must be disabled\n- **−** No port, RAM or install details in the README; docs only\n- **−** Vector search is documented under experimental features\n\n~no GPU · Docker · Repo · ▶️ Demo ↗ · 📖 Docs ↗ · 🌐 Site ↗ · 📊 Score breakdown ↗~\n\n### 🥉 Qdrant score 69 · ⭐ 35k · Apache-2.0 · Oct 2026\n\n**Rust vector database with payload filtering, REST and gRPC.**\n\nQdrant is a Rust vector database exposing REST (OpenAPI 3.0) and gRPC on port 6333 for storing points (vectors plus JSON payload) and searching with dense, sparse and multivector (ColBERT) embeddings, rich payload filters and hybrid fusion (RRF, DBSF). It adds quantization, on-disk storage, sharding and replication, multitenancy, GPU-accelerated indexing and a web UI. Qdrant Edge runs the same engine embedded in-process.\n\n- **+** Dense, sparse and multivector (ColBERT) search with RRF and DBSF fusion\n- **+** Quantization cuts RAM up to 97 percent; on-disk storage and io_uring\n- **+** REST with OpenAPI 3.0 spec plus gRPC; six official clients\n\n- **+** Sharding and replication with zero-downtime collection resize\n- **−** Default docker run has no auth and binds all interfaces\n- **−** GPU acceleration covers indexing only; search runs on CPU\n- **−** Qdrant Edge embedded mode is Python and Rust only\n- **−** Sharding and tenant isolation require upfront design\n\n~GPU optional · Docker · Models: any embedding model; dense, sparse and late-interaction (ColBERT) vectors · port 6333 · Repo · ▶️ Demo ↗ · 📖 Docs ↗ · 📊 Score breakdown ↗~\n\n### #⁠4 faiss score 66 · ⭐ 41k · MIT · Oct 2026\n\n**C++ library for similarity search and clustering of dense vectors.**\n\nFaiss is a C++ library with Python/numpy wrappers for nearest-neighbor search over dense vectors using L2 distance, dot product or cosine. It offers exact search, HNSW and NSG graph indexes, and compressed indexes that scale to billions of vectors in memory. Some indexes also run on GPU via CUDA or AMD ROCm, with optional NVIDIA cuVS backends.\n\n- **+** Many index types trading off speed, accuracy, memory per vector and training time\n- **+** Compressed and binary indexes handle sets that do not fit in RAM uncompressed\n- **+** GPU indexes (CUDA, ROCm) replace CPU ones, single or multi-GPU\n- **+** Only hard dependency is a BLAS implementation; MIT licensed\n\n- **−** Library only: no server, REST API, auth or built-in persistence service\n- **−** Vectors are identified by integers; metadata filtering must be built separately\n- **−** Choosing and tuning an index type requires understanding the trade-offs\n- **−** Builds with cmake; prebuilt packages are listed for Anaconda only\n\n~GPU optional · Needs BLAS, CUDA or ROCm (optional), NVIDIA cuVS (optional) · Repo · 📖 Docs ↗ · 🌐 Site ↗ · 📊 Score breakdown ↗~\n\n### #⁠5 Chroma score 62 · ⭐ 30k · Apache-2.0 · Oct 2026\n\n**Embedding database with a four-function API for Python and JavaScript.**\n\nChroma is an embedding database with a four-function API (create collection, add, query, get) that tokenizes, embeds and indexes documents itself or accepts your own vectors, with metadata and document filters. It runs in-memory or persisted from the Python or JavaScript client, or as a server via chroma run; the repo ships a Dockerfile and compose file. Chroma Cloud is the hosted serverless version.\n\n- **+** Four-function API: create collection, add, query, get\n- **+** Handles tokenization, embedding and indexing; own vectors optional\n- **+** Python and JavaScript clients; chroma run for client-server mode\n- **+** Weekly tagged releases on Mondays with hotfixes in between\n\n- **−** README is thin: no port, resource or auth guidance\n- **−** Hosted Chroma Cloud is the headline; self-hosting detail lives in docs\n- **−** Row-based API marked coming soon\n- **−** No multi-user auth described in the README\n\n~no GPU · Docker + Compose · Models: built-in embedding or user-supplied vectors · Repo · 📖 Docs ↗ · 🌐 Site ↗ · 📊 Score breakdown ↗~\n\n### #⁠6 Weaviate score 62 · ⭐ 17k · custom license · Oct 2026\n\n**Go vector database with built-in vectorizers, hybrid search and RAG.**\n\nWeaviate is a Go vector database that stores objects with their vectors and serves hybrid BM25 plus semantic search, filtering, built-in RAG and reranking through REST, gRPC and GraphQL APIs. It can vectorize data at import using modules for OpenAI, Cohere, HuggingFace, Google or a local model2vec image, or accept precomputed vectors. Docker Compose runs it on ports 8080 and 50051; production adds multi-tenancy, replication and RBAC.\n\n- **+** Vectorizes at import with OpenAI, Cohere, HuggingFace, Google or a local model2vec container\n- **+** Hybrid BM25 plus vector, image search, filtering, RAG and reranking in one query\n- **+** Multi-tenancy, replication, RBAC, horizontal scaling and vector compression\n\n- **+** REST, gRPC and GraphQL with Python, TypeScript, Java, Go and C# clients\n- **−** Enterprise features in wl/ need a commercial license key; one image mixes both\n- **−** Vectorization needs a module container or external API keys\n- **−** No RAM or sizing guidance in the README\n\n- **−** Both REST 8080 and gRPC 50051 must be exposed\n\n~no GPU · Docker + Compose · Needs optional embedding inference container (e.g. model2vec) or external embedding APIs · Models: OpenAI, Cohere, HuggingFace, Google and other integrated model providers, local model2vec (minishlab/potion-base-32M), precomputed vectors · port 8080 · Repo · Demo ↗ · 📖 Docs ↗ · 📊 Score breakdown ↗~\n\n### #⁠7 zvec score 60 · ⭐ 16k · Apache-2.0 · Oct 2026\n\n**In-process vector database library with hybrid and full-text search.**\n\nZvec is a C++ vector database that embeds in the application process instead of running as a server. It stores dense and sparse vectors with a write-ahead log, and combines vector similarity, full-text search and structured filters in one query. SDKs exist for Python, Node.js, Go, Rust and Dart/Flutter.\n\n- **+** Runs in-process: pip or npm install, no server or config to operate\n- **+** Dense and sparse vectors, full-text search and filters in a single hybrid query\n- **+** WAL-based durability; multiple processes can read the same collection concurrently\n- **+** SDKs for Python, Node.js, Go, Rust, Dart; Linux glibc/musl, macOS, Windows builds\n\n- **−** Writes are single-process exclusive, limiting multi-writer setups\n- **−** No standalone server mode or HTTP API described in the README\n- **−** Python SDK requires 64-bit Python 3.10 to 3.14\n- **−** Benchmark results are only linked or charted; no figures in the README text\n\n~no GPU · Repo · 📖 Docs ↗ · 🌐 Site ↗ · 📊 Score breakdown ↗~\n\n### #⁠8 leann score 60 · ⭐ 13k · MIT · Oct 2026\n\n**Vector index that recomputes embeddings on demand to cut storage.**\n\nLEANN is a Python vector database that stores a pruned graph and recomputes embeddings at query time instead of storing them. The README claims 97% less storage, for example 60M chunks in 6GB versus 201GB. It ships HNSW and DiskANN backends, a CLI, RAG examples for files, mail and chat history, and an MCP server for Claude Code.\n\n- **+** Graph-based selective recomputation avoids storing embeddings; README claims 97% less storage\n- **+** HNSW and DiskANN backends, selectable with --backend-name\n- **+** Works with Ollama, LM Studio, vLLM, llama.cpp and any OpenAI-compatible endpoint\n\n- **+** Includes ready RAG loaders for PDFs, Apple Mail, WeChat, iMessage, ChatGPT and Claude history\n- **−** Recomputing embeddings at query time adds latency compared with stored vectors\n- **−** DiskANN needs a native toolchain (Boost, protobuf, MKL) when built from source\n\n- **−** GPU acceleration is only a survey item for a future version\n- **−** Linux uv hardlink installs can fail with a nltk pathsec error without a workaround\n\n~GPU optional · Docker · Needs uv, Ollama or OpenAI-compatible API (optional, for generation) · Models: HuggingFace, Ollama, OpenAI-compatible APIs, Anthropic, sentence-transformers · Repo · Demo ↗ · 📖 Docs ↗ · 📊 Score breakdown ↗~\n\n### #⁠9 HelixDB score 60 · ⭐ 6.2k · Apache-2.0 · Oct 2026\n\n**Rust graph database with native vector and BM25 search.**\n\nHelixDB is a Rust database that combines a labeled property graph, approximate nearest-neighbor vector search and BM25 full-text search in one transactional engine. A CLI starts a local instance in Docker or Podman on port 6969 (in-memory by default, --disk to persist) or the engine runs embedded, and Rust, TypeScript, Python and Go SDKs send the same JSON queries to POST /v2/query.\n\n- **+** Graph traversal, vector ANN and BM25 in one transactional engine\n- **+** Vector search prefiltered by graph traversal\n- **+** SDKs for Rust, TypeScript, Python and Go sending the same JSON query\n- **+** Embedded mode runs inside your process without a server\n- **−** Local data is in-memory unless started with --disk\n\n- **−** Python and Go SDKs are 0.x while Rust and TypeScript are 3.x\n- **−** Cypher support only in source builds\n- **−** Install is a curl piped to bash script\n\n~no GPU · Docker · Needs Docker or Podman for the local instance · Models: any embedding model; stores precomputed vectors · port 6969 · Repo · 📖 Docs ↗ · 🌐 Site ↗ · 📊 Score breakdown ↗~\n\n### #⁠10 pgvector score 59 · ⭐ 23k · custom license · Oct 2026\n\n**PostgreSQL extension for vector similarity search with HNSW and IVFFlat.**\n\npgvector is a PostgreSQL extension (Postgres 13+) that adds vector, halfvec, bit and sparsevec column types with L2, inner product, cosine, L1, Hamming and Jaccard distance operators, exact search by default and HNSW or IVFFlat indexes for approximate search. Vectors sit beside ordinary rows with ACID, joins and backups, and Postgres full-text search can be combined for hybrid retrieval. It installs via make, Docker or OS packages.\n\n- **+** Vectors live next to relational data with ACID, joins and point-in-time recovery\n- **+** HNSW and IVFFlat indexes with six distance operators\n- **+** Half-precision, binary and sparse vector types plus binary quantization\n- **+** Installs via make, Docker, Homebrew, APT, Yum; preinstalled on many hosted Postgres\n\n- **−** vector type capped at 2,000 dimensions (halfvec 4,000)\n- **−** Approximate indexes filter after scanning; filtered recall needs iterative scan tuning\n- **−** HNSW builds slow down sharply once the graph exceeds maintenance_work_mem\n- **−** No server of its own; capacity depends on your Postgres tuning\n\n~no GPU · Docker · Needs PostgreSQL 13+ · Models: any embedding model; stores precomputed vectors · Repo · 📊 Score breakdown ↗~\n\n### #⁠11 turbovec score 54 · ⭐ 17k · MIT · Oct 2026\n\n**In-process quantized vector index for Python and Rust using TurboQuant.**\n\nturbovec is a library that stores embeddings at 2 or 4 bits per dimension using Google Research's TurboQuant and searches the compressed form with SIMD kernels. It needs no training step, supports single-vector add and remove, and persists incrementally with sync(). It does a brute-force scan rather than graph search, and ships LangChain, LlamaIndex, Haystack and Agno integrations.\n\n- **+** README reports 4.4× faster than FAISS FastScan at 4-bit, at matching recall\n- **+** 7.8× smaller than float32 at 4-bit, 15.5× at 2-bit\n- **+** No training or rebuild; add and remove cost microseconds per vector\n\n- **+** Allowlist filtering and crash-safe incremental sync(); drop-in stores for four frameworks\n- **−** Scans every vector, so query cost grows linearly with corpus size\n- **−** Lossy: top-1 matches float ground truth 96–98% at 4-bit on OpenAI embeddings\n\n- **−** Library only: no network API, replication or multi-tenant service\n- **−** Dimension must be a multiple of 8 and at most 16,384; only 2 or 4 bits\n\n~no GPU · Repo · 📖 Docs ↗ · 📊 Score breakdown ↗~\n\n### #⁠12 Vespa score 42 · ⭐ 7.1k · Apache-2.0 · Oct 2026\n\n**Serving engine for vectors, tensors, text and ML ranking at scale.**\n\nVespa is a serving platform that indexes vectors, tensors, text and structured data, selects a subset at query time, evaluates machine-learned ranking models over it and returns results in under 100 ms while the corpus changes, across many nodes. The Java and C++ engine builds from this repo with a release every morning Monday to Thursday. Getting started and self-hosting live in docs.vespa.ai; Vespa Cloud is the hosted option.\n\n- **+** Vectors, tensors, text and structured data queried and ranked together\n- **+** Machine-learned ranking models evaluated at serving time\n- **+** Runs hundreds of thousands of queries per second on large internet services\n- **+** Sample applications repo plus detailed docs\n- **−** README covers building, not running; install details live in docs\n\n- **−** Heavy platform (Java and C++ engine) sized for multi-node clusters\n- **−** C++ builds require AlmaLinux 8; Java needs JDK 17 and Maven\n- **−** A new release every weekday morning Monday to Thursday; versions churn\n\n~no GPU · Models: machine-learned ranking models evaluated in Vespa · Repo · 📖 Docs ↗ · 🌐 Site ↗ · 📊 Score breakdown ↗~\n\n~Written from each project README and checked facts; see how this works. Wrong? Tell us.~",
+      "title": "best-of-ai/reviews/vector-db.md at main · archestack/best-of-ai",
+      "url": "https://github.com/archestack/best-of-ai/blob/main/reviews/vector-db.md"
+     }
+    ],
+    "type": "fetch_url_results"
+   },
+   {
+    "contents": [
+     {
+      "snippet": "GitHub - vindwi/awesome-vector-search: A curated list of outstanding, actively maintained vector search frameworks and engines, libraries, cloud services, and research papers focused on vector similarity search, with inactive or unmaintained projects removed to ensure relevance and quality. · GitHub\n\n- - GitHub Universe\n\n1. vindwi\n2. awesome-vector-search\n\n## Repository navigation\n\n**awesome-vector-search**\nPublic\n\n- You must be signed in to change notification settings\n- Fork2 (2)\n- Star18 (18)You must be signed in to star a repository\n\n## About\n\nA curated list of outstanding, actively maintained vector search frameworks and engines, libraries, cloud services, and research papers focused on vector similarity search, with inactive or unmaintained projects removed to ensure relevance and quality.\n\n### Resources\n\n### Stars\n\n**18** stars\n\n### Watchers\n\n**1** watching\n\n### Forks\n\n**2** forks\n\nmain\n\n## Latest commit\n\n## History\n7 Commits\n7 Commits\n\n## Folders and files\n\n|Name|Name|Name|Last commit message|Last commit date|\n|--|--|--|--|--|\n|LICENSE|LICENSE|LICENSE| | |\n|README.md|README.md|README.md| | |\n|View all files|View all files|View all files| | |\n\n## Repository files navigation\n\n# Awesome Vector Search (Open-Source, 2024+)\n\nCurated list of **open-source vector-native databases, databases with vector column support, vector search & indexing libraries, cloud services, benchmarks, and research papers**.\nAll GitHub links for databases & libraries; lists ordered by **fork count (descending)**.\n\n## Vector-Native Databases\n\n>\n\nPurpose-built systems where **vector search is a first-class, core workload**.\n|Name (GitHub)|Stars|Forks|Last Commit|Status|Description|\n|--|--|--|--|--|--|\n|**Milvus**|~43k|~4k|2026-01|Active|Distributed, cloud-native vector database|\n\n|**Qdrant**|~29k|~2k|2025-10|Active|Rust-powered vector DB with hybrid filtering|\n|**ChromaDB**|~26k|~2k|2026-01|Active|Embedding-first vector store for LLM/RAG workloads|\n|**Endee.io**|~1k|~1.1k|2026-03|Active|cost-efficient, high-throughput vector search - scaling to 1B+ vectors per node|\n\n|**Weaviate**|~16k|~1k|2026-01|Active|Schema-aware vector DB with GraphQL|\n|**LanceDB**|~9k|~800|2026-01|Active|Data-lake-native vector database built on Apache Arrow|\n|**Vespa**|~7k|~700|2026-02|Active|Large-scale search engine with native vector support|\n\n|**Vald**|~2k|~90|2026-01|Active|Kubernetes-native distributed vector search|\n\n## Databases with Vector Column / Extension Support\n\n>\n\nGeneral-purpose databases that **add vector similarity search as a feature or extension**.\n|Name (GitHub)|Stars|Forks|Last Commit|Status|Description|\n|--|--|--|--|--|--|\n|**ClickHouse**|~46k|~8k|2026-01|Active|Columnar analytical DB with native vector search functions|\n\n|**DuckDB**|~36k|~3k|2026-01|Active|Analytical DB with integrated vector similarity search|\n|**pgvector**|~20k|~1k|2026-01|Active|PostgreSQL extension for vector similarity|\n|**Redisearch**|~6k|~570|2025-11|Active|Redis module supporting ANN vector search|\n\n|**pgvectorscale**|~3k|~120|2025-11|Active|Production-grade scaling & indexing layer for pgvector|\n\n## Vector Search & Indexing Libraries (ordered by forks)\n\n|Name (GitHub)|Stars|Forks|One-liner|\n|--|--|--|--|\n|**FAISS**|~39k|~4k|High-performance similarity search (CPU/GPU)|\n|**Annoy**|~14k|~1k|Tree-based ANN optimized for read-heavy workloads|\n|**hnswlib**|~7k|~1.3k|Header-only HNSW ANN index|\n|**ScaNN**|~3k|~600|Google’s scalable ANN library|\n|**NMSLIB**|~5k|~470|Flexible ANN search library|\n\n|**DiskANN**|~2k|~400|Disk-based ANN for billion-scale vectors|\n|**USearch**|~4k|~300|SIMD-optimized vector search|\n|**NGT**|~1.5k|~250|Graph-based ANN index|\n|**Autofaiss**|~1k|~80|Automatic FAISS index configuration|\n\n## Cloud Services (Open-Source Core / Hosted)\n\n> Managed offerings built on open-source vector engines.\n- **Qdrant Cloud** – Managed Qdrant with scaling & backups\n- **Zilliz Cloud** – Managed Milvus service\n- **Weaviate Cloud** – Hosted Weaviate with enterprise integrations\n- **LanceDB Cloud** – Managed LanceDB optimized for analytics\n- **Endee Cloud** – Managed Endee.io vector database service\n\n## Benchmarking Tools\n\n|Name (GitHub)|Description|\n|--|--|\n|**ANN-Benchmarks**|De-facto standard ANN algorithm benchmark|\n|**VectorDBBench**|Benchmark framework for vector databases|\n|**VIBE-Benchmark**|Benchmark suite for vector index quality & speed|\n|**annlite-benchmark**|Lightweight ANN benchmarking suite|\n\n## Research Papers & Links\n\n|Title|Link|\n|--|--|\n|**Efficient and Robust Approximate Nearest Neighbor Search Using HNSW**|https://arxiv.org/abs/1603.09320|\n|**FAISS: A Library for Efficient Similarity Search and Clustering**|https://arxiv.org/abs/1702.08734|\n|**ScaNN: Efficient Vector Similarity Search at Scale**|https://arxiv.org/abs/1908.10396|\n|**DiskANN: Fast & Accurate Billion-Point NN Search**|https://arxiv.org/abs/2011.01608|\n\n|**Product Quantization for Nearest Neighbor Search**|https://hal.inria.fr/inria-00514496|\n|**VIBE: Vector Index Benchmark for Embeddings (2025)**|https://arxiv.org/abs/2505.17810|\n|**MicroNN: On-Device Disk-Resident Updatable Vectors (2025)**|https://arxiv.org/abs/2504.05573|\n\n## Notes\n\n- Open-source only\n- Actively maintained in **2024–2026**\n- Fork counts are approximate and used for relative ordering\n\n## About\n\nA curated list of outstanding, actively maintained vector search frameworks and engines, libraries, cloud services, and research papers focused on vector similarity search, with inactive or unmaintained projects removed to ensure relevance and quality.\n\n### Resources\n\n### Stars\n\n**18** stars\n\n### Watchers\n\n**1** watching\n\n### Forks\n\n**2** forks\n\n## Releases",
+      "title": "vindwi/awesome-vector-search: A curated list of ... - GitHub",
+      "url": "https://github.com/vindwi/awesome-vector-search"
+     }
+    ],
+    "type": "fetch_url_results"
+   },
+   {
+    "queries": [
+     "zvec alibaba vector database open source release February 2026 github",
+     "HelixDB open source graph vector database launched 2024 2025 github",
+     "Endee vector database github open sourced 2025 2026 launch"
+    ],
+    "results": [
+     {
+      "date": "2024-11-23",
+      "id": 46,
+      "last_updated": "2026-11-03",
+      "snippet": "GitHub - HelixDB/helix-db: HelixDB is an OLTP graph database with native vector and full-text search built in Rust on Object Storage.\n...\n## Repository files navigation\n### Website | Docs | Discord | X\nHelixDB is an open-source (Apache 2.0) graph database with native vector search and BM25\nfull-text search, built in Rust on object storage.\nStore entities, relationships, embeddings,\nand text in one transactional engine and query them together from Rust, TypeScript, Go, or\nPython.",
+      "source": "web",
+      "title": "GitHub - HelixDB/helix-db: HelixDB is an OLTP graph database ...",
+      "url": "https://github.com/HelixDB/helix-db"
+     },
+     {
+      "date": "2026-10-21",
+      "id": 47,
+      "last_updated": "2026-10-29",
+      "snippet": "# Releases: alibaba/zvec\n...\n## v0.8.0\nv0.8.0 Latest\ngithub-actions released this\n21 Oct 04:36\nv0.8.0\n`7b75327`\n...\n# 🚀 Zvec v0.8.0 Release Notes\nZvec v0.8.0 brings **faster queries, lower index build costs, and broader platform support**.",
+      "source": "web",
+      "title": "Releases · alibaba/zvec - GitHub",
+      "url": "https://github.com/alibaba/zvec/releases"
+     },
+     {
+      "date": "2026-10-22",
+      "id": 48,
+      "last_updated": "2026-11-02",
+      "snippet": "Endee.io is an open source vector database built from the ground up for ultra-high performance and scale\n...\nEndee.io – A high-performance vector database, designed to handle up to 1B vectors on a single node, delivering significant performance gains through optimized indexing and execution.\n...\n- endee Public archive\nEndee.io – A high-performance vector database, designed to handle up to 1B vectors on a single node, delivering significant performance gains through optimized indexing and execution.\nAlso available in the cloud at https://endee.io and under the Endee Enterprise license.\nFree 30-day evaluation: https://docs.endee.io/v2/quick-start/enterprise",
+      "source": "web",
+      "title": "Endee.io",
+      "url": "https://github.com/endee-io"
+     },
+     {
+      "date": "2026-11-03",
+      "id": 49,
+      "last_updated": "2026-11-03",
+      "snippet": "HelixDB · GitHub\n# HelixDB\nThe best graph-vector database built for developers\n- 191 followers\n...\nKnowledge graphs, vectors, full-text search, and transactional application data in one Rust engine — built for agents, GraphRAG, and company brains.\n...\nHelixDB combines both with BM25 full-text search and transactional application data, so your AI can retrieve richer context without stitching together multiple databases.\n...\nHelixDB is an OLTP graph database with native vector and full-text search built in Rust on Object Storage.",
+      "source": "web",
+      "title": "HelixDB - GitHub",
+      "url": "https://github.com/helixdb"
+     },
+     {
+      "date": "2026-11-03",
+      "id": 50,
+      "last_updated": "2026-11-03",
+      "snippet": "## Pinned Loading\n1. zvec zvec Public\nA lightweight, lightning-fast, in-process vector database\nC++ 16.2k 1k\n...\n- A lightweight, lightning-fast, in-process vector database\nalibaba/zvec's past year of commit activity\nC++ 16,177 Apache-2.0 1,015 47 (3 issues need help) 53 Updated Nov 3, 2026",
+      "source": "web",
+      "title": "Alibaba - GitHub",
+      "url": "https://github.com/alibaba"
+     },
+     {
+      "date": "2026-11-02",
+      "id": 51,
+      "last_updated": "2026-11-02",
+      "snippet": "# Zvec-AI\nA lightweight, lightning-fast, in-process vector database\n...\n## 🧩 Projects\n|Category|Projects|\n|--|--|\n|**Core database**|**zvec** — C++, Python, and the core in-process database|\n...\n## 🤝 Get involved\nZvec is open source under the Apache License 2.0, and contributions of every size are welcome.",
+      "source": "web",
+      "title": "Zvec-AI",
+      "url": "https://github.com/zvec-ai"
+     },
+     {
+      "date": "2026-01-24",
+      "id": 52,
+      "last_updated": "2026-10-29",
+      "snippet": "This repository was archived by the owner on Oct 7, 2026.\nIt is now read-only.\n...\nEndee.io – A high-performance vector database, designed to handle up to 1B\nvectors on a single node, delivering significant performance gains through\noptimized indexing and execution.\n# Endee\nEndee is built on proprietary algorithms.\nIt is available in the **cloud** and under the **Endee Enterprise license**.\nThis repository does not contain source code.\n...\n## Endee Enterprise\n**A free 30-day evaluation license is available for testing.**",
+      "source": "web",
+      "title": "GitHub - endee-io/endee: Endee.io – A high-performance vector database, designed to handle up to 1B vectors on a single node, delivering significant performance gains through optimized indexing and execution. Also available in the cloud at https://endee.io and under the Endee Enterprise license. Free 30-day evaluation: https://docs.endee.io/v2/quick-start/enterprise",
+      "url": "https://github.com/endee-io/endee"
+     },
+     {
+      "date": "2025-12-05",
+      "id": 53,
+      "last_updated": "2026-11-02",
+      "snippet": "GitHub - alibaba/zvec: A lightweight, lightning-fast, in-process vector database · GitHub\n...\n## Repository files navigation\n**Zvec** is an open-source, in-process vector database — lightweight, lightning-fast, and designed to embed directly into applications.\nBattle-tested within Alibaba Group, it delivers production-grade, low-latency and scalable similarity search with minimal setup.\n...\n🚀 **v0.8.0**\n- **Broader platform support**: Added **Intel Mac** and **Windows ARM64** builds, wheels, and SDKs; extended **DiskANN to Windows, Android, and iOS**, and **RaBitQ to Windows x86_64**.\n- **Chinese FTS ready to use**: Embedded the default **Jieba dictionary and HMM model**, so Chinese tokenization needs no separate dictionary files or path configuration.\n...\n- **Faster search**: Added faster **Uniform quantizers** and optimized **Vamana** graph layout and prefetching.\n...\n- **Bug fixes and improvements**: Added more flexible **UTF-8 document IDs** up to 1,024 bytes; fixed concurrent reads during segment switches, index rebuilding with deleted rows, and correctness issues in **LIKE** and floating-point range filters.",
+      "source": "web",
+      "title": "alibaba/zvec: A lightweight, lightning-fast, in-process vector ...",
+      "url": "https://github.com/alibaba/zvec"
+     },
+     {
+      "date": "2026-02-16",
+      "id": 54,
+      "last_updated": "2026-10-30",
+      "snippet": "Endee.io has open sourced its Endee vector database to deliver faster, high-recall AI and semantic search on modest hardware, aiming to cut infrastructure costs and complexity for developers and enterprises.\nEndee.io has open sourced Endee, a high-performance vector database engineered for modern AI workloads, positioning it as a lightweight, production-ready alternative to memory-heavy proprietary search infrastructure.\n...\nThe project is fully open source, allowing developers, researchers and enterprises to inspect the codebase, deploy locally and contribute.\nDocker-based setup and a public GitHub repository aim to simplify evaluation and production adoption.",
+      "source": "web",
+      "title": "Endee Goes Open Source, Targets Costly Memory-Heavy AI Search Infrastructure",
+      "url": "https://www.opensourceforu.com/2026/02/endee-goes-open-source-targets-costly-memory-heavy-ai-search-infrastructure"
+     },
+     {
+      "date": "2026-02-16",
+      "id": 55,
+      "last_updated": "2026-03-03",
+      "snippet": "# Introducing Zvec: Alibaba's Edge AI Solution for Local Vector Search\nMeet Zvec, Alibaba's latest open-source innovation, launching February 2026.\nPowered by the renowned Proxima engine, Zvec is an in-process, lightweight vector database designed to be the \"SQLite of vector databases.\"\nThis means:\nOn-Device RAG: Real-time retrieval-augmented generation for edge agents, mobile apps, and IoT.\n...\nLearn more & get started here: [ Zvec GitHub Repo / Documentation link in first comment]\n...\nhttps://github.com/alibaba/zvec.git",
+      "source": "web",
+      "title": "Introducing Zvec: Alibaba's Edge AI Solution for Local ...",
+      "url": "https://www.linkedin.com/posts/ramdasd_zvec-vectorsearch-edgecomputing-activity-7429234325163806720-RWgZ"
+     },
+     {
+      "date": "2026-11-01",
+      "id": 56,
+      "last_updated": "2026-11-02",
+      "snippet": "Endee is an open-source vector database designed for AI search, retrieval-augmented generation (RAG), semantic search, and hybrid retrieval workloads.\nIt supports dense and sparse vector retrieval, payload filtering for metadata-aware queries, and backup workflows.\n...\n- **Source Code**\nhttps://github.com/endee-io/endee[02] Accessed: Oct 7, 2026 Archived: Oct 7, 2026\n...\n2026\n...\nThe system's source code repository was marked as a read-only archive in 2026 and is now considered abandoned.",
+      "source": "web",
+      "title": "Endee · Database of Databases",
+      "url": "https://dbdb.io/db/endee/revisions/5"
+     },
+     {
+      "date": "2026-02-16",
+      "id": 57,
+      "last_updated": "2026-10-18",
+      "snippet": "# Zvec: In-Process Vector Search and the Embedded Storage Pattern\nPosted Feb 16, 2026 Updated Oct 18, 2026\nBy * Jang Young Jeong * *7 min* read\nAlibaba Zvec embedded in-process vector database\n**Rebuilt on October 18, 2026 from a February 2026 reference note.** Upgraded from 2026 Zvec draft note into an authoritative source audit of Alibaba Zvec, in-process vector databases, Proxima search kernels, memory-mapped disk persistence, and edge RAG topologies.\n...\n## Why Did Micro-RAG and Local Agent Workflows Demand In-Process Embedded Vector Engines?\nAlibaba open-sourced **Zvec**—an ultra-fast, in-process vector database engine designed to run embedded inside application binaries, persisting indexes directly to local disk with zero daemon dependencies.\n...\n# 4. Execute hybrid query combining vector distance and scalar filter\n## References\n1. Alibaba DAMO Academy & Tongyi Lab.\n*Zvec: Lightweight, Fast Embedded Vector Database Built on Proxima*.\nGitHub Repository.\nhttps://github.com/alibaba/zvec (accessed 2026-10-18).",
+      "source": "web",
+      "title": "Zvec: In-Process Vector Search and the Embedded Storage Pattern",
+      "url": "https://akillness.github.io/posts/zvec-sqlite-of-vector-dbs/"
+     },
+     {
+      "date": "2026-04-15",
+      "id": 58,
+      "last_updated": "2026-10-28",
+      "snippet": "Endee Labs has commercialised its Apache 2.0 open-source vector database with a fully managed serverless cloud, giving AI teams benchmark-led performance, rapid deployment, and the freedom to switch to self-hosted environments without code changes.\nEndee Labs has launched Endee Cloud, a fully managed, serverless service built around its Apache 2.0-licensed open-source vector database, marking a significant open-source infrastructure commercialisation move for production AI workloads.\nThe launch brings Endee's self-hostable engine into a zero-ops managed cloud format for AI search, retrieval-augmented generation (RAG), recommendation systems, and AI agent memory, while preserving the project's open-source portability.\n...\nThe full engine remains openly available through GitHub, alongside open documentation and SDKs, ensuring enterprises retain source transparency, deployment control, and migration freedom even while adopting managed infrastructure.\n...\nThe service is live now with a free no-credit-card Starter tier and deployment in under five minutes.",
+      "source": "web",
+      "title": "Endee Turns Its Open Source Database Into Managed AI Cloud",
+      "url": "https://www.opensourceforu.com/2026/04/endee-turns-its-open-source-database-into-managed-ai-cloud"
+     },
+     {
+      "date": "2026-01-05",
+      "id": 59,
+      "last_updated": "2026-08-19",
+      "snippet": "# Endee\n- Endee\n@EndeeVectorDB\nMar 11\nEndee 1.0.0 is here 🚀 Our first production ready release.\nEndee is an open source vector database for AI workloads like semantic search and RAG.\nIt scales to 1B+ vectors on a single node and benchmarks show up to 10× lower infrastructure.\nTry it: github.com/endee-io/endee",
+      "source": "web",
+      "title": "Endee (@EndeeVectorDB) / Posts / X - Twitter",
+      "url": "https://x.com/EndeeVectorDB"
+     },
+     {
+      "date": "2026-02-21",
+      "id": 60,
+      "last_updated": "2026-07-30",
+      "snippet": "⭐ **Stars:** 5386\n💻 **Language:** C++\n🔗 **Repository:** alibaba/zvec",
+      "source": "web",
+      "title": "Alibaba's in-process vector database that searches billions ...",
+      "url": "https://arifsolmaz.github.io/repo/2026/02/21/zvec/"
+     }
+    ],
+    "type": "search_results"
+   },
+   {
+    "queries": [
+     "2025 open source new vector database github embedding vector store rust",
+     "2024 new open source vector database infinity turbopuffer github",
+     "2026 open source vector database new github agent embedded"
+    ],
+    "results": [
+     {
+      "date": "2026-10-31",
+      "id": 76,
+      "last_updated": "2026-10-31",
+      "snippet": "### oceanbase / seekdb\nStar 3.2k\nThe AI-Native Search Database.\nBest for agent storage, it unifies vector, text, structured, and semi-structured data into a single engine.\nThis all-in-one database makes agents smarter, easier to run, and more stable.\n...\n### sochdb / sochdb\nStar 48\nSochDB is a high-performance embedded, ACID-compliant vector database purpose-built for AI agents and memory",
+      "source": "web",
+      "title": "vector-databases",
+      "url": "https://github.com/topics/vector-databases?o=desc&s=updated"
+     },
+     {
+      "date": "2026-11-02",
+      "id": 77,
+      "last_updated": "2026-11-02",
+      "snippet": "1. qdrant qdrant Public\nQdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of AI.\nAlso available in the cloud https://cloud.qdrant.io/\nRust 35.4k 2.8k\n2. fastembed fastembed Public\nFast, Accurate, Lightweight Python library to make State of the Art Embedding",
+      "source": "web",
+      "title": "Qdrant",
+      "url": "https://github.com/qdrant"
+     },
+     {
+      "date": "2026-10-02",
+      "id": 78,
+      "last_updated": "2026-10-06",
+      "snippet": "GitHub - gay00ung/vecnook: Embedded vector database for Rust: from-scratch HNSW, atomic batches, durable storage, and no external crates.\n· GitHub\n...\n# Vecnook\nA small embedded vector database for Rust applications, built with the standard library.\nVecnook implements its own HNSW graph, exact search, and persistent storage.\nIt has no external crates or vector search library dependencies.\n...\n**0.3 is an early beta.** It is intended for local applications with one database handle, bounded datasets, and application-provided embeddings.\nPersistence supports macOS, Linux and Windows.\nThe index stays in RAM; this is not a distributed service.\n## Get started\nRequires Rust 1.89 or later.\nThe package, library, and executable are all named `vecnook`.\n...\n## Embed a database\n`VectorIndex` is an in-memory index.\n`Database` adds synced writes, locking, checkpoints, backups, and recovery.",
+      "source": "web",
+      "title": "GitHub - gay00ung/vecnook: Embedded vector database for Rust: from-scratch HNSW, atomic batches, durable storage, and no external crates.",
+      "url": "https://github.com/gay00ung/vecnook"
+     },
+     {
+      "date": "2026-09-30",
+      "id": 79,
+      "last_updated": "2026-10-28",
+      "snippet": "- txtai — All-in-one AI framework (Apache 2.0) for semantic search, LLM orchestration, and language model workflows, centered on an embeddings database combining vector indexes, graph networks, and relational storage.\nEmbeddings database unifying sparse/dense vector indexes with graph and SQL querying; RAG pipelines with citations, plus GraphRAG and speech-to-speech RAG examples; Agents built on smolagents connecting embeddings, pipelines, and workflows; Web and MCP APIs with JavaScript, Java, Rust, and Go bindings.\n...\n- Weaviate — Open-source, cloud-native vector database written in Go that stores objects and vectors together, combining vector similarity search with keyword filtering, generative (RAG) search, and reranking in a single query interface.\nAdvanced hybrid search combining semantic and keyword (BM25) search; Built-in generative search (RAG) and reranking capabilities; Automatic vectorization at import via integrated embedding models; Horizontal scaling, multi-tenancy, replication, and RBAC.\n✅ verified 2026-09-30\n...\n- Milvus — High-performance, cloud-native vector database (Apache 2.0) built for scalable ANN search, organizing and searching vast amounts of unstructured data with a distributed, Kubernetes-native architecture.\nAll major vector index types (HNSW, IVF, FLAT, DiskANN) with GPU indexing support; Hybrid search combining dense vectors with native full-text/BM25 and sparse embeddings; Real-time streaming updates with horizontal scaling and high availability; Multi-tenancy, RBAC, TLS, and hot/cold storage tiers.\n...\n- LanceDB — Developer-friendly open-source embedded retrieval library (Apache 2.0) for multimodal AI built on the Lance columnar format, running locally or in the cloud for vector, full-text, and SQL search.\nVector similarity, full-text, and SQL search over multimodal data; Built on the Lance columnar format for storage and analytics; Automatic versioning and zero-copy data management; Python, Node.js, Rust, and REST SDKs with LangChain/LlamaIndex integrations.",
+      "source": "web",
+      "title": "Awesome list of retrieval-augmented generation (RAG ...",
+      "url": "https://github.com/awesome-llms-labs/awesome-rag"
+     },
+     {
+      "date": "2026-10-19",
+      "id": 80,
+      "last_updated": "2026-11-02",
+      "snippet": "# Best Open Source Vector Databases in 2026\n...\n| |Software|Licence|Type|GitHub stars|Latest release|Docker|SSO|Managed cloud|\n|--|--|--|--|--|--|--|--|--|\n|1|Qdrant Rust|Apache-2.0 Permissive|Vector database|35k|Oct 2026(Actively maintained)|Yes|Paid only|Usage-based|\n...\n|5|Chroma Rust / Python|Apache-2.0 Permissive|Vector database|30k|May 2026(Actively maintained)|Yes|No|Usage-based|\n|6|LanceDB Rust|Apache-2.0 Open core|Embedded vector database|12k|Oct 2026(Actively maintained)|No|No|Price on request|\n...\n### Qdrant\nVector database written in Rust, with payload filtering, hybrid search and quantization\nOne Rust service with strong filtering, hybrid search, quantization, access tokens and audit logs in the free version.\nServer-side embedding models and SSO are only in Qdrant Cloud.\n...\n### LanceDB\nEmbedded vector database on the Lance columnar format, with vector, full-text and hybrid search\nRuns inside your app with disk-based indexes on local disk or S3, so big collections don't need big servers.\nMulti-node serving is in the paid Enterprise edition.\n...\n|Software|Licence|Type|GitHub stars|Latest release|\n|--|--|--|--|--|\n|txtai Python embeddings database that combines dense and sparse vector indexes, a graph and SQL storage, with RAG and agent workflows on top|Apache-2.0 Permissive|Embedded vector database and AI framework|13k|(Actively maintained)Oct 2026|",
+      "source": "web",
+      "title": "9 Best Open Source Vector Databases in 2026 (Tested) - Geekflare",
+      "url": "https://geekflare.com/open-source/vector-database/"
+     },
+     {
+      "date": "2023-03-21",
+      "id": 81,
+      "last_updated": "2026-11-03",
+      "snippet": "GitHub - dangkhoasdc/awesome-vector-database: A curated list of awesome works related to high dimensional structure/vector search & database · GitHub\n...\n# 🔍 Awesome Vector Database\n...\n# Libraries & Engines\n## Multidimensional data / Vectors\n- ArcadeDB - open-source multi-model database with native vector embedding support alongside graph, document, key-value and time series models\n...\n- VelesDB - Embedded vector + graph + columnar database.\nRust core (~6MB), HNSW with 5 distance metrics, VelesQL (SQL + NEAR + MATCH).\nPython and Rust SDKs.",
+      "source": "web",
+      "title": "dangkhoasdc/awesome-vector-database",
+      "url": "https://github.com/dangkhoasdc/awesome-vector-database"
+     },
+     {
+      "date": "2026-08-26",
+      "id": 82,
+      "last_updated": "2026-10-25",
+      "snippet": "# lancedb.json\n...\n},\n{\n\"id\": \"lancedb-docs-13\",\n\"tier\": \"claimed-docs\",\n\"url\": \"https://docs.lancedb.com/embedding/index.md\",\n\"excerpt\": \"Use the embedding API in LanceDB -- registry, functions, schemas, and multi-language SDK support.\",\n\"fetchedAt\": \"2026-09-15T17:32:28.793Z\"\n},\n{\n\"id\": \"lancedb-docs-14\",\n\"tier\": \"claimed-docs\",\n\"url\": \"https://docs.lancedb.com/build-with-ai-agents.md\",\n\"excerpt\": \"Install the LanceDB plugin and use an AI coding agent to quickly build a multimodal ingestion pipeline.\",\n\"fetchedAt\": \"2026-09-15T17:32:28.793Z\"\n},\n{\n\"id\": \"lancedb-docs-15\",\n\"tier\": \"claimed-docs\",\n\"url\": \"https://docs.lancedb.com/agent-branch-experiments.md\",\n\"excerpt\": \"Use LanceDB branches to isolate agent-driven experiments from main, evaluate them on a fixed test set, and promote only the winner.\",\n...\n\"url\": \"https://news.ycombinator.com/item?id=38117101\",\n\"excerpt\": \"LanceDB is one of the few options for embeddable vector databases, and I have used it in my Electron application.",
+      "source": "web",
+      "title": "ultrametric/open-rankings/vector-databases/evidence/lancedb.json at main · ultrametricai/ultrametric",
+      "url": "https://github.com/ultrametricai/ultrametric/blob/main/open-rankings/vector-databases/evidence/lancedb.json"
+     },
+     {
+      "date": "2026-10-27",
+      "id": 83,
+      "last_updated": "2026-10-27",
+      "snippet": "### eggspot / EggDB\nStar 0\nAll-in-one database written from scratch in Rust: SQL (PostgreSQL, SQL Server, MySQL, Oracle, SQLite dialects), cache, search, documents, vectors, time series, graph, queues, BI and ETL in one lightweight engine.\nAI-native with built-in MCP.\nEmbedded to billions of rows, every OS and cloud.\nMIT OR Apache-2.0.\nmysql search rust redis open-source sql sql-server database ai mongodb time-series sqlite mcp postgresql message-queue graph-database distributed-database embedded-database vector-database\n- Updated\nOct 27, 2026\n- Rust\n...\n### AshrafAhmed9 / Consensa\nStar 0\nDistributed vector database in Go: hand-written Raft, HNSW search, gRPC API, TLA+ specs\n...\nOpen-source framework for building agentic apps in JavaScript, Go, Dart, and Python, built and used in production by Google\n...\nAI-native HTAP database with Git-for-Data and built-in vector search, serving as the data and memory backbone for intelligent agents and applications.",
+      "source": "web",
+      "title": "Recently Updated",
+      "url": "https://github.com/topics/vector-database?o=desc&s=updated"
+     },
+     {
+      "date": "2024-08-06",
+      "id": 84,
+      "last_updated": "2026-11-02",
+      "snippet": "# turbopuffer.mdx\n---\ntitle: \"Reference: Turbopuffer vector store | Vectors\"\ndescription: Documentation for integrating Turbopuffer with Mastra, a high-performance vector database for efficient similarity search.\n...\n# Turbopuffer vector store\nThe TurbopufferVector class provides vector search using [Turbopuffer](https://turbopuffer.com/), a high-performance vector database optimized for RAG applications.\nTurbopuffer offers fast vector similarity search with advanced filtering capabilities and efficient storage management.\n...\nname: 'dimension',\ntype: 'number',\ndescription: 'Vector dimension (must match your embedding model)',\n},\n{\nname: 'metric',\ntype: \"'cosine' | 'euclidean' | 'dotproduct'\",\nisOptional: true,\ndefaultValue: 'cosine',\ndescription: 'Distance metric for similarity search',",
+      "source": "web",
+      "title": "mastra/docs/src/content/en/reference/vectors/turbopuffer.mdx at 037f43a61acb10a08a4098266372591f39b8748e · mastra-ai/mastra",
+      "url": "https://github.com/mastra-ai/mastra/blob/037f43a6/docs/src/content/en/reference/vectors/turbopuffer.mdx?plain=1"
+     },
+     {
+      "date": "2026-03-27",
+      "id": 85,
+      "last_updated": "2026-10-22",
+      "snippet": "GitHub - tryAGI/Turbopuffer: C# SDK for the Turbopuffer API -- serverless vector database for search and retrieval · GitHub\n...\n- Fully generated C# SDK based on official Turbopuffer OpenAPI specification using AutoSDK",
+      "source": "web",
+      "title": "GitHub - tryAGI/Turbopuffer: C# SDK for the Turbopuffer API -- serverless vector database for search and retrieval",
+      "url": "https://github.com/tryAGI/Turbopuffer"
+     },
+     {
+      "date": "2026-06-02",
+      "id": 86,
+      "last_updated": "2026-10-13",
+      "snippet": "GitHub - av/openpuffer: Stateless S3-backed vector and FTS search (turbopuffer-compatible API) · GitHub\n...\nStateless S3-backed vector and FTS search (turbopuffer-compatible API)\n...\n# openpuffer\nStateless vector and full-text search server backed by **S3-compatible object storage**.\nHTTP API is compatible with turbopuffer core write/query paths; the **on-disk architecture** follows turbopuffer’s WAL + index model, not a per-document JSON store.",
+      "source": "web",
+      "title": "github.com · av · openpufferGitHub - av/openpuffer: Stateless S3-backed vector and FTS search...",
+      "url": "https://github.com/av/openpuffer"
+     },
+     {
+      "date": "2026-05-28",
+      "id": 87,
+      "last_updated": "2026-11-02",
+      "snippet": "GitHub - Ratnesh-181998/vector-database: Vector Database · GitHub\n...\n|Database|Description|Official Website|\n|--|--|--|\n|Milvus|Distributed vector database built for billion-scale similarity search.|https://milvus.io|\n|Qdrant|Rust-based production-ready vector database with advanced filtering.|https://qdrant.tech|\n...\n|ChromaDB|Lightweight vector database designed for LLM applications.|https://www.trychroma.com|\n|LanceDB|Embedded vector database built on Apache Arrow.|https://lancedb.com|\n...\n|Database|Description|\n|--|--|\n|Chroma|Python-native vector database optimized for LLM and RAG applications|\n|Qdrant|High-performance Rust-based vector engine with REST and gRPC APIs|",
+      "source": "web",
+      "title": "Ratnesh-181998/vector-database",
+      "url": "https://github.com/Ratnesh-181998/vector-database"
+     },
+     {
+      "date": "2026-01-27",
+      "id": 88,
+      "last_updated": "2026-10-30",
+      "snippet": "GitHub - ai-tools-all/open-turbopuffer: vectordb on s3 from first principles · GitHub\n...\n# open-turbopuffer\nVector database server inspired by turbopuffer, built in Rust.\nUses SPFresh-based ANN indexing with S3 as the storage backend.\n...\n- **tpuf-server** — Axum HTTP server.\nWrites go to WAL on S3.\nQueries merge ANN index results with brute-force scan of unindexed WAL tail.\n- **tpuf-indexer** — Separate binary.\nReads WAL, builds/updates SPFresh index, writes back to S3.\nRun as cron job or on-demand.\n- **tpuf-cli** — CLI client for testing (create namespaces, generate vectors, query).",
+      "source": "web",
+      "title": "GitHub - ai-tools-all/open-turbopuffer: vectordb on s3 from first principles",
+      "url": "https://github.com/ai-tools-all/open-turbopuffer"
+     },
+     {
+      "date": "2026-10-21",
+      "id": 89,
+      "last_updated": "2026-11-03",
+      "snippet": "### 1. Vector Databases\n**Purpose**: Store and retrieve document embeddings efficiently\n**Options:**\n- **Pinecone**: Managed, scalable, serverless\n- **Weaviate**: Open-source, hybrid search, GraphQL\n- **Milvus**: High performance, on-premise\n- **Chroma**: Lightweight, easy to use, local development\n- **Qdrant**: Fast, filtered search, Rust-based\n- **pgvector**: PostgreSQL extension, SQL integration\n### 2. Embeddings\n**Purpose**: Convert text to numerical vectors for similarity search\n...\n|Model|Dimensions|Best For|\n|--|--|--|\n|**bge-large-en-v1.5**|1024|Open source, local deployment|\n...\nllm = ChatAnthropic(model=\"claude-sonnet-5\")\nembeddings = VoyageAIEmbeddings(model=\"voyage-3-large\")\nvectorstore = PineconeVectorStore(index_name=\"docs\", embedding=embeddings)\nretriever = vectorstore.as_retriever(search_kwargs={\"k\": 4})",
+      "source": "web",
+      "title": "agents-wshobson/plugins/llm-application-dev/skills/rag ...",
+      "url": "https://github.com/xgaisystems/agents-wshobson/blob/main/plugins/llm-application-dev/skills/rag-implementation/SKILL.md"
+     },
+     {
+      "date": "2024-01-03",
+      "id": 90,
+      "last_updated": "2026-04-16",
+      "snippet": "JinHai-CN / **\ninfinity_new ** Public\nforked from infiniflow/infinity\n# JinHai-CN/infinity_new\n**The AI-native database built for LLM applications, providing incredibly fast vector and full-text search**\n...\nInfinity is a cutting-edge AI-native database that provides a wide range of search capabilities for rich data types such as vectors, full-text, and structured data.\nIt provides robust support for various LLM applications, including search, recommenders, question-answering, conversational AI, copilot, content generation, and many more **RAG** (Retrieval-augmented Generation) applications.\n...\n- Achieves 0.1 milliseconds query latency on million-scale vector datasets.\n- Up to 10K QPS on million-scale vector datasets.\n...\nSupports a fused search of multiple embeddings and full text, in addition to filtering.\n...\nSupports a wide range of data types including strings, numerics, vectors, and more.\n...\nSee the Python API\n- A single-binary architecture with no dependencies, making deployment a breeze.\n...\n#### Deploy using binary package on Linux x86_64\nYou can download the binary package (deb, rpm, or tgz) for your respective host operating system from https://github.com/infiniflow/infinity/releases.\n...\nApache-2.0 license",
+      "source": "web",
+      "title": "GitHub - JinHai-CN/infinity_new: The AI-native database built for LLM applications, providing incredibly fast vector and full-text search",
+      "url": "https://github.com/JinHai-CN/infinity_new"
+     }
+    ],
+    "type": "search_results"
+   },
+   {
+    "queries": [
+     "LEANN vector database github release 2025 open source stars",
+     "ruvector github vector database first released 2025 stars",
+     "turbovec vector database github first release 2026"
+    ],
+    "results": [
+     {
+      "date": "2026-10-09",
+      "id": 61,
+      "last_updated": "2026-10-29",
+      "snippet": "GitHub - chu8129/turbovec: A vector index built on TurboQuant, written in Rust with Python bindings · GitHub\n1. chu8129\n2. turbovec\n**turbovec**\nPublic\nforked from RyanCodrai/turbovec\n- You must be signed in to change notification settings\n- Fork0 (0)\n- Star0 (0)You must be signed in to star a repository\n...\nturbovec is an in-process vector index for Python and Rust.\nIt stores each vector at 2 or 4 bits per dimension using Google Research's TurboQuant and searches that compressed form directly with agent-optimised SIMD kernels.\n...\n- **Local.** A library, not a service: nothing leaves your process.\nPair it with an open-source embedding model for a fully offline stack.\n...\ncargo build --release\n```",
+      "source": "web",
+      "title": "GitHub - chu8129/turbovec: A vector index built on TurboQuant, written in Rust with Python bindings",
+      "url": "https://github.com/chu8129/turbovec"
+     },
+     {
+      "date": "2026-08-12",
+      "id": 62,
+      "last_updated": "2026-10-17",
+      "snippet": "GitHub - LTolo/turbovec: Fast, from-scratch ANN vector search engine — SIMD-accelerated C++ (HNSW) core with a Python-first API.\n100% recall at ~11k QPS.\n· GitHub\n...\n- Star0 (0)\n...\n# turbovec\n**A fast, from-scratch approximate-nearest-neighbor (ANN) vector search engine.**\nPython-first API · SIMD-accelerated C++ core (HNSW) · zero-copy NumPy interop via nanobind.\n...\nIt's small enough to read in an afternoon, but reaches **100% recall at ~11k\nqueries/second** on a single core.\n...\n```\n# From source (needs a C++17 compiler; CMake & ninja are fetched automatically)\npip install .\n# Or, for development, with uv:\nuv sync --group dev\n...\nReleased under the MIT License.",
+      "source": "web",
+      "title": "github.com › LTolo › turbovecGitHub - LTolo/turbovec: Fast, from-scratch ANN vector search ...",
+      "url": "https://github.com/LTolo/turbovec"
+     },
+     {
+      "date": "2026-09-13",
+      "id": 63,
+      "last_updated": "2026-10-26",
+      "snippet": "# turbovec fits 10M vectors in 4 GB and outruns FAISS\nSeptember 13, 2026 ·3 min read\nA Rust index built on Google Research's TurboQuant: no training step, hand-written NEON and AVX-512 kernels, crash-safe incremental saves and filtered search.\nRyanCodrai/turbovec - **Stars**\n16.9K (+2.2K)\n- **Language**\nRust\n- **License**\nMIT\n- **Age**\n7 months old\n- **Last push**\nAugust 21, 2026\n...\n## What it is\nA Rust vector index with Python bindings, built on Google Research's TurboQuant, a data-oblivious quantizer with near-optimal distortion and no separate training phase.\nData-oblivious means the quantizer does not learn from your corpus, so there is nothing to train and nothing to retrain as the corpus drifts.\n## Why it showed up now\n16,947 stars, 2,162 added in the discovery window, on a repository created March 26 and last pushed August 21.\nThere are no release tags at all, so version pinning happens through PyPI rather than Git.\n...\n## Sources\n1. RyanCodrai/turbovec · GitHub · March 26, 2026",
+      "source": "web",
+      "title": "turbovec fits 10M vectors in 4 GB and outruns FAISS | GitHub ...",
+      "url": "https://highlightsx.github.io/turbovec"
+     },
+     {
+      "date": "2026-03-26",
+      "id": 64,
+      "last_updated": "2026-11-02",
+      "snippet": "GitHub - RyanCodrai/turbovec: A vector index built on TurboQuant, written in Rust with Python bindings · GitHub\n...\nturbovec holds them in 4 GB and searches them 4.4× faster than FAISS, at matching recall.**\nturbovec is an in-process vector index for Python and Rust.\nIt stores each vector at 2 or 4 bits per dimension using Google Research's TurboQuant and searches that compressed form directly with agent-optimised SIMD kernels.\n...\n- **Local.** A library, not a service: nothing leaves your process.\nPair it with an open-source embedding model for a fully offline stack.\n...\ncargo build --release\n```",
+      "source": "web",
+      "title": "RyanCodrai/turbovec: A vector index built on TurboQuant, ...",
+      "url": "https://github.com/ryancodrai/turbovec"
+     },
+     {
+      "date": "2026-05-24",
+      "id": 65,
+      "last_updated": "2026-11-01",
+      "snippet": "GitHub - gburd/pg_turbovec: Vector similarity search for Postgres built on Google Research's TurboQuant algorithm - a data-oblivious quantizer that matches the Shannon lower bound on distortion with zero training and zero data passes.\n...\n- Star9 (9)You must be signed in to star a repository\n...\n# pg_turbovec\nOpen-source vector similarity search for PostgreSQL, backed by Google\nResearch's TurboQuant algorithm via the `turbovec` Rust crate.\nStore compact vector indexes alongside your PostgreSQL data: **1-bit sign-BQ\nwith full-precision reranking**, or **2/3/4-bit TurboQuant**.\n...\n>\n**Status:** v2.14.1 - built on upstream **turbovec 1.1.2** (wire format v8; staged 2/4-bit search on aarch64 and AVX-512 VBMI+VNNI hosts, 1.14-1.17x faster 4-bit end-to-end on Graviton4 at 1M x 1024-d -- see CHANGELOG).\n...\n## Documentation\n- `RELEASING.md` - release process, version-bump checklist, Codeberg release flow.",
+      "source": "web",
+      "title": "pg_turbovec - gburd",
+      "url": "https://github.com/gburd/pg_turbovec"
+     },
+     {
+      "date": "2026-06-28",
+      "id": 66,
+      "last_updated": "2026-10-23",
+      "snippet": "GitHub - conddiz/turbovec: A vector index built on TurboQuant, written in Rust with Python bindings · GitHub\n...\n**turbovec**\nPublic\nforked from RyanCodrai/turbovec\n...\n- Fork0 (0)\n- Star0 (0)You must be signed in to star a repository\n...\n## Repository files navigation\n**A 10 million document corpus takes 31 GB of RAM as float32.\nturbovec fits it in 4 GB - and searches it faster than FAISS.**\nturbovec is a Rust vector index with Python bindings, built on Google Research's **TurboQuant** algorithm — a data-oblivious quantizer with near-optimal distortion and no separate training phase.\n- **Online ingest.** Add vectors, they're indexed — no train step, no parameter tuning, no rebuilds as the corpus grows.\n...\n## Building\n### Rust\ncargo build --release",
+      "source": "web",
+      "title": "GitHub - conddiz/turbovec: A vector index built on TurboQuant, written in Rust with Python bindings",
+      "url": "https://github.com/conddiz/turbovec"
+     },
+     {
+      "date": "2025-08-09",
+      "id": 67,
+      "last_updated": "2025-09-01",
+      "snippet": "# [FEAT]: LEANN Vector DB as integrated option #4265\n...\nkorgano\n## Description\nopened on Aug 9, 2025\n### What would you like to see?\nLEANN is a new vector DB solution that purports to have huge improvements in DB size while maintaining performance:\nLEANN is an innovative vector database that democratizes personal AI.\nTransform your laptop into a powerful RAG system that can index and search through millions of documents while using 97% less storage than traditional solutions without accuracy loss.\nLEANN achieves this through graph-based selective recomputation with high-degree preserving pruning, computing embeddings on-demand instead of storing them all.\n...\nIn this paper, we present LEANN, a storage-efficient approximate nearest neighbor (ANN) search index optimized for resource-constrained personal devices.\nLEANN combines a compact graph-based structure with an efficient on-the-fly recomputation strategy to enable fast and accurate retrieval with minimal storage overhead.\nOur evaluation shows that LEANN reduces index size to under 5% of the original raw data, achieving up to 50 times smaller storage than standard indexes, while maintaining 90% top-3 recall in under 2 seconds on real-world question answering benchmarks.\n...\n## Activity\nkorganoadded enhancementNew feature or request feature request on Aug 9, 2025\n...\n## Metadata\n### Development\nNo branches or pull requests",
+      "source": "web",
+      "title": "[FEAT]: LEANN Vector DB as integrated option · Issue #4265 - GitHub",
+      "url": "https://github.com/Mintplex-Labs/anything-llm/issues/4265"
+     },
+     {
+      "date": "2026-10-06",
+      "id": 68,
+      "last_updated": "2026-10-12",
+      "snippet": "# Releases: ruvnet/RuVector\n...\nruvnet released this",
+      "source": "web",
+      "title": "Releases · ruvnet/RuVector",
+      "url": "https://github.com/ruvnet/ruvector/releases"
+     },
+     {
+      "id": 69,
+      "last_updated": "2026-10-12",
+      "snippet": "TurboVec is a Rust-based vector search index that compresses embeddings 8–10× using Google's TurboQuant algorithm, with Python bindings and SIMD search kernels.\n...\nSource: GitHub — github.com/RyanCodrai/turbovec\n12.6k\nGitHub stars\n1.1k\nForks\n...\nPrimary language\nMIT\n...\n|Field|Value|\n|--|--|\n|Repository|RyanCodrai/turbovec|\n|Owner|RyanCodrai|\n|Primary language|Python|\n|License|MIT — OSI-approved|\n|Stars|12.6k|\n|Forks|1.1k|\n|Open issues|12|\n|Latest release|Unknown|\n|Last updated|2026-06-10|\n|Source|https://github.com/RyanCodrai/turbovec|\n...\nA quantized ANN index implementation wrapping TurboQuant (data-oblivious Beta-distribution-based compression) with hand-coded AVX-512BW and NEON kernels.\n...\n- **No release tags in repo history; assess which git commit is production-ready.\nUnclear if PyPI package is kept in sync.**\n...\n- **You need battle-tested, long-term commercial support** — Project created 2026-03-26, last release unknown, no enterprise SLA or vendor backing stated.\nConsider maturity risk for critical systems.",
+      "source": "web",
+      "title": "TurboVec: Quantized Vector Search for RAG & Embeddings",
+      "url": "https://dev.co/ai/vector-databases/turbovec"
+     },
+     {
+      "date": "2025-06-09",
+      "id": 70,
+      "last_updated": "2026-10-19",
+      "snippet": "# StarTrail-org / LEANN\n...\nStarTrail-org/LEANN has 13k+ stars and 1k+ forks on GitHub, is written in Python, and was last pushed on Oct 17, 2026.\n...\n### Summary Information\nAdded to GitGenius on **December 23rd, 2025**\nCreated on **June 9th, 2025**\n...\nTotal Stargazers: **13,034** (+0)\n...\n## Issue Activity (beta)\n#### Most active issues this week\nLEANN is a vector database designed to enable retrieval-augmented generation on personal devices with exceptional storage efficiency.\nThe repository demonstrates that semantic search and RAG capabilities can operate with 97% less storage than traditional vector database solutions while maintaining search accuracy.\nThe system achieves this through graph-based selective recomputation with high-degree preserving pruning, computing embeddings on-demand rather than storing them persistently.\nThe project supports RAG across diverse personal data sources including PDF, text, and markdown documents, Apple Mail, Google Search History, WeChat conversations, ChatGPT and Claude chat histories, iMessage conversations, and live data streams through Model Context Protocol servers such as Slack and Twitter.\n...\nThe codebase is written in Python and supports versions 3.9 through 3.13 across multiple platforms including Ubuntu, Arch Linux, macOS with both ARM64 and Intel processors, and Windows.\nThe project includes native MCP integration and maintains zero telemetry tracking.\nInstallation is available through PyPI or from source, with platform-specific build instructions provided for Linux distributions, macOS, and Windows environments.",
+      "source": "web",
+      "title": "Repository Details for StarTrail-org/LEANN - gitgenius.co",
+      "url": "https://www.gitgenius.co/repos/StarTrail-org/LEANN"
+     },
+     {
+      "date": "2026-05-25",
+      "id": 71,
+      "last_updated": "2026-10-18",
+      "snippet": "GitHub - gburd/turbovec: A vector index built on TurboQuant, written in Rust with Python bindings · GitHub\n...\n**turbovec**\nPublic\nforked from RyanCodrai/turbovec\n...\n- Fork0 (0)\n- Star0 (0)You must be signed in to star a repository\n...\nturbovec is an in-process vector index for Python and Rust.\nIt stores each vector at 2 or 4 bits per dimension using Google Research's TurboQuant and searches that compressed form directly with agent-optimised SIMD kernels.\n...\n- **Local.** A library, not a service: nothing leaves your process.\nPair it with an open-source embedding model for a fully offline stack.\n...\ncd turbovec-python && maturin build --release && pip install target/wheels/*.whl\n...\ncargo build --release\n```",
+      "source": "web",
+      "title": "GitHub - gburd/turbovec: A vector index built on TurboQuant, written in Rust with Python bindings",
+      "url": "https://github.com/gburd/turbovec"
+     },
+     {
+      "date": "2026-04-19",
+      "id": 72,
+      "last_updated": "2026-10-15",
+      "snippet": "GitHub - MeCaGaYT/RyanCodrai_turbovec: A vector index built on TurboQuant, written in Rust with Python bindings · GitHub\n...\n1. MeCaGaYT\n2. RyanCodrai_turbovec\n**RyanCodrai_turbovec**\nPublic\nforked from RyanCodrai/turbovec\n...\n- Star0 (0)You must be signed in to star a repository\n...\n## Repository files navigation\nturbovec is a Rust vector index with Python bindings, built on Google Research's **TurboQuant** algorithm - a data-oblivious quantizer that matches the Shannon lower bound on distortion with zero training and zero data passes.",
+      "source": "web",
+      "title": "GitHub - MeCaGaYT/RyanCodrai_turbovec: A vector index built ...",
+      "url": "https://github.com/MeCaGaYT/RyanCodrai_turbovec"
+     },
+     {
+      "date": "2025-11-19",
+      "id": 73,
+      "last_updated": "2026-10-20",
+      "snippet": "## [0.1.0] - 2025-11-25\nInitial release of RuVector — a high-performance vector database written in Rust.\n### Added\n#### Core Vector Database\n- HNSW (Hierarchical Navigable Small World) graph indexing\n- SIMD-optimized distance metrics (Euclidean, Cosine, Dot Product, Manhattan)\n- Memory-mapped vector access via memmap2\n- Parallel index construction using rayon",
+      "source": "web",
+      "title": "CHANGELOG.md - ruvnet/RuVector",
+      "url": "https://github.com/ruvnet/ruvector/blob/main/CHANGELOG.md"
+     },
+     {
+      "date": "2026-03-26",
+      "id": 74,
+      "last_updated": "2026-05-30",
+      "snippet": "## Latest commit\nRyanCodrai\nand\nclaude\nRelease: turbovec 0.6.0 (Python) + 0.7.0 (Rust crate) ( #77 )\nMay 27, 2026\n06155d9 · May 27, 2026\n...\n## turbovec 0.6.0 (Python package) + turbovec 0.7.0 (Rust crate) — 2026-05-27",
+      "source": "web",
+      "title": "turbovec/CHANGELOG.md at main - GitHub",
+      "url": "https://github.com/RyanCodrai/turbovec/blob/main/CHANGELOG.md"
+     },
+     {
+      "date": "2025-08-15",
+      "id": 75,
+      "last_updated": "2026-10-28",
+      "snippet": "GitHub - lexsf/leann: RAG on Everything with LEANN.\nEnjoy 97% storage savings while running a fast, accurate, and 100% private RAG application on your personal device.\n· GitHub\n1. lexsf\n2. leann\n**leann**\nPublic\nforked from StarTrail-org/LEANN\n- You must be signed in to change notification settings\n- Fork0 (0)\n- Star0 (0)You must be signed in to star a repository\n...\n### Stars\n**0** stars\n...\n## The smallest vector index in the world. RAG Everything with LEANN!\nLEANN is an innovative vector database that democratizes personal AI.\nTransform your laptop into a powerful RAG system that can index and search through millions of documents while using **97% less storage** than traditional solutions **without accuracy loss**.\nLEANN achieves this through *graph-based selective recomputation* with *high-degree preserving pruning*, computing embeddings on-demand instead of storing them all.\n...\ngit clone https://github.com/yichuan-w/LEANN.git leann\ncd leann\n...\n**🔧 Build from Source (Recommended for development)**\n```\ngit clone https://github.com/yichuan-w/LEANN.git leann\ncd leann\ngit submodule update --init --recursive\n```\n...\n**The magic:** Most vector DBs store every single embedding (expensive).\nLEANN stores a pruned graph structure (cheap) and recomputes embeddings only when needed (fast).\n**Core techniques:**\n- **Graph-based selective recomputation:** Only compute embeddings for nodes in the search path\n- **High-degree preserving pruning:** Keep important \"hub\" nodes while removing redundant connections\n...\n|System|DPR (2.1M)|Wiki (60M)|Chat (400K)|Email (780K)|Browser (38K)|\n|--|--|--|--|--|--|\n|Traditional vector database (e.g., FAISS)|3.8 GB|201 GB|1.8 GB|2.4 GB|130 MB|\n|LEANN|324 MB|6 GB|64 MB|79 MB|6.4 MB|\n|Savings|91%|97%|97%|97%|95%|\n...\nThe evaluation script downloads data automatically on first run.\nThe last three results were tested with partial personal data, and you can reproduce them with your own data!\n## 🔬 Paper\nIf you find Leann useful, please cite:\n**LEANN: A Low-Storage Vector Index**\n…\n@misc{wang2025leannlowstoragevectorindex,\ntitle={LEANN: A Low-Storage Vector Index},\nauthor={Yichuan Wang and Shu Liu and Zhifei Li and Yongji Wu and Ziming Mao and Yilong Zhao and Xiao Yan and Zhiying Xu and Yang Zhou and Ion Stoica and Sewon Min and Matei Zaharia and Joseph E.\nGonzalez},\nyear={2025},\neprint={2506.08276},\narchivePrefix={arXiv},\nprimaryClass={cs.DB},\nurl={https://arxiv.org/abs/2506.08276},\n}\n```\n...\n## 📄 License\nMIT License - see LICENSE for details.\n## 🙏 Acknowledgments\nCore Contributors: Yichuan Wang & Zhifei Li.\nWe welcome more contributors!\nFeel free to open issues or submit PRs.\nThis work is done at **Berkeley Sky Computing Lab**.\n## Star History\n**⭐ Star us on GitHub if Leann is useful for your research or applications!**\nMade with ❤️ by the Leann team\n## About\nRAG on Everything with LEANN.\nEnjoy 97% storage savings while running a fast, accurate, and 100% private RAG application on your personal device.\n…\n### Forks\n**0** forks\n## Releases",
+      "source": "web",
+      "title": "GitHub - lexsf/leann: RAG on Everything with LEANN. Enjoy 97% ...",
+      "url": "https://github.com/lexsf/leann"
+     }
+    ],
+    "type": "search_results"
+   }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0,
+  "preset": "high@2026-10-28.0",
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "reasoning": null,
+  "safety_identifier": null,
+  "service_tier": "default",
+  "status": "cancelled",
+  "store": true,
+  "temperature": 1,
+  "text": {
+   "format": {
+    "type": "text"
+   }
+  },
+  "tool_choice": "auto",
+  "tools": [],
+  "top_logprobs": 0,
+  "top_p": 1,
+  "truncation": "",
+  "usage": null,
+  "user": null
+ }
+}
