@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SCOPE plus `--paths`, while reviewers still get the delta. `--package-base REF`
   sets it by hand.
 
+### Fixed
+
+- **pm mod 0.1.8: quotas kept from a failed probe no longer pass for current.**
+  The «as of» stamp carries the date when the snapshot is from another day
+  (`as of 29.10 18:24`), and a kept window whose reset has passed shows `reset`
+  with no percentage, in the pane and in the quota line, instead of the number
+  it had before the reset.
+
 ## [0.16.0] - 2026-10-30
 
 ### Added

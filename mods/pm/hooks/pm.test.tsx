@@ -103,8 +103,12 @@ const QUOTAS = JSON.stringify({
       status: 'error',
       error: 'RuntimeError: HTTP 429',
       last_good: {
-        at: '2026-10-28T13:20:00+00:00',
-        windows: [{ name: 'Weekly', pct_left: 85, reset_relative: '5d 8h' }],
+        at: '2026-10-27T13:20:00+00:00',
+        windows: [
+          // Its reset has passed since: the kept percentage means nothing now.
+          { name: 'Session', pct_left: 40, reset_relative: '2h', reset_at_iso: '2026-10-27T15:20:00+00:00' },
+          { name: 'Weekly', pct_left: 85, reset_relative: '5d 8h', reset_at_iso: '2026-11-02T21:20:00+00:00' },
+        ],
       },
     },
     agy: {
@@ -241,7 +245,10 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     expect(await quotas.find({ type: 'Text', text: /Claude Platform/ })).toBe(undefined)
     // A lane whose probe failed shows its kept numbers and says how old they are.
     expect(await quotas.find({ type: 'Text', text: /^85%$/ })).toBeDefined()
-    expect(await quotas.find({ type: 'Text', text: /^as of \d\d:\d\d$/ })).toBeDefined()
+    // Kept from another day: the stamp carries the date.
+    expect(await quotas.find({ type: 'Text', text: /^as of 27\.10 \d\d:\d\d$/ })).toBeDefined()
+    expect(await quotas.find({ type: 'Text', text: /^40%$/ })).toBe(undefined)
+    expect(await quotas.find({ type: 'Text', text: /^reset$/ })).toBeDefined()
     expect(await quotas.find({ type: 'Text', text: /^error$/ })).toBe(undefined)
     expect(await quotas.find({ type: 'Text', text: /^65%$/ })).toBeDefined()
     expect(await quotas.find({ type: 'Text', text: /6d 7h/ })).toBeDefined()

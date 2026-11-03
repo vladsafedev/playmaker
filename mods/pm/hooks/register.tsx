@@ -17,6 +17,7 @@ import {
   childrenOf,
   claimsOf,
   clockTime,
+  current,
   condenseSummary,
   dispatchLane,
   elapsed,
@@ -39,6 +40,7 @@ import {
   parseRows,
   promptHead,
   quotaLine,
+  stampTime,
   shortId,
   splitArgs,
   statusColor,
@@ -206,7 +208,7 @@ const pollQuotas = async ($: Engine, refresh = false): Promise<void> => {
       return
     }
     await update($, quotas, () => parsed)
-    $.ui.status(`pm · ${quotaLine(parsed)}`)
+    $.ui.status(`pm · ${quotaLine(parsed, await $.clock.now())}`)
   } finally {
     isProbing = false
   }
@@ -294,7 +296,7 @@ const handleEvents = async ($: Engine, events: Event[], all: Row[], now: number)
     return
   }
   const q = await read($, quotas)
-  const qLine = q === null ? null : quotaLine(q)
+  const qLine = q === null ? null : quotaLine(q, now)
   for (const ev of events) {
     if (ev.id <= lastEventId) continue
     lastEventId = ev.id
@@ -498,12 +500,14 @@ const splitColumns = (lanes: Quota[]): [Quota[], Quota[]] => {
 const drawQuotas = async ($: Engine, e: PaneInput) => {
   const { Box, Text } = $.ui.resolve(e)
   const q = await read($, quotas)
+  const now = await $.clock.now()
   const isTwoColumns = e.surface !== 'terminal' || e.props.bodyColumns >= 100
   // The terminal's cell is one character; a graphical surface draws caption
   // text narrower than its cell, so the number columns take fewer there.
   const isCells = e.surface === 'terminal'
 
-  const block = (l: Quota, i: number) => {
+  const block = (kept: Quota, i: number) => {
+    const l = current(kept, now)
     const lane = laneOf(l.lane)
 
     return (
@@ -513,7 +517,7 @@ const drawQuotas = async ($: Engine, e: PaneInput) => {
             {lane.name}
           </Text>
           <Text dimColor size="caption">
-            {l.status === 'ok' ? '' : l.staleAt !== null ? `as of ${clockTime(l.staleAt) || '?'}` : l.status}
+            {l.status === 'ok' ? '' : l.staleAt !== null ? `as of ${stampTime(l.staleAt, now) || '?'}` : l.status}
           </Text>
         </Box>
         {l.windows.length === 0 && (
@@ -617,7 +621,7 @@ export const register: Register = (on, options) => {
         const q = await read($, quotas)
 
         return {
-          text: q === null ? 'No quotas yet, see the pane.' : `Quotas (${clockTime(q.fetchedAt)}): ${quotaLine(q)}`,
+          text: q === null ? 'No quotas yet, see the pane.' : `Quotas (${clockTime(q.fetchedAt)}): ${quotaLine(q, await $.clock.now())}`,
         }
       }
       case 'review':
@@ -653,7 +657,7 @@ export const register: Register = (on, options) => {
     if (e.origin.kind === 'plugin') return next(e)
     const q = await read($, quotas)
     if (q === null) return next(e)
-    const line = `playmaker quotas ${clockTime(q.fetchedAt)}: ${quotaLine(q)}`
+    const line = `playmaker quotas ${clockTime(q.fetchedAt)}: ${quotaLine(q, await $.clock.now())}`
 
     return next({ ...e, context: [...(e.context ?? []), line] })
   }).catch(($, e, next) => next(e))
@@ -675,7 +679,7 @@ export const register: Register = (on, options) => {
     if (!quotaOnDispatch || lane === null || ran.deny !== undefined) return ran
     const q = await read($, quotas)
     if (q === null) return ran
-    const line = `pm: quotas at dispatch time (${clockTime(q.fetchedAt)}): ${quotaLine(q)}`
+    const line = `pm: quotas at dispatch time (${clockTime(q.fetchedAt)}): ${quotaLine(q, await $.clock.now())}`
 
     return { ...ran, context: [...(ran.context ?? []), line] }
   }).catch(($, e, next) => next(e))

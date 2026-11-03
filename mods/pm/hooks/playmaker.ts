@@ -131,7 +131,12 @@ export const parseQuotas = (json: string): Quotas | null => {
         const win = w as Record<string, unknown>
         const name = asString(win.name)
         if (name === null) continue
-        out.push({ name, pct: asNumber(win.pct_left), reset: asString(win.reset_relative) })
+        out.push({
+          name,
+          pct: asNumber(win.pct_left),
+          reset: asString(win.reset_relative),
+          resetAt: asString(win.reset_at_iso),
+        })
       }
 
       return out
@@ -149,6 +154,19 @@ export const parseQuotas = (json: string): Quotas | null => {
   }
 
   return { fetchedAt: asString(top.fetched_at) ?? '', lanes }
+}
+
+// Kept numbers outlive their windows: once a window's reset has passed, the
+// percentage it had before says nothing about now, so it shows as unknown.
+export const current = (l: Quota, nowMs: number): Quota => {
+  if (l.staleAt === null) return l
+  const windows = l.windows.map(w => {
+    const at = parseIso(w.resetAt)
+
+    return at !== null && at <= nowMs ? { ...w, pct: null, reset: 'reset' } : w
+  })
+
+  return { ...l, windows }
 }
 
 // The window with the least left: the one that ends a session first. For
@@ -233,14 +251,14 @@ const windowTag = (w: QuotaWindow): string => {
 
 // `codex 97 · claude 65·Fable · kimi 93 · muse ok`: the line under the prompt
 // and the one the model reads beside a dispatch.
-export const quotaLine = (q: Quotas): string =>
+export const quotaLine = (q: Quotas, nowMs: number): string =>
   orderedLanes(q)
     .filter(l => l.status !== 'unsupported')
     .map(l => {
-      const w = binding(l)
-      if (w === null || w.pct === null) return `${l.lane} ${l.status === 'ok' ? 'ok' : '?'}`
+      const w = binding(current(l, nowMs))
       // Kept numbers say how old they are, so nobody reads them as current.
-      const asOf = l.staleAt === null ? '' : `(as of ${clockTime(l.staleAt) || '?'})`
+      const asOf = l.staleAt === null ? '' : `(as of ${stampTime(l.staleAt, nowMs) || '?'})`
+      if (w === null || w.pct === null) return `${l.lane} ${l.status === 'ok' ? 'ok' : '?'}${asOf}`
 
       return `${l.lane} ${Math.round(w.pct)}${windowTag(w)}${asOf}`
     })
@@ -275,6 +293,19 @@ export const clockTime = (iso: string | null): string => {
   const mm = String(d.getMinutes()).padStart(2, '0')
 
   return `${hh}:${mm}`
+}
+
+// `18:24` today, `29.10 18:24` on any other day: a time that may be days old.
+export const stampTime = (iso: string | null, nowMs: number): string => {
+  const ms = parseIso(iso)
+  if (ms === null) return ''
+  const d = new Date(ms)
+  const today = new Date(nowMs)
+  if (d.toDateString() === today.toDateString()) return clockTime(iso)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+
+  return `${dd}.${mo} ${clockTime(iso)}`
 }
 
 // `just now`, `4 min ago`, `2 h ago`: how old the quota snapshot is.

@@ -22,6 +22,7 @@ export type QuotaWindow = {
   name: string
   pct: number | null
   reset: string | null
+  resetAt: string | null
 }
 
 export type Quota = {
