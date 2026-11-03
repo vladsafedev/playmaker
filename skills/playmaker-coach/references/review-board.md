@@ -174,7 +174,7 @@ writing the fix list, sending it, running the next round on the delta — is one
 ```bash
 pm-review --auto <wp-label> <base-ref> --impl-id <impl-session> --paths "<wp pathspecs>" \
     [--risk routine|normal|high|seams] [--gate "<cmd>"] [--impl-agent <lane>] \
-    [--max-cycles N] [--seat-deadline 20m] [--dry-run]
+    [--package-base REF] [--max-cycles N] [--seat-deadline 20m] [--dry-run]
 ```
 
 `--paths` is **required**: the wip commits and the `git add -N` cover the WP's files only —
@@ -192,8 +192,13 @@ to `.playmaker/reviews/<wp>/auto.log`. The loop:
    known» — and the tail of the CLI's gate log goes back as a fix list
    (`continue --after --gate --expect-changes`); that consumes a cycle and the check repeats.
    A failed gate never reaches the board.
-2. **Precheck** as above, per round — always against the **whole package** (the original
-   base): acceptance items describe the WP, not the round's delta, so a delta-based
+2. **Precheck** as above, per round — always against the **whole package**. The first auto
+   run records its base as `package_base` in the WP's `board.env`; later auto runs reuse it
+   when it is an ancestor of their run base. `--package-base REF` overrides the record and
+   must be an ancestor of the run base; a stale non-ancestor record is reset. The precheck
+   paths are the order-preserving union of `--paths` and the spec's SCOPE paths. Dry-run
+   prints the resolved base, source, and paths without persisting the base. Acceptance items
+   describe the WP, not the round's delta, so a delta-based
    precheck would mark everything delivered in round 1 as missing on every later round.
    The reviewers still get the delta only. A fail goes back the same way and also
    consumes a cycle. New files get `git add -N` right before the precheck's diff is

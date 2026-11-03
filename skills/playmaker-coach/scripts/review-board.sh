@@ -63,6 +63,8 @@
 #     --impl-agent LANE       lane that implemented the WP (default: the --impl-id lane)
 #     --paths "a b"           REQUIRED: the WP's pathspecs — diffs, git add -N and the wip
 #                              commits cover these ONLY (a shared worktree is never swept)
+#     --package-base REF       precheck the whole WP from REF; REF must be an ancestor of
+#                              <base-ref> and is persisted in the WP's board.env
 #     --max-cycles N          fix-list budget, default 2 (config [board] max_cycles)
 #     --seat-deadline 20m     the COMMON per-board wait window, default 20m (config
 #                              [board] seat_deadline; 1200, "1200s", "20m", "2h"): counted
@@ -505,7 +507,7 @@ if [[ "${1:-}" == "--auto" ]]; then
   wp="${2:-}"; base="${3:-}"
   [[ -n "$wp" && -n "$base" ]] || die "usage: review-board.sh --auto <wp-label> <base-ref> --impl-id <session> [options]"
   shift 3
-  impl_id=""; risk=normal; cwd="$PWD"; paths=""; gate=""; impl_agent=""
+  impl_id=""; risk=normal; cwd="$PWD"; paths=""; gate=""; impl_agent=""; package_base_arg=""
   max_cycles=""; seat_deadline_arg=""; dry=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -513,6 +515,7 @@ if [[ "${1:-}" == "--auto" ]]; then
       --risk) risk="$2"; shift 2 ;;
       --cwd) cwd="$2"; shift 2 ;;
       --paths) paths="$2"; shift 2 ;;
+      --package-base) package_base_arg="$2"; shift 2 ;;
       --gate) gate="$2"; shift 2 ;;
       --impl-agent) impl_agent="$2"; shift 2 ;;
       --max-cycles) max_cycles="$2"; shift 2 ;;
@@ -595,6 +598,55 @@ PY
   impl_status0=$(row_field "$prow" status)
   if [[ -z "$impl_agent" ]]; then impl_agent="$impl_lane"; fi
 
+  # Freeze the run's base before resolving the package base. A symbolic base such as HEAD
+  # must not move when this auto run later creates its wip commit.
+  base_ref=$(git -C "$cwd" rev-parse --verify "$base^{commit}" 2>/dev/null) \
+    || die "bad base ref: $base — rev-parse found no commit"
+
+  # The precheck sees the explicit paths plus every path named by the spec's SCOPE. Keep
+  # first occurrence order; the wip commit and board dispatch continue to use $paths only.
+  scope_paths=$(awk '/^## SCOPE/{f=1;next} /^## /{f=0} f && /^- /{print $2}' "$spec" | tr -d '`' | grep -v '^$' || true)
+  precheck_paths=$(printf '%s\n%s\n' "${paths// /$'\n'}" "$scope_paths" | awk 'NF && !seen[$0]++' | tr '\n' ' ' | sed 's/ *$//')
+
+  # run lines go to auto.log too; a dry run writes nothing, so it only prints them
+  plog() { if [[ $dry -eq 1 ]]; then note "$@"; else alog "$@"; fi; }
+  envf="$dir/board.env"
+  package_base_source="this run"
+  package_base="$base_ref"
+  package_base_would_write=0
+  recorded_package_base=""
+  [[ -f "$envf" ]] && recorded_package_base=$(sed -n 's/^package_base=//p' "$envf" | tail -1)
+  if [[ -n "$package_base_arg" ]]; then
+    package_base=$(git -C "$cwd" rev-parse --verify "$package_base_arg^{commit}" 2>/dev/null) \
+      || die "--package-base $package_base_arg does not resolve to a commit"
+    git -C "$cwd" merge-base --is-ancestor "$package_base" "$base_ref" 2>/dev/null \
+      || die "--package-base $package_base_arg ($package_base) must be an ancestor of run base $base_ref"
+    package_base_source="--package-base"
+    package_base_would_write=1
+  elif [[ -n "$recorded_package_base" ]] && git -C "$cwd" merge-base --is-ancestor "$recorded_package_base" "$base_ref" 2>/dev/null; then
+    package_base=$(git -C "$cwd" rev-parse --verify "$recorded_package_base^{commit}")
+    package_base_source="board.env"
+  else
+    package_base_would_write=1
+    if [[ -n "$recorded_package_base" ]]; then
+      plog "package_base in board.env is not an ancestor of run base; reset to $base_ref"
+    fi
+  fi
+  plog "precheck base: $package_base (source: $package_base_source)"
+  if [[ "$precheck_paths" != "$paths" ]]; then
+    plog "precheck paths: $precheck_paths"
+  fi
+  if [[ $package_base_would_write -eq 1 ]]; then
+    if [[ $dry -eq 1 ]]; then
+      note "would write package_base=$package_base to board.env"
+    else
+      touch "$envf"
+      grep -v '^package_base=' "$envf" >"$envf.tmp" 2>/dev/null || true
+      mv "$envf.tmp" "$envf"
+      printf 'package_base=%s\n' "$package_base" >>"$envf"
+    fi
+  fi
+
   roster_preview() { # "kind|lane|model|lens" per line: first N seated, the rest reserve
     python3 - "$1" "$2" "$3" <<'PY'
 import sys
@@ -623,6 +675,7 @@ PY
     note "── auto dry-run: $wp"
     note "  base: $base   risk: $risk   cwd: $cwd"
     note "  paths (required): $paths"
+    note "  precheck paths: $precheck_paths"
     note "  gate: ${gate:--}"
     note "  spec: $spec"
     note "  implementer: ${impl_sid:0:8} lane=$impl_lane status=$impl_status0"
@@ -917,11 +970,6 @@ PY
 
   alog "══ auto start: wp=$wp base=$base impl=${impl_sid:0:8} lane=$impl_agent risk=$risk gate=${gate:--} max_cycles=$max_cycles seat_deadline=${seat_deadline}s"
 
-  # freeze the base as a hash NOW: after the round-1 wip commit a symbolic ref (HEAD)
-  # would resolve to the wip itself and the board would diff against nothing
-  base_ref=$(git -C "$cwd" rev-parse --verify "$base^{commit}" 2>/dev/null) \
-    || die "bad base ref: $base — rev-parse found no commit"
-
   while :; do
     # ── the implementer and its CLI gate ──
     # (nothing touches the index before this point: a failed implementer must not leave
@@ -974,15 +1022,15 @@ PY
       git -C "$cwd" add -N -- $untracked
       alog "round $round: git add -N (new files): ${untracked//$'\n'/, }"
     fi
-    pc_base="$base_ref"   # the precheck ALWAYS checks acceptance against the whole
-                          # package (original base): acceptance items describe the WP, not
+    pc_base="$package_base" # the precheck ALWAYS checks acceptance against the whole
+                          # package (persisted base): acceptance items describe the WP, not
                           # the round's delta — a delta-based precheck marks everything
                           # delivered in round 1 as missing on every later round. The
                           # reviewers still get the delta (diff-rN.patch is rewritten by
                           # the dispatch step below).
     alog "round $round: precheck against $pc_base (whole package)"
     pc_args=(--cwd "$cwd" --risk "$risk" --impl-agent "$impl_agent" --round "$round" --precheck-only)
-    if [[ -n "$paths" ]]; then pc_args+=(--paths "$paths"); fi
+    if [[ -n "$precheck_paths" ]]; then pc_args+=(--paths "$precheck_paths"); fi
     if [[ -n "$gate" ]]; then pc_args+=(--gate "$gate"); fi
     pc_rc=0
     "$0" "$wp" "$pc_base" "${pc_args[@]}" || pc_rc=$?
@@ -1401,7 +1449,10 @@ if [[ $dry -eq 0 ]]; then
     note "previous verdicts archived to $arch"
   fi
   : > "$dir/sessions.txt"
+  saved_package_base=""
+  [[ -f "$dir/board.env" ]] && saved_package_base=$(sed -n 's/^package_base=//p' "$dir/board.env" | tail -1)
   printf 'risk=%s\nround=%s\nrequired=%s\nbase=%s\npatch=%s\n' "$risk" "$round" "$required" "$base" "$(basename "$patch")" > "$dir/board.env"
+  [[ -n "$saved_package_base" ]] && printf 'package_base=%s\n' "$saved_package_base" >> "$dir/board.env"
   [[ -n "$pc_status" ]] && pc_record_env "$pc_status" "$pc_lane"
 fi
 
