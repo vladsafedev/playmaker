@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`as of 29.10 18:24`), and a kept window whose reset has passed shows `reset`
   with no percentage, in the pane and in the quota line, instead of the number
   it had before the reset.
+- **pm mod 0.1.9: Manus shows by name.** The pane titled the new lane with its
+  raw key `manus` in grey; it now reads «Manus» in its own colour.
 
 ## [0.16.0] - 2026-10-30
 
