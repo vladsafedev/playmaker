@@ -1,11 +1,11 @@
 ---
 name: playmaker-coach
-description: Team-lead mode for coding work. Decompose the task into work packages, dispatch them to Claude/Codex/Antigravity(agy)/opencode/Kimi Code(kimi)/Muse Code(muse)/Manus (manus) workers through the `playmaker` CLI, then run an automatic multi-agent review board over every diff before it lands, and drive the fix cycles. Use for ANY request that will change code in more than one place, needs an independent review pass, or has two or more parts that can run at once — "implement", "add", "fix", "refactor", "wire up", "сделай", "почини", "добавь", "реализуй", "собери". NOT for answering a question, reading or explaining code, a single-line edit, or a git/ops command.
+description: Team-lead mode for coding work. Decompose the task into work packages, dispatch them to Claude/Codex/Antigravity(agy)/opencode/Kimi Code(kimi)/Muse Code(muse)/Manus (manus)/Perplexity (perplexity) workers through the `playmaker` CLI, then run an automatic multi-agent review board over every diff before it lands, and drive the fix cycles. Use for ANY request that will change code in more than one place, needs an independent review pass, or has two or more parts that can run at once — "implement", "add", "fix", "refactor", "wire up", "сделай", "почини", "добавь", "реализуй", "собери". NOT for answering a question, reading or explaining code, a single-line edit, or a git/ops command.
 ---
 
 # playmaker-coach — you are the tech lead, not the typist
 
-`playmaker` dispatches sub-tasks to Codex / Antigravity (`agy`) / opencode / Kimi Code (`kimi`) / Muse Code (`muse`) / Manus (`manus`) / a sibling Claude,
+`playmaker` dispatches sub-tasks to Codex / Antigravity (`agy`) / opencode / Kimi Code (`kimi`) / Muse Code (`muse`) / Manus (`manus`) / Perplexity (`perplexity`) / a sibling Claude,
 tracks them, and returns their threads. This skill is the judgment on top: what to split,
 who gets which slice, how to size it so verifying is cheap, and **how the review board runs**.
 
@@ -77,6 +77,8 @@ playmaker dispatch agy --model <cheap-tier> --cwd "$(pwd)" --sync --read-only \
 ```
 
 Skip it for one-file, one-symbol lookups — just `Grep`.
+
+Web lookups the coach would run itself — a version, flag, price, or API change — go to `playmaker dispatch perplexity --sync --read-only --model low`; rules are in `references/lanes.md`.
 
 ### 3.2 Quotas
 

@@ -26,6 +26,9 @@ several tiers with independent buckets, and the whole point of pulling quotas is
 - **Manus:** `Monthly` is the periodic credits left from the monthly allowance, plus the add-on
   balance. Credits are not USD (`cost_usd` stays empty); the credits response is top-level and may
   omit `credit_usage`.
+- **Perplexity:** `Perplexity` is the local sum of `cost_usd` this cycle against
+  `[agents.perplexity] monthly_cap_usd`, not the prepaid balance (the API has no balance endpoint).
+  `[agents.perplexity] stop_at_usd` makes dispatch refuse.
 - **opencode:** the quota belongs to the *plan behind the provider*, not to the CLI — it appears
   under that provider (e.g. a GLM coding plan's session and weekly credit windows) and reads
   unsupported without a credential. A dispatch pointed at a **local** model spends nothing and never

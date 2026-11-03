@@ -77,6 +77,14 @@ line from `agy models` / `opencode models` rather than typing it.
   took about 75 seconds on lite and standard; lite cost 1 credit. API timestamps are digit strings,
   credits are top-level fields, and `credit_usage` can be absent.
 
+## perplexity
+
+- Always use `--read-only`: Perplexity runs in its cloud, cannot see the checkout, and refuses `--files`.
+- `--model` is effort: `fast`, `low` (default), `medium`, `high`, `xhigh`, or `ultra-preview`; pin `<name>@<version>` when reproducibility matters, because an unpinned effort can change without notice.
+- `[agents.perplexity] instructions_file` is sent verbatim; only `${current_date}` is replaced with today's UTC date. Unset uses Perplexity's preset prompt, which says never refuse and always commit to an answer.
+- Runs are backgrounded and polled (`poll_seconds` defaults to 3); `max_wait_minutes` defaults to 20 and cancels on expiry. New accounts can receive 429 at about one request/second; it is retried.
+- Keep the final provenance line (`— perplexity <preset> · <model> · <date> · <R> results, <C> cited`) with the inline `[web:N]` citations and `Sources:` block. Use `playmaker continue` to follow up in the same conversation.
+
 ## opencode
 
 - Models are `provider/model` and the default is invisible: without `--model` it falls through to

@@ -2,6 +2,29 @@
 
 > **GEMINI ONLY on agy (owner order 2026-09-02):** never dispatch `claude-*` or `gpt-oss-*` models on the `agy` lane. Want a Claude? Don't dispatch one: the coach session is the Claude, and the Anthropic bucket is out of the board (2026-09-08). See `~/.playmaker/policy.md`.
 
+## Web research — the perplexity lane
+
+Use `playmaker dispatch perplexity --read-only --model <effort>`. The coach's own lookups use `low --sync`; a fact a WP depends on (an external API or library version) is a `low` lookup pasted into that WP's CONTEXT with its `Sources:`. Market, competitor, and pricing scans use `medium` or `high`, then go to Manus as research input; Manus keeps the judgment. Perplexity never codes, reviews code, supplies judgment, or holds a decision-review seat.
+
+### Lens hygiene — trust, but verify
+
+Owner order 2026-11-03: «главное, чтобы поиск Perplexity не искажал линзу всем, кто его использует. доверяй, но проверяй».
+
+1. Search output is evidence, not a verdict — the instructions file keeps it to facts, no recommendations.
+2. It reaches another lane only as a separate `RESEARCH INPUT` block (the template is in `prompt-templates.md`), after the task and role, never inside a role file or lens text.
+3. In a decision review it goes to every seat or to none, never one seat: that would tilt its lens and make the agreement count meaningless. Review-board seats get it only when the spec cites it.
+4. A list from one run is a sample, not a census — merge two runs at different efforts or say «sample» in the artefact. On 2026-11-03, low/medium/high market scans returned 2/4/5 tools with no overlap.
+5. A fact that decides a WP, lands in code or docs, or goes public is checked at its primary source (the cited URL, PyPI/npm, `gh api`, or vendor docs) before use; the rest stays marked Perplexity-sourced.
+6. `NOT FOUND` is an answer: never re-ask with leading wording until it says yes.
+
+Measured 2026-11-03 (18 runs, $0.37 total):
+
+| Effort | Latency | Cost |
+|---|---|---|
+| low | 4–15 s | $0.002–0.006 |
+| medium | 4–105 s | $0.002–0.033 |
+| high | 4–136 s | $0.008–0.18 |
+
 # Execution lanes — where work runs
 
 All Claude work — coach, in-session sub-agents, external `claude -p` — draws from the **same Claude

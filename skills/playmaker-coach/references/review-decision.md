@@ -5,6 +5,9 @@ diff hunk, numbers behind a choice, or an owner-facing product decision. It is n
 and is never a gate: **it never stops the cores of a wave.** The coach may keep dispatching and
 integrating independent cores while this advisory review runs.
 
+Research input follows rule 3 in `references/lanes.md`: give it to every seat or to none, as a
+`RESEARCH INPUT` block appended to the question file, never to a role file.
+
 ## When the coach convenes it
 
 Use it when one of these is true:

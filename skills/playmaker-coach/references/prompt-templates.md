@@ -3,6 +3,21 @@
 Copy, fill the angle brackets, delete what does not apply. The shape matters more than the wording:
 scope, gate, done-condition, context.
 
+## RESEARCH INPUT
+
+```
+RESEARCH INPUT (perplexity <preset>, <date>) — search results, unverified; check what you rely on.
+
+<answer with its inline citations>
+
+Sources:
+<Sources block unchanged>
+
+— perplexity <preset> · <model> · <date> · <R> results, <C> cited
+```
+
+Place this after the task and the role, never merge it into either.
+
 ## Work package (implementation)
 
 ```

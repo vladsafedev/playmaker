@@ -171,6 +171,7 @@ playmaker agents          # which agent CLIs are reachable
 | **Kimi Code CLI** | `npm i -g @moonshot-ai/kimi-code` | needs Node ≥ 22.19 (a wrapper that pins a newer Node is fine — point `[agents.kimi] binary` at it); `--model kimi-code/k3-256k` — 256k window at half the quota cost of `k3`; log in once with `kimi login --region global`; model ids from `~/.kimi-code/config.toml` |
 | **Muse Code CLI** | `curl -fsSL https://dev.meta.ai/install.sh \| sh` | self-updating launcher in `~/.local/bin` (point `[agents.muse] binary` at it if a detached dispatch can't find it); log in once with `muse login` or set `META_API_KEY`; `--model muse-spark-1.3` — omit it and Muse's own default from `~/.config/muse/settings.json` applies |
 | **Manus (`manus`)** | Manus API v2 cloud agent — no CLI; add its key with `security add-generic-password -s playmaker-manus-api -a playmaker -w` or set `MANUS_API_KEY` | always `--read-only`; `--model` is the agent profile: `lite`, `standard` (default), `max`, `max-medium`, `max-high`, `max-extra`, or `max-ultra` |
+| **Perplexity (`perplexity`)** | Perplexity Agent API cloud research — no CLI; add its key with `security add-generic-password -s playmaker-perplexity-api -a playmaker -w` or set `PERPLEXITY_API_KEY` | always `--read-only`; `--model` is the Agent API effort |
 | **Gemini CLI** (legacy) | `npm i -g @google/gemini-cli` | still supported, superseded by `agy` |
 
 At least one is required; `playmaker agents` tells you which it can see.
@@ -578,6 +579,9 @@ whole Z.ai block. Routing a subtask is choosing which of them to spend.
   separate percentage buckets with reset times; Meta omits usage while the
   5-hour window is idle, and the block then shows the plan with a note instead
   of bars. No login reads as *skipped* rather than a failed probe.
+- **Perplexity** — a local sum of session `cost_usd` for this cycle against
+  `[agents.perplexity] monthly_cap_usd`, not the prepaid USD balance (there is no balance API).
+  `[agents.perplexity] stop_at_usd` makes dispatch refuse.
 
 Reading these at *model* granularity is the point: they are the load-balancing
 input the coach skill uses to route each subtask.
