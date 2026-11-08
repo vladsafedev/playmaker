@@ -252,6 +252,7 @@ playmaker quotas [--refresh]                  # capacity per provider, per model
 playmaker dispatch <agent> --prompt "..."     # detached by default
                   [--prompt-file PATH]         # read a UTF-8 prompt from a file
                   [--model NAME]              # forwarded to the agent's own CLI
+                  [--effort LEVEL]            # reasoning effort, claude and codex lanes
                   [--cwd DIR]
                   [--files PATH...]
                   [--expect-changes|--read-only]
@@ -262,7 +263,7 @@ playmaker dispatch <agent> --prompt "..."     # detached by default
                   [--gate CMD] [--fallback LANE[,LANE]] [--force]
 playmaker continue <id> --prompt "..."        # follow-up inside the live session
                   [--prompt-file PATH] [--after|--now] [--gate CMD] [--force]
-                  [--model NAME] [--files PATH...] [--expect-changes|--read-only] [--sync]
+                  [--model NAME] [--effort LEVEL] [--files PATH...] [--expect-changes|--read-only] [--sync]
 
 playmaker list [--status running|done|failed|no_changes] [--agent NAME] [--limit N]
 playmaker get <id> [--wait] [--poll SECONDS]
@@ -410,9 +411,25 @@ motivating case: running Opus review boards at `xhigh`). Set the lane default
 once with `effort = "xhigh"` under `[agents.claude]`; `playmaker dispatch
 claude --effort <level>` and `playmaker continue <id> --effort <level>`
 override it for one run without persisting anything. The flag is accepted and
-ignored on every other lane so scripts can pass it uniformly, and when it is
-unset everywhere no `--effort` flag is sent at all — Claude Code's own default
-applies.
+ignored on every lane but claude and codex so scripts can pass it uniformly,
+and when it is unset everywhere no `--effort` flag is sent at all — Claude
+Code's own default applies.
+
+**codex** takes the same flag with one more level — `--effort
+low|medium|high|xhigh|max|ultra` — passed to `codex exec` and `codex exec
+resume` as `-c model_reasoning_effort="<value>"`. The value is checked against
+the model's `supported_reasoning_levels` in `$CODEX_HOME/models_cache.json`
+when that file describes the model; precedence is `--effort`, then
+`PLAYMAKER_CODEX_EFFORT`, then the parent session's effort on `continue`, then
+`reasoning_effort = "…"` under `[agents.codex]`. Unset everywhere, Codex's own
+`~/.codex/config.toml` applies. The effective effort is stored on the session
+and shown by `playmaker get` (an `effort:` line; `effort` in `--json`).
+
+On the **codex** lane, `--files` entries ending in `.png`/`.jpg`/`.jpeg`/`.webp`
+go as `--image=` attachments, on dispatch and on resume (`continue --files`);
+every other file stays an `@path` reference in the prompt. On **agy** and the
+**claude** lanes the path travels in the prompt text and the agent opens the
+image with its own file tool.
 
 **claude-api** is the same agent on an API key, through the
 [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk):

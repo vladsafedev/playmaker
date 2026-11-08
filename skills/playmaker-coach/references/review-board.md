@@ -275,7 +275,15 @@ The script writes `.playmaker/reviews/<wp-label>/` with the diff under review, o
 verdict file per reviewer, `board.env` (risk, round, required count), and dispatches them as one
 `--batch review-<wp-label>-rN`. Roster lines are an ordered preference list: after skipping the
 implementer it seats the first 1 / 2 / 3 / 1 for routine / normal / high / seams and holds the rest in
-reserve; fewer than required stops the script. On a new dispatch it archives the previous round's
+reserve; fewer than required stops the script.
+
+Roster format is `<kind> <lane> <model> <lens> [<effort>]` — the optional fifth column is the
+seat's per-dispatch reasoning effort, passed as `playmaker dispatch --effort <value>` (board
+seats, reserve substitutes, the precheck and decision seats alike); `-` or absent means none:
+
+    high codex gpt-6-astra risk ultra
+
+On a new dispatch it archives the previous round's
 verdicts to `archive-<timestamp>/`. When the batch
 drains, collect them:
 

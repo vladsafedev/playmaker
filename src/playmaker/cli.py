@@ -2559,6 +2559,9 @@ binary = "codex"
 # so it needs no permission flag. Set a policy to override its default:
 # "read-only" | "workspace-write" | "danger-full-access"
 # sandbox = "workspace-write"
+# Reasoning effort low|medium|high|xhigh|max|ultra, checked against the model's
+# supported levels; --effort overrides it for one run.
+# reasoning_effort = "high"
 
 [agents.agy]
 binary = "agy"

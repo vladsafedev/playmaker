@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native reasoning effort on the `codex` lane.** `playmaker dispatch|continue
+  … --effort <low|medium|high|xhigh|max|ultra>` is passed to `codex exec` and
+  `codex exec resume` as `-c model_reasoning_effort="<value>"`, checked against
+  the model's `supported_reasoning_levels` in `$CODEX_HOME/models_cache.json`
+  when that file describes the model. Precedence is `--effort`, then
+  `PLAYMAKER_CODEX_EFFORT`, then the parent session's effort on `continue`, then
+  `[agents.codex] reasoning_effort`; unset everywhere, Codex's own
+  `~/.codex/config.toml` applies. The effective effort is stored on the session
+  and shown by `playmaker get` (an `effort:` line, `effort` in `--json`).
+- **Image attachments on the `codex` lane.** `--files` entries ending in
+  `.png`/`.jpg`/`.jpeg`/`.webp` go as `--image=` attachments, on dispatch and
+  on resume (`continue --files`); every other file stays an `@path` reference
+  in the prompt. On `agy` and the `claude` lanes the path travels in the prompt
+  text and the agent opens the image with its own file tool.
+- **An optional effort column in the reviewer roster.** Roster lines are now
+  `<kind> <lane> <model> <lens> [<effort>]` — the fifth column is passed as
+  `--effort` to that seat's dispatch (board seats, reserve substitutes, the
+  precheck and decision seats); `-` or absent means none, e.g.
+  `high codex gpt-6-astra risk ultra`.
 - **A `manus` lane on the Manus API v2.** `playmaker dispatch manus --read-only`
   runs a task in Manus's cloud sandbox over HTTP and returns its final result;
   `--model` is the Manus agent profile (`lite`, `standard` by default, `max`,

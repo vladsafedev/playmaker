@@ -4,14 +4,14 @@
 playmaker agents                                # who is installed and reachable
 playmaker quotas [--refresh]                    # capacity, per provider and per model
 playmaker dispatch <agent> --prompt "..."       # detached by default
-                  [--model NAME] [--cwd DIR] [--files PATH...]
+                  [--model NAME] [--effort LEVEL] [--cwd DIR] [--files PATH...]
                   [--batch LABEL]               # group a fan-out into one summary ping
                   [--parent ID]                 # link lineage to an earlier session
                   [--read-only|--expect-changes]
                   [--sync] [--worktree NAME] [--worktree-base REF] [--gate "CMD"]
                   [--fallback LANE[,LANE]] [--prompt-file PATH]
 playmaker continue <id> --prompt "..."          # follow-up inside the live session
-                  [--model NAME] [--files ...] [--read-only|--expect-changes] [--sync]
+                  [--model NAME] [--effort LEVEL] [--files ...] [--read-only|--expect-changes] [--sync]
                   [--after [ID]] [--gate "CMD"] [--prompt-file PATH]
 playmaker events [--follow] [--batch LABEL] [--session ID] [--kind K] [--last N]
                  [--since ISO] [--interval S]   # JSON lines only
@@ -32,6 +32,16 @@ Every command takes `--json`.
 
 - `--model` is forwarded verbatim to the agent's own CLI and stored on the session row, so
   `continue` and detached re-runs inherit it; `continue --model X` overrides one turn.
+- `--effort LEVEL` sets reasoning effort for one run: `low|medium|high|xhigh|max` on the
+  claude lanes, plus `ultra` on codex. On codex it is passed to `codex exec` / `codex exec
+  resume` as `-c model_reasoning_effort="<value>"`, checked against the model's
+  `supported_reasoning_levels` in `$CODEX_HOME/models_cache.json` when present; precedence
+  is the flag, `PLAYMAKER_CODEX_EFFORT`, the parent session's effort on `continue`,
+  `[agents.codex] reasoning_effort`, else Codex's own default. Accepted and ignored on every
+  other lane. `get` shows the stored value (`effort:` line, `effort` in `--json`).
+- On the codex lane, `--files` entries ending in `.png`/`.jpg`/`.jpeg`/`.webp` go as
+  `--image=` attachments, on dispatch and on resume (`continue --files`); other files stay
+  `@path` refs. On agy and the claude lanes the path travels in the prompt text.
 - `--batch LABEL` on every dispatch of one fan-out suppresses per-agent success pings and fires a
   single "N/N done" summary when the batch drains. Failures still ping immediately.
 - `--read-only` marks recon and review dispatches so the zero-change check does not flag them;

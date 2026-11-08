@@ -32,6 +32,7 @@ line from `agy models` / `opencode models` rather than typing it.
 - Zero changes usually means one of: it tried to write outside `--cwd`, or the run needed a
   permission the configured mode does not grant (an "I need your permission" answer, not a crash).
 - Default `--model sonnet`; omitting `--model` can put mid-tier work on the scarce top bucket.
+- Image inputs arrive as `@path` refs in the prompt text — open them with the file tool.
 
 ## agy (Antigravity)
 
@@ -41,6 +42,7 @@ line from `agy models` / `opencode models` rather than typing it.
 - A `done` with no file changes usually means the files landed in agy's scratch dir
   (`~/.gemini/antigravity-cli/scratch/`). Re-dispatch with explicit paths.
 - Its own default model is top tier, so **always pass `--model`** on a dispatch meant to be cheap.
+- Image inputs arrive as paths in the prompt text — open them with the file tool.
 - Its **5-hour** windows are what a fan-out drains first; the Gemini family and the Claude/GPT family
   have separate ones.
 
@@ -48,6 +50,13 @@ line from `agy models` / `opencode models` rather than typing it.
 
 - The model roster depends on the account plan, and an unavailable name fails the whole dispatch.
   **Omitting `--model` is the safe default here** — it uses whatever the account actually has.
+- Reasoning effort: `--effort low|medium|high|xhigh|max|ultra`, passed to `codex exec` and
+  `codex exec resume` as `-c model_reasoning_effort="<value>"` and checked against the model's
+  `supported_reasoning_levels` in `$CODEX_HOME/models_cache.json` when present. Precedence: the
+  flag, `PLAYMAKER_CODEX_EFFORT`, the parent session's effort on `continue`, `[agents.codex]
+  reasoning_effort`; unset everywhere, Codex's own `~/.codex/config.toml` applies.
+- `--files` ending in `.png`/`.jpg`/`.jpeg`/`.webp` go as `--image=` attachments, on dispatch
+  and on resume; everything else stays an `@path` ref in the prompt.
 
 ## manus
 
