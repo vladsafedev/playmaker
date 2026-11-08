@@ -2626,12 +2626,12 @@ permission_mode = "acceptEdits"
 # `security add-generic-password -s playmaker-perplexity-api -a playmaker -w`,
 # or comes from PERPLEXITY_API_KEY.
 # [agents.perplexity]
-# key_source = "keychain"
 # model = "low"  # effort: fast|low|medium|high|xhigh|ultra-preview, optionally @<version>
 # Sent verbatim as the run's instructions.
 # instructions_file = "~/.playmaker/perplexity-instructions.md"
 # poll_seconds = 3
 # max_wait_minutes = 20
+# credit_reset_day = 1  # day of month the budget cycle starts
 # monthly_cap_usd = 20
 # stop_at_usd = 20
 # warn_below_usd = 3
