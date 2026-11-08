@@ -567,24 +567,27 @@ def claude_usage(
     if records is None:
         records = _claude_records(since, warnings)
     excluded = _excluded_claude_sessions(rows)
-    seen: set[str] = set()
+    best_by_id: dict[str, dict[str, Any]] = {}
+    left, right = since.isoformat(), until.isoformat()
+    for record in records:
+        if (
+            record["session"] in excluded
+            or not left <= record["day"] < right
+            or record["model"] == "<synthetic>"
+        ):
+            continue
+        identifier = record["id"]
+        output_tokens = record["tokens"][1]
+        if identifier not in best_by_id or output_tokens > best_by_id[identifier]["tokens"][1]:
+            best_by_id[identifier] = record
     by_model: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     all_by_day: dict[str, float] = defaultdict(float)
     project_by_day: dict[str, float] = defaultdict(float)
     project_counts: dict[str, int] = defaultdict(int)
     belongs_by_cwd = {}
     prices = {}
-    left, right = since.isoformat(), until.isoformat()
-    for record in records:
+    for record in best_by_id.values():
         identifier, day, model = record["id"], record["day"], record["model"]
-        if (
-            identifier in seen
-            or record["session"] in excluded
-            or not left <= day < right
-            or model == "<synthetic>"
-        ):
-            continue
-        seen.add(identifier)
         if model not in prices:
             prices[model] = _price_for(model, overrides or {})
         price = prices[model]
@@ -631,6 +634,8 @@ def _plan_eligible(row: dict[str, Any], plan: dict[str, Any]) -> bool:
 def _split_lane_charge(
     amount: float, lanes: list[str], project_rows: list[dict[str, Any]], claude_count: int
 ) -> dict[str, float]:
+    if "claude-code" in lanes:
+        return {lane: (amount if lane == "claude-code" else 0.0) for lane in lanes}
     weights = {
         lane: sum(_session_weight(row) or 0 for row in project_rows if row.get("agent") == lane)
         for lane in lanes
@@ -758,21 +763,23 @@ def build_report(
     )
     metered: dict[str, float] = defaultdict(float)
     days: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    skipped_lanes: dict[str, float] = defaultdict(float)
     for row in project_rows:
-        # Subscription lanes record API-equivalent estimates, not per-call spend.
-        if row.get("agent") not in {"claude-api", "perplexity"}:
-            continue
         try:
             amount = float(row.get("cost_usd") or 0)
         except (TypeError, ValueError):
             amount = 0
-        if not math.isfinite(amount):
-            amount = 0
-        if amount:
-            lane = row["agent"]
+        if not math.isfinite(amount) or amount <= 0:
+            continue
+        lane = str(row.get("agent") or "")
+        if lane in {"claude-api", "perplexity"}:
             day = _parse_time(row["started_at"]).date().isoformat()
             metered[lane] += amount
             days[day][lane] += amount
+        elif lane != "claude":
+            skipped_lanes[lane] += amount
+    for lane, amount in sorted(skipped_lanes.items()):
+        warnings.append(f"skipped ${amount:.2f} recorded cost_usd on lane {lane}")
     credits, manus_days = _manus_usage(matched, plans, since, until, warnings)
     if credits or manus_days:
         metered["manus_credits"] = credits
@@ -830,7 +837,7 @@ def build_report(
                 share = mine / total if total else 0.0
                 part = cost * share
                 charged += part
-                if not total:
+                if not total and cost:
                     unattributed[str(plan["name"])] += cost
                 claude_count = sum(
                     count
@@ -840,7 +847,8 @@ def build_report(
                 for lane, amount in _split_lane_charge(
                     part, plan["lanes"], mine_items, claude_count
                 ).items():
-                    subscription_lanes[lane] += amount
+                    if amount:
+                        subscription_lanes[lane] += amount
                 if part:
                     for offset in range(overlap_days):
                         day = (start + timedelta(days=offset)).isoformat()
@@ -849,6 +857,7 @@ def build_report(
             {
                 "name": plan["name"],
                 "group": plan["group"],
+                "status": plan["status"],
                 "state": state_label,
                 "charged_usd": charged,
                 "monthly_usd": plan.get("monthly_usd"),
@@ -856,14 +865,23 @@ def build_report(
         )
     metered_total = sum(amount for lane, amount in metered.items() if lane != "manus_credits")
     subscription_total = sum(item["charged_usd"] for item in subscriptions)
-    total_lanes = {lane: amount for lane, amount in metered.items() if lane != "manus_credits"}
+    total_lanes = {
+        lane: amount
+        for lane, amount in metered.items()
+        if lane != "manus_credits" and amount
+    }
     for lane, amount in subscription_lanes.items():
-        total_lanes[lane] = total_lanes.get(lane, 0.0) + amount
+        if amount:
+            total_lanes[lane] = total_lanes.get(lane, 0.0) + amount
+    total_lanes = {lane: amount for lane, amount in total_lanes.items() if amount}
     return {
         "project": str(root),
         "period": {"since": since.isoformat(), "until": until.isoformat()},
         "metered": {"lanes": dict(metered)},
-        "subscriptions": {"plans": subscriptions, "unattributed_usd": dict(unattributed)},
+        "subscriptions": {
+            "plans": subscriptions,
+            "unattributed_usd": {name: amount for name, amount in unattributed.items() if amount},
+        },
         "claude_code": claude,
         "totals": {
             "lanes": total_lanes,
@@ -1015,7 +1033,9 @@ def costs_command(
     for day, amounts in sorted(total["by_day"].items()):
         typer.echo(f"  {day}: ${sum(amounts.values()):.2f}")
     missing_prices = [
-        plan["name"] for plan in report["subscriptions"]["plans"] if plan["monthly_usd"] is None
+        plan["name"]
+        for plan in report["subscriptions"]["plans"]
+        if plan.get("status") == "active" and plan["monthly_usd"] is None
     ]
     if missing_prices:
         typer.echo(f"Plans with price not set: {', '.join(missing_prices)}")

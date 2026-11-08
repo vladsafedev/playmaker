@@ -1094,3 +1094,114 @@ def test_malformed_usage_cache_entry_is_rebuilt(tmp_path: Path) -> None:
     assert any(
         "rebuilding malformed Claude usage cache entry" in item for item in report["warnings"]
     )
+
+
+def test_multilane_plan_attributes_claude_code_share_to_claude_code_lane(tmp_path: Path) -> None:
+    root = tmp_path / "team"
+    _database(
+        costs.state.DB_PATH,
+        [
+            _session(root, "claude", duration=120),
+        ],
+    )
+    _transcript("project.jsonl", [_record(root)])
+    _plans(
+        '[[plan]]\nname="Max"\ngroup="claude"\nlanes=["claude","claude-code"]\n'
+        'start="2026-06-01"\nmonthly_usd=60\n'
+    )
+    report = _report(root)
+    assert report["totals"]["subscriptions_usd"] == 60
+    assert report["totals"]["lanes"] == {"claude-code": 60}
+    assert sum(report["totals"]["lanes"].values()) == pytest.approx(report["totals"]["spent_usd"])
+    split = costs._split_lane_charge(
+        60, ["claude", "claude-code"], [{"agent": "claude", "duration_seconds": 120}], 1
+    )
+    assert split == {"claude": 0.0, "claude-code": 60.0}
+
+
+def test_transcript_deduplication_keeps_largest_output_tokens(tmp_path: Path) -> None:
+    root = tmp_path / "team"
+    first_partial = _record(
+        root,
+        identifier="msg-1",
+        usage={"input_tokens": 1000, "output_tokens": 10},
+    )
+    first_final = _record(
+        root,
+        identifier="msg-1",
+        usage={"input_tokens": 1000, "output_tokens": 150},
+    )
+    second_final = _record(
+        root,
+        identifier="msg-2",
+        usage={"input_tokens": 1000, "output_tokens": 200},
+    )
+    second_partial = _record(
+        root,
+        identifier="msg-2",
+        usage={"input_tokens": 1000, "output_tokens": 20},
+    )
+    _transcript("project.jsonl", [first_partial, first_final, second_final, second_partial])
+    report = _report(root)
+    model_stats = report["claude_code"]["models"]["claude-opus-5-5"]
+    assert model_stats["output_tokens"] == 350
+
+
+def test_zero_valued_unattributed_and_totals_lanes_are_skipped(tmp_path: Path) -> None:
+    root, other = tmp_path / "team", tmp_path / "other"
+    _plans(
+        '[[plan]]\nname="Free"\ngroup="free"\nlanes=["codex"]\nstart="2026-06-01"\nmonthly_usd=0\n'
+        '[[plan]]\nname="Paid"\ngroup="paid"\nlanes=["codex"]\nstart="2026-06-01"\nmonthly_usd=30\n'
+    )
+    _database(
+        costs.state.DB_PATH,
+        [
+            _session(root, "codex", duration=10, cost=0),
+            _session(other, "codex", duration=10),
+        ],
+    )
+    report = _report(root)
+    assert 0 not in report["subscriptions"]["unattributed_usd"].values()
+    assert 0 not in report["totals"]["lanes"].values()
+    assert all(value > 0 for value in report["totals"]["lanes"].values())
+
+
+def test_unmetered_lanes_with_recorded_cost_usd_warn_naming_lane_and_sum(tmp_path: Path) -> None:
+    root = tmp_path / "team"
+    _database(
+        costs.state.DB_PATH,
+        [
+            _session(root, "claude", cost=5.0),
+            _session(root, "claude-api", cost=2.0, task="api"),
+            _session(root, "perplexity", cost=3.0),
+            _session(root, "codex", cost=12.5),
+            _session(root, "codex", cost=7.5),
+            _session(root, "gemini", cost=4.2),
+        ],
+    )
+    report = _report(root)
+    assert report["metered"]["lanes"] == {"claude-api": 2.0, "perplexity": 3.0}
+    codex_warnings = [w for w in report["warnings"] if "codex" in w]
+    gemini_warnings = [w for w in report["warnings"] if "gemini" in w]
+    claude_warnings = [w for w in report["warnings"] if "claude" in w and "claude-api" not in w]
+    assert len(codex_warnings) == 1
+    assert "20.00" in codex_warnings[0]
+    assert len(gemini_warnings) == 1
+    assert "4.20" in gemini_warnings[0]
+    assert claude_warnings == []
+
+
+def test_closing_line_lists_only_active_plans_with_price_not_set(tmp_path: Path) -> None:
+    root = tmp_path / "team"
+    _database(costs.state.DB_PATH, [_session(root, "codex", duration=10)])
+    _plans(
+        '[[plan]]\nname="Active Missing"\ngroup="act"\nlanes=["codex"]\nstart="2026-06-01"\n'
+        '[[plan]]\nname="Pending Missing"\ngroup="pend"\nlanes=["codex"]\n'
+        'start="2026-06-01"\nstatus="pending"\n'
+        '[[plan]]\nname="Active Priced"\ngroup="act-p"\nlanes=["codex"]\n'
+        'start="2026-06-01"\nmonthly_usd=50\n'
+    )
+    result = CliRunner().invoke(app, ["costs", "--project", str(root)])
+    assert result.exit_code == 0, result.output
+    closing = [line for line in result.output.splitlines() if line.startswith("Plans with price")]
+    assert closing == ["Plans with price not set: Active Missing"]
