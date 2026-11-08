@@ -28,6 +28,7 @@ from playmaker.agents.claude import resolve_effort as resolve_claude_effort
 from playmaker.agents.codex import configured_model as configured_codex_model
 from playmaker.agents.codex import is_image_file, validate_model_effort
 from playmaker.agents.codex import resolve_effort as resolve_codex_effort
+from playmaker.costs import costs_app
 from playmaker.registry import claude_lanes, get_handler
 
 app = typer.Typer(
@@ -37,6 +38,7 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+app.add_typer(costs_app, name="costs")
 
 console = Console()
 err_console = Console(stderr=True)
@@ -504,8 +506,7 @@ def dispatch(
     agent: str = typer.Argument(
         ...,
         help=(
-            "agent name "
-            "(claude|claude-api|codex|agy|gemini|kimi|manus|muse|opencode|perplexity)"
+            "agent name (claude|claude-api|codex|agy|gemini|kimi|manus|muse|opencode|perplexity)"
         ),
     ),
     prompt: str | None = typer.Option(
@@ -2163,8 +2164,7 @@ def kill(
                 remote_status = remote_stop(task_id)
             except Exception as exc:
                 err_console.print(
-                    f"[red]manus task {escape(str(task_id))}: "
-                    f"stop failed: {escape(str(exc))}[/red]"
+                    f"[red]manus task {escape(str(task_id))}: stop failed: {escape(str(exc))}[/red]"
                 )
                 raise typer.Exit(1) from exc
             console.print(
@@ -2195,14 +2195,11 @@ def kill(
     if remote_stop is not None:
         try:
             remote_status = remote_stop(task_id)
-            console.print(
-                f"manus task {escape(str(task_id))}: {escape(str(remote_status))}"
-            )
+            console.print(f"manus task {escape(str(task_id))}: {escape(str(remote_status))}")
         except Exception as exc:
             remote_error = exc
             err_console.print(
-                f"[red]manus task {escape(str(task_id))}: "
-                f"stop failed: {escape(str(exc))}[/red]"
+                f"[red]manus task {escape(str(task_id))}: stop failed: {escape(str(exc))}[/red]"
             )
     console.print(f"[magenta]killed[/magenta] {row['id']} (pid {pid})")
     if remote_error is not None:
