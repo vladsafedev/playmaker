@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 
@@ -355,6 +356,86 @@ def test_delivery_of_old_codex_item_falls_back_to_config(
 
     assert child is not None
     assert state.get_session(child)["effort"] == "high"
+
+
+def test_delivery_of_old_codex_item_drops_inherited_effort_invalid_for_its_model(
+    db: None, tmp_path: Path, capsys
+) -> None:
+    home = Path(os.environ["CODEX_HOME"])
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "models_cache.json").write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "gpt-5.6-luna",
+                        "supported_reasoning_levels": [
+                            {"effort": value}
+                            for value in ("low", "medium", "high", "xhigh", "max")
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    root = state.insert_session(
+        agent="codex", prompt="root", cwd=str(tmp_path), effort="ultra"
+    )
+    state.update_session(root, status="done", agent_session_id="thread-1")
+    queue.enqueue(root, "later", model="gpt-5.6-luna")
+
+    child = queue.deliver_next(root, root, lambda sid: 1)
+
+    assert child is not None  # an invalid inherited effort never blocks delivery
+    assert state.get_session(child)["effort"] is None
+    stderr = capsys.readouterr().err
+    assert "gpt-5.6-luna has no reasoning effort 'ultra'" in stderr
+    assert stderr.strip().count("\n") == 0  # one line
+
+
+def test_queue_add_and_edit_normalize_whitespace_codex_model(db: None, tmp_path: Path) -> None:
+    root = state.insert_session(
+        agent="codex", prompt="root", cwd=str(tmp_path), model="gpt-6-astra"
+    )
+    state.update_session(root, status="done", agent_session_id="thread-1")
+
+    added = runner.invoke(cli.app, ["queue", "add", root, "-p", "one", "--model", "  "])
+
+    assert added.exit_code == 0, added.output
+    item = queue.list_items(root)[0]
+    assert item["model"] == "gpt-6-astra"  # whitespace means unset: inherit the thread's
+
+    edited = runner.invoke(cli.app, ["queue", "edit", str(item["id"]), "--model", "  "])
+
+    assert edited.exit_code == 0, edited.output
+    assert queue.get(item["id"])["model"] == "gpt-6-astra"
+
+
+def test_queue_edit_prepares_codex_images_before_edit(db: None, tmp_path: Path) -> None:
+    root = state.insert_session(agent="codex", prompt="root", cwd=str(tmp_path))
+    state.update_session(root, status="done", agent_session_id="thread-1")
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"png")
+    item = queue.enqueue(root, "look")
+
+    edited = runner.invoke(cli.app, ["queue", "edit", str(item["id"]), "--files", "shot.png"])
+
+    assert edited.exit_code == 0, edited.output
+    assert json.loads(queue.get(item["id"])["files"]) == [str(image)]
+
+    missing = runner.invoke(
+        cli.app, ["queue", "edit", str(item["id"]), "--files", "absent.webp"]
+    )
+    assert missing.exit_code == 2
+    assert "absent.webp" in missing.output
+    assert json.loads(queue.get(item["id"])["files"]) == [str(image)]
+
+
+def test_playmaker_config_is_isolated_from_the_developer_home() -> None:
+    # conftest points playmaker's config at an empty temp file: a real
+    # [agents.codex] reasoning_effort must never leak into a test.
+    assert config.load_config() == {}
 
 
 def test_init_template_carries_commented_setting_sections() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -92,8 +93,10 @@ class _FakePopen:
         self._last_message = last_message
         self.stdout = None
         self.stderr = None
+        self.calls: list[dict] = []
 
     def __call__(self, cmd, **kwargs):
+        self.calls.append({"cmd": cmd, **kwargs})
         out_path = Path(cmd[cmd.index("-o") + 1])
         out_path.write_text(self._last_message, encoding="utf-8")
         self.stdout = _FakeStream(self._lines)
@@ -142,3 +145,18 @@ def test_dispatch_turn_failed_without_answer_raises(monkeypatch, tmp_path) -> No
 
     with pytest.raises(RuntimeError, match="model X not supported"):
         CodexHandler().dispatch(prompt="hi", cwd=tmp_path)
+
+
+def test_exec_and_resume_spawn_with_stdin_devnull(monkeypatch, tmp_path) -> None:
+    # codex reads inherited stdin to EOF before starting, so a dispatch from a
+    # shell whose stdin is open but not a TTY (any agent's Bash tool) hangs
+    # forever; both spawns must close it instead.
+    fake = _FakePopen(_OK_STREAM, returncode=0, last_message="ANSWER")
+    monkeypatch.setattr("playmaker.agents.codex.subprocess.Popen", fake)
+
+    CodexHandler().dispatch(prompt="hi", cwd=tmp_path)
+    CodexHandler().resume(prompt="hi", cwd=tmp_path, agent_session_id="t1")
+
+    assert len(fake.calls) == 2
+    for call in fake.calls:
+        assert call["stdin"] is subprocess.DEVNULL

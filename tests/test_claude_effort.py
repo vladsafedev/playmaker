@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import playmaker.config as config
 import playmaker.state as state
-from playmaker import cli
+from playmaker import cli, queue
 from playmaker.agents.claude import EFFORT_ENV_VAR, ClaudeHandler, effort_args
 
 runner = CliRunner()
@@ -313,3 +313,41 @@ def test_dispatch_records_config_effort_for_claude_lanes(
 
     assert result.exit_code == 0, result.output
     assert state.list_sessions(limit=1)[0]["effort"] == "high"
+
+
+def test_queued_continue_applies_recorded_effort_to_the_run(
+    db, monkeypatch, tmp_path
+) -> None:
+    root = state.insert_session(agent="claude", prompt="first", cwd=str(tmp_path))
+    state.update_session(root, status="done", agent_session_id="sess-123")
+    monkeypatch.setattr("playmaker.cli.get_handler", lambda name: _AvailableHandler())
+
+    queued = runner.invoke(
+        cli.app, ["continue", root, "-p", "fix", "--after", "--effort", "xhigh"]
+    )
+    assert queued.exit_code == 0, queued.output
+    item = queue.list_items(root)[0]
+    assert item["effort"] == "xhigh"
+    # The enqueueing process's export dies with it; the run starts clean.
+    os.environ.pop(EFFORT_ENV_VAR, None)
+
+    child = queue.deliver_next(root, root, lambda sid: 4242)
+    assert child is not None
+    assert state.get_session(child)["effort"] == "xhigh"
+
+    recorded: list = []
+
+    def _fake_run(cmd, **kwargs):
+        recorded.append(cmd)
+        return _FakeCompleted(cmd)
+
+    monkeypatch.setattr("playmaker.agents.claude.subprocess.run", _fake_run)
+    monkeypatch.setattr("playmaker.cli.get_handler", lambda name: ClaudeHandler())
+    monkeypatch.setattr(cli.notify, "notify", lambda *args, **kwargs: None)
+    cli._run_dispatch(child)
+
+    # The snapshot helpers around the run share the subprocess module, so pick
+    # out the claude argv.
+    (cmd,) = [c for c in recorded if c[0] != "git"]
+    assert cmd[cmd.index("--effort") + 1] == "xhigh"
+    assert EFFORT_ENV_VAR not in os.environ  # exported for the call, restored after

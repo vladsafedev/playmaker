@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import signal
@@ -673,6 +674,30 @@ def dispatch(
         console.print(f"[dim]session: {sid}  pid: {pid}  (detached)[/dim]")
 
 
+@contextlib.contextmanager
+def _claude_effort_from_row(agent: str, effort: str | None):
+    """Apply a session row's recorded effort to one claude-lane handler call.
+
+    The claude handler reads its per-run effort from EFFORT_ENV_VAR, which a
+    queued `continue --effort` exports only in the enqueueing process — the
+    run that finally delivers the item would never see it. Export the row's
+    value around the handler call and restore the environment after; rows
+    without a recorded effort keep reading whatever the run inherited.
+    """
+    if effort is None or agent not in claude_lanes():
+        yield
+        return
+    previous = os.environ.get(EFFORT_ENV_VAR)
+    os.environ[EFFORT_ENV_VAR] = effort
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(EFFORT_ENV_VAR, None)
+        else:
+            os.environ[EFFORT_ENV_VAR] = previous
+
+
 def _run_dispatch(sid: str, *, can_fallback: bool = False) -> None:
     """Execute the dispatch for a pending session and update its row.
 
@@ -701,22 +726,23 @@ def _run_dispatch(sid: str, *, can_fallback: bool = False) -> None:
     model = row.get("model")
     effort = row.get("effort")
     try:
-        if resume_target:
-            resume_kwargs = {
-                "on_session_started": _on_session_started,
-                "model": model,
-            }
-            if row["agent"] == "codex" and effort is not None:
-                resume_kwargs["effort"] = effort
-            result = handler.resume(row["prompt"], cwd, resume_target, files, **resume_kwargs)
-        else:
-            dispatch_kwargs = {
-                "on_session_started": _on_session_started,
-                "model": model,
-            }
-            if row["agent"] == "codex" and effort is not None:
-                dispatch_kwargs["effort"] = effort
-            result = handler.dispatch(row["prompt"], cwd, files, **dispatch_kwargs)
+        with _claude_effort_from_row(row["agent"], effort):
+            if resume_target:
+                resume_kwargs = {
+                    "on_session_started": _on_session_started,
+                    "model": model,
+                }
+                if row["agent"] == "codex" and effort is not None:
+                    resume_kwargs["effort"] = effort
+                result = handler.resume(row["prompt"], cwd, resume_target, files, **resume_kwargs)
+            else:
+                dispatch_kwargs = {
+                    "on_session_started": _on_session_started,
+                    "model": model,
+                }
+                if row["agent"] == "codex" and effort is not None:
+                    dispatch_kwargs["effort"] = effort
+                result = handler.dispatch(row["prompt"], cwd, files, **dispatch_kwargs)
     except Exception as exc:
         before_snapshot.cleanup()
         reason = events_mod.classify_failure(
@@ -1269,12 +1295,15 @@ def queue_add(
         if explicit is None and inherited is not None
         else state.expects_changes(prompt, explicit)
     )
+    # Like `continue`: a whitespace --model means unset, so the thread's own
+    # model applies.
+    normalized_model = _normalize_model(row["agent"], model)
     item = queue_mod.enqueue(
         root,
         prompt,
         files=_prepare_files(row["agent"], files, Path(row["cwd"])),
         gate_cmd=gate_cmd if gate_cmd is not None else root_row.get("gate_cmd"),
-        model=model if model is not None else row.get("model"),
+        model=normalized_model if normalized_model is not None else row.get("model"),
         expect_changes=item_expect_changes,
         first=first,
         position=position,
@@ -1301,13 +1330,22 @@ def queue_edit(
     if prompt is None and gate_cmd is None and model is None and files is None:
         err_console.print("[yellow]nothing to change[/yellow]")
         return
+    existing = queue_mod.get(item)
+    if existing is None:
+        err_console.print(f"[red]queue item #{item} not found[/red]")
+        raise typer.Exit(1) from None
+    # The same normalization and file preparation `queue add` applies, so an
+    # edit cannot smuggle a whitespace model or an unprepared image path in.
+    root_row = state.get_session(existing["thread_id"]) or {}
+    agent = str(root_row.get("agent") or "")
+    item_cwd = Path(existing.get("cwd") or root_row.get("cwd") or Path.cwd())
     try:
         row = queue_mod.edit(
             item,
             prompt=prompt,
             gate_cmd=gate_cmd,
-            model=model,
-            files=[str(x) for x in files] if files is not None else None,
+            model=_normalize_model(agent, model),
+            files=_prepare_files(agent, files, item_cwd) if files is not None else None,
         )
     except ValueError as exc:
         err_console.print(f"[red]{exc}[/red]")

@@ -36,7 +36,7 @@ class _Worker:
     def is_available(self) -> bool:
         return True
 
-    def dispatch(self, prompt, cwd, files, *, on_session_started, model):
+    def dispatch(self, prompt, cwd, files, *, on_session_started, model, **kwargs):
         on_session_started("fake-agent-session")
         return DispatchResult(
             agent_session_id="fake-agent-session",
@@ -45,7 +45,7 @@ class _Worker:
             initial_output="worker finished",
         )
 
-    def resume(self, prompt, cwd, agent_session_id, files, *, on_session_started, model):
+    def resume(self, prompt, cwd, agent_session_id, files, *, on_session_started, model, **kwargs):
         return self.dispatch(prompt, cwd, files, on_session_started=on_session_started, model=model)
 
 
@@ -56,10 +56,10 @@ class _FailingWorker:
     def is_available(self) -> bool:
         return True
 
-    def dispatch(self, prompt, cwd, files, *, on_session_started, model):
+    def dispatch(self, prompt, cwd, files, *, on_session_started, model, **kwargs):
         raise RuntimeError(self.message)
 
-    def resume(self, prompt, cwd, agent_session_id, files, *, on_session_started, model):
+    def resume(self, prompt, cwd, agent_session_id, files, *, on_session_started, model, **kwargs):
         raise RuntimeError(self.message)
 
 

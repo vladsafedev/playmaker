@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable
 from typing import Any
 
 from playmaker import state
 from playmaker.agents.codex import VALID_EFFORTS as CODEX_VALID_EFFORTS
+from playmaker.agents.codex import configured_model as configured_codex_model
+from playmaker.agents.codex import validate_model_effort
 from playmaker.config import agent_setting
 
 
@@ -197,12 +200,21 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
         item = dict(item)
         delivered_effort = item.get("effort")
         if parent["agent"] == "codex" and delivered_effort is None:
-            delivered_effort = parent.get("effort")
-            if delivered_effort is None:
+            inherited = parent.get("effort")
+            if inherited is None:
                 configured = agent_setting("codex", "reasoning_effort")
                 normalized = str(configured).strip() if configured is not None else None
                 if normalized in CODEX_VALID_EFFORTS:
-                    delivered_effort = normalized
+                    inherited = normalized
+            if inherited is not None:
+                effective_model = (
+                    item.get("model") or parent.get("model") or configured_codex_model()
+                )
+                try:
+                    validate_model_effort(effective_model, inherited)
+                    delivered_effort = inherited
+                except ValueError as exc:
+                    print(f"queued codex delivery without effort: {exc}", file=sys.stderr)
         sid = state.new_session_id()
         claimed = c.execute(
             "UPDATE queue SET status='delivered', delivered_as=?, updated_at=? "
