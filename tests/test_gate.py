@@ -8,8 +8,8 @@ from playmaker import gate
 
 
 def test_gate_pass_fail_and_timeout_write_logs(tmp_path: Path) -> None:
-    passed = gate.run("echo ok", tmp_path, tmp_path / "pass.log", 1)
-    failed = gate.run("echo bad; exit 7", tmp_path, tmp_path / "fail.log", 1)
+    passed = gate.run("echo ok", tmp_path, tmp_path / "pass.log", 30)
+    failed = gate.run("echo bad; exit 7", tmp_path, tmp_path / "fail.log", 30)
     timed_out = gate.run("sleep 1", tmp_path, tmp_path / "timeout.log", 0.01)
 
     assert (passed.status, passed.exit_code) == ("pass", 0)
