@@ -5,7 +5,11 @@
 #        [--deadline 10m] [--opus] [--dry-run]
 #
 # The roster is ./.playmaker/reviewers.conf, falling back to ~/.playmaker/reviewers.conf:
-#   decision <lane> <model|-> <lens>
+#   decision <lane> <model|-> <lens> [<effort>]
+# The optional fifth field is the seat's per-dispatch reasoning effort
+# (low|medium|high|xhigh|max|ultra; absent or '-' = none), passed as
+# `playmaker dispatch --effort <value>`; a '#' starts a trailing comment, e.g.
+#   decision codex gpt-6-astra risk ultra
 # The first three lines are seats; `claude` is included only with --opus.  It is a
 # read-only, advisory review: it never stops the cores of a work wave.
 # Exit: 0 agreement; 2 split; 1 fewer than two valid answers or an invocation error.
@@ -14,6 +18,35 @@ set -euo pipefail
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*" >&2; }
+
+# Parse and validate the entire roster before any caller selects rows. Keep this
+# function identical in review-board.sh and review-decision.sh. Output records:
+# kind|lane|model|lens|effort|line-number (effort is empty when absent or '-').
+parse_roster() {
+  local file="$1" line lineno=0 token effort
+  local -a tokens fields
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    IFS=$' \t\n' read -r -a tokens <<< "$line"
+    fields=()
+    for token in ${tokens[@]+"${tokens[@]}"}; do  # bash 3.2: an empty array is unbound under set -u
+      [[ "$token" == \#* ]] && break
+      fields+=("$token")
+    done
+    # Blank/comment lines and incomplete rows cannot seat a reviewer.
+    [[ ${#fields[@]} -ge 4 ]] || continue
+    effort="${fields[4]:-}"
+    case "$effort" in
+      ''|-) effort="" ;;
+      low|medium|high|xhigh|max|ultra) ;;
+      *) die "bad effort '$effort' ($file line $lineno): $line" ;;
+    esac
+    if [[ ${#fields[@]} -gt 5 ]]; then
+      die "unexpected field '${fields[5]}' after effort ($file line $lineno): $line"
+    fi
+    printf '%s|%s|%s|%s|%s|%s\n' "${fields[0]}" "${fields[1]}" "${fields[2]}" "${fields[3]}" "$effort" "$lineno"
+  done < "$file"
+}
 
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
   sed -n '2,/^set -euo pipefail$/p' "$0" | sed '$d; s/^# \{0,1\}//'
@@ -67,6 +100,7 @@ done
 cwd="$PWD"; conf=""
 for f in "$cwd/.playmaker/reviewers.conf" "$HOME/.playmaker/reviewers.conf"; do [[ -f "$f" ]] && { conf="$f"; break; }; done
 [[ -n "$conf" ]] || die "no reviewers.conf found in .playmaker or ~/.playmaker"
+roster_rows=$(parse_roster "$conf") || exit $?
 
 # Repo config wins over personal config. Only [decision_review] deadline is read.
 if [[ -z "$deadline_arg" ]]; then
@@ -89,18 +123,17 @@ deadline_arg="${deadline_arg:-10m}"; deadline=$(dur_secs "$deadline_arg"); (( de
 
 seats=()
 requested=",${lanes_arg},"
-while read -r kind lane model lens extra; do
-  [[ -z "${kind:-}" || "$kind" == \#* || "$kind" != decision ]] && continue
-  [[ -z "${lane:-}" || -z "${model:-}" || -z "${lens:-}" ]] && continue
+while IFS='|' read -r kind lane model lens effort lineno; do
+  [[ "$kind" == decision ]] || continue
   if [[ "$lane" == claude ]]; then   # --opus adds ONLY the first claude line, as a 4th seat
-    if [[ $opus -eq 1 && -z "${opus_seat:-}" ]]; then opus_seat="$lane|$model|$lens"; fi
+    if [[ $opus -eq 1 && -z "${opus_seat:-}" ]]; then opus_seat="$lane|$model|$lens|$effort"; fi
     continue
   fi
   if [[ -n "$lanes_arg" ]]; then [[ "$requested" == *",$lane,"* ]] || continue
   elif [[ ${#seats[@]} -ge 3 ]]; then continue
   fi
-  seats+=("$lane|$model|$lens")
-done < "$conf"
+  seats+=("$lane|$model|$lens|$effort")
+done <<< "$roster_rows"
 [[ -n "${opus_seat:-}" ]] && seats+=("$opus_seat")
 [[ ${#seats[@]} -ge 2 ]] || die "fewer than two live decision seats in $conf — one opinion is not a decision review"
 
@@ -138,13 +171,18 @@ build_prompt() { # lane lens output-path
 }
 
 for seat in "${seats[@]}"; do
-  IFS='|' read -r lane model lens <<< "$seat"
+  IFS='|' read -r lane model lens _eff <<< "$seat"
   build_prompt "$lane" "$lens" "$dir/prompt-$lane.md"
 done
 
 if [[ $dry -eq 1 ]]; then
   printf 'Decision review %s — deadline %s — seats:\n' "$slug" "$deadline_arg"
-  for seat in "${seats[@]}"; do IFS='|' read -r lane model lens <<< "$seat"; printf '  %s · %s · %s\n' "$lane" "$lens" "$model"; cat "$dir/prompt-$lane.md"; done
+  for seat in "${seats[@]}"; do
+    IFS='|' read -r lane model lens effort <<< "$seat"
+    if [[ -n "$effort" ]]; then printf '  %s · %s · %s · effort %s\n' "$lane" "$lens" "$model" "$effort"
+    else printf '  %s · %s · %s\n' "$lane" "$lens" "$model"; fi
+    cat "$dir/prompt-$lane.md"
+  done
   exit 0
 fi
 
@@ -154,9 +192,10 @@ prior=$(awk -F' · ' -v d="$today" '$1==d {n++} END {print n+0}' "$log")
 
 # Dispatch is deliberately fanned out before any wait.
 for seat in "${seats[@]}"; do
-  IFS='|' read -r lane model lens <<< "$seat"
+  IFS='|' read -r lane model lens effort <<< "$seat"
   ( cmd=(playmaker dispatch "$lane" --read-only --batch "decision-$slug" --prompt-file "$dir/prompt-$lane.md" --json)
     [[ "$model" != - ]] && cmd+=(--model "$model")
+    [[ -n "$effort" ]] && cmd+=(--effort "$effort")
     set +e
     "${cmd[@]}" >"$dir/dispatch-$lane.txt" 2>&1
     dispatch_rc=$?
@@ -166,10 +205,16 @@ for seat in "${seats[@]}"; do
 done
 wait
 
-printf '%s\n' "${seats[@]}" > "$dir/seats.txt"
+# seats.txt keeps the three-field "<lane>|<model>|<lens>" shape other tools read —
+# the effort rode the dispatch above and is intentionally not recorded here.
+: > "$dir/seats.txt"
+for seat in "${seats[@]}"; do
+  IFS='|' read -r lane model lens _eff <<< "$seat"
+  printf '%s|%s|%s\n' "$lane" "$model" "$lens" >> "$dir/seats.txt"
+done
 deadline_at=$(( $(date +%s) + deadline ))
 for seat in "${seats[@]}"; do
-  IFS='|' read -r lane model lens <<< "$seat"
+  IFS='|' read -r lane model lens _eff <<< "$seat"
   dispatch_rc=$(cat "$dir/dispatch-$lane.rc" 2>/dev/null || echo 1)
   if [[ "$dispatch_rc" != 0 ]]; then
     printf 'no answer (dispatch failed)\n' > "$dir/raw-$lane.txt"

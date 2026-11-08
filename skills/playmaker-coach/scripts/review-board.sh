@@ -34,12 +34,16 @@
 # Reviewer roster comes from the first of these that exists:
 #   ./.playmaker/reviewers.conf     ~/.playmaker/reviewers.conf
 # Format — one reviewer per line, comments with '#':
-#   <risk> <lane> <model|-> <lens>
+#   <risk> <lane> <model|-> <lens> [<effort>]
+# The optional fifth field is the seat's per-dispatch reasoning effort
+# (low|medium|high|xhigh|max|ultra; absent or '-' = none), passed as
+# `playmaker dispatch --effort <value>`; a '#' starts a trailing comment.
 # e.g.
 #   normal  agy      gemini-3.1-pro-high        correctness
 #   normal  opencode zai-coding-plan/glm-5.3    contracts
 #   high    agy      gemini-3.1-pro-high        correctness
 #   high    codex    -                          risk
+#   high    codex    gpt-6-astra                risk ultra
 #   high    kimi     kimi-code/k3-256k          contracts
 # Lines are an ordered preference list: after skipping --impl-agent the script seats the first N
 # (routine 1, normal 2, high 3, seams 1) and holds the rest in reserve — keep count+1 lines per class
@@ -118,6 +122,35 @@ set -euo pipefail
 
 die() { printf '%s\n' "error: $*" >&2; exit 1; }
 note() { printf '%s\n' "$*" >&2; }
+
+# Parse and validate the entire roster before any caller selects rows. Keep this
+# function identical in review-board.sh and review-decision.sh. Output records:
+# kind|lane|model|lens|effort|line-number (effort is empty when absent or '-').
+parse_roster() {
+  local file="$1" line lineno=0 token effort
+  local -a tokens fields
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    IFS=$' \t\n' read -r -a tokens <<< "$line"
+    fields=()
+    for token in ${tokens[@]+"${tokens[@]}"}; do  # bash 3.2: an empty array is unbound under set -u
+      [[ "$token" == \#* ]] && break
+      fields+=("$token")
+    done
+    # Blank/comment lines and incomplete rows cannot seat a reviewer.
+    [[ ${#fields[@]} -ge 4 ]] || continue
+    effort="${fields[4]:-}"
+    case "$effort" in
+      ''|-) effort="" ;;
+      low|medium|high|xhigh|max|ultra) ;;
+      *) die "bad effort '$effort' ($file line $lineno): $line" ;;
+    esac
+    if [[ ${#fields[@]} -gt 5 ]]; then
+      die "unexpected field '${fields[5]}' after effort ($file line $lineno): $line"
+    fi
+    printf '%s|%s|%s|%s|%s|%s\n' "${fields[0]}" "${fields[1]}" "${fields[2]}" "${fields[3]}" "$effort" "$lineno"
+  done < "$file"
+}
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   sed -n '2,/^set -euo pipefail$/p' "$0" | sed '$d; s/^# \{0,1\}//'
@@ -526,6 +559,14 @@ if [[ "${1:-}" == "--auto" ]]; then
   done
   case "$risk" in routine|normal|high|seams) ;; *) die "--risk must be routine, normal, high or seams" ;; esac
   [[ -n "$impl_id" ]] || die "--auto needs --impl-id <session> — the implementer's playmaker session"
+  conf=""
+  for c in "$cwd/.playmaker/reviewers.conf" "$HOME/.playmaker/reviewers.conf"; do
+    if [[ -f "$c" ]]; then conf="$c"; break; fi
+  done
+  roster_rows=""
+  # Capture only a fully validated roster; never hide parser failure in < <(...).
+  if [[ -n "$conf" ]]; then roster_rows=$(parse_roster "$conf") || exit $?; fi
+
   dir="$cwd/.playmaker/reviews/$wp"
   mkdir -p "$dir"
   log="$dir/auto.log"
@@ -542,11 +583,6 @@ if [[ "${1:-}" == "--auto" ]]; then
   fi
   [[ -n "$paths" ]] || die "--auto needs the WP's paths: pass --paths \"<pathspecs>\" or list them as \`- path\` bullets under «## SCOPE» in $spec"
   [[ -f "$spec" ]] || die "no WP spec at $spec — write scope, acceptance criteria and the done-condition there first (reviewers cannot refute what was never specified)"
-
-  conf=""
-  for c in "$cwd/.playmaker/reviewers.conf" "$HOME/.playmaker/reviewers.conf"; do
-    if [[ -f "$c" ]]; then conf="$c"; break; fi
-  done
 
   # config defaults: [board] max_cycles / seat_deadline — repo .playmaker/config.toml wins over ~/.playmaker
   cfg=$(python3 - "$cwd" <<'PY'
@@ -647,27 +683,16 @@ PY
     fi
   fi
 
-  roster_preview() { # "kind|lane|model|lens" per line: first N seated, the rest reserve
-    python3 - "$1" "$2" "$3" <<'PY'
-import sys
-
-conf, risk, impl = sys.argv[1:4]
-need = {"routine": 1, "normal": 2, "high": 3, "seams": 1}.get(risk, 2)
-seated = 0
-for line in open(conf, encoding="utf-8", errors="replace"):
-    s = line.strip()
-    if not s or s.startswith("#"):
-        continue
-    p = s.split()
-    if len(p) < 4 or p[0] != risk:
-        continue
-    if impl and p[1] == impl:
-        continue
-    kind = "seat" if seated < need else "reserve"
-    if kind == "seat":
-        seated += 1
-    print("%s|%s|%s|%s" % (kind, p[1], p[2], p[3]))
-PY
+  roster_preview() { # "kind|lane|model|lens|effort" per line: first N seated, the rest reserve
+    local r lane model lens effort lineno kind need seated=0
+    case "$risk" in routine|seams) need=1 ;; high) need=3 ;; *) need=2 ;; esac
+    while IFS='|' read -r r lane model lens effort lineno; do
+      [[ "$r" == "$risk" ]] || continue
+      [[ -n "$impl_agent" && "$lane" == "$impl_agent" ]] && continue
+      kind=reserve
+      if [[ $seated -lt $need ]]; then kind=seat; seated=$((seated + 1)); fi
+      printf '%s|%s|%s|%s|%s\n' "$kind" "$lane" "$model" "$lens" "$effort"
+    done <<< "$roster_rows"
   }
 
   if [[ $dry -eq 1 ]]; then
@@ -690,10 +715,20 @@ PY
     note "         a lane slot and retries every 30s up to the seat deadline, then the seat is dead"
     note "         (substituted once); a hard dispatch failure (unknown lane, auth, binary) exits 4"
     if [[ -n "$conf" ]]; then
-      roster_preview "$conf" "$risk" "$impl_agent" | while IFS='|' read -r kind lane model lens; do
-        note "  $kind: $lane ${model:--} / $lens"
+      roster_preview | while IFS='|' read -r kind lane model lens effort; do
+        if [[ -n "$effort" ]]; then
+          note "  $kind: $lane ${model:--} / $lens · effort $effort"
+        else
+          note "  $kind: $lane ${model:--} / $lens"
+        fi
       done
-      pc_line=$(grep -m1 '^precheck ' "$conf" || true)
+      pc_line=""
+      while IFS='|' read -r kind lane model lens effort lineno; do
+        [[ "$kind" == precheck ]] || continue
+        pc_line="$kind $lane $model $lens"
+        [[ -n "$effort" ]] && pc_line="$pc_line · effort $effort"
+        break
+      done <<< "$roster_rows"
       note "  precheck lane: ${pc_line:-(none in the roster — the board runs without a precheck)}"
     else
       note "  !! no reviewers.conf — the board cannot be seated"
@@ -783,40 +818,24 @@ for l in d.get("leftovers") or []:
     printf '%s\n' "$(row_field "$out" status)"
   }
 
-  reserve_pick() { # "lane|model" of the first not-yet-used eligible roster line, or nothing
-    if [[ -z "$conf" ]]; then return 1; fi
-    python3 - "$conf" "$risk" "$impl_agent" "$dir/sessions.txt" <<'PY'
-import sys
-
-conf, risk, impl, sess = sys.argv[1:5]
-used = set()
-try:
-    with open(sess, encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            parts = line.strip().split("|")
-            if len(parts) >= 2 and parts[1]:
-                used.add(parts[1])
-except OSError:
-    pass
-with open(conf, encoding="utf-8", errors="replace") as fh:
-    for line in fh:
-        s = line.strip()
-        if not s or s.startswith("#"):
-            continue
-        p = s.split()
-        if len(p) < 4 or p[0] != risk:
-            continue
-        if impl and p[1] == impl:
-            continue
-        if p[1] in used:
-            continue
-        print("%s|%s" % (p[1], p[2]))
-        break
-PY
+  reserve_pick() { # "lane|model|effort" of the first not-yet-used eligible roster line, or nothing
+    local r lane model lens effort lineno sid slane rest used="|"
+    if [[ -f "$dir/sessions.txt" ]]; then
+      while IFS='|' read -r sid slane rest; do
+        [[ -n "$slane" ]] && used="$used$slane|"
+      done < "$dir/sessions.txt"
+    fi
+    while IFS='|' read -r r lane model lens effort lineno; do
+      [[ "$r" == "$risk" ]] || continue
+      [[ -n "$impl_agent" && "$lane" == "$impl_agent" ]] && continue
+      [[ "$used" == *"|$lane|"* ]] && continue
+      printf '%s|%s|%s\n' "$lane" "$model" "$effort"
+      break
+    done <<< "$roster_rows"
   }
 
   substitute_seat() { # $1 dead lane, $2 lens, $3 board deadline (epoch) — one substitution
-    local reserve rlane rmodel pf out nid st2 first sub_rc remaining remaining2
+    local reserve rlane rmodel reffort pf out nid st2 first sub_rc remaining remaining2
     local -a sub_cmd
     remaining=$(( $3 - $(date +%s) ))
     if ! [[ "$remaining" -gt 0 ]]; then
@@ -824,13 +843,16 @@ PY
       alog "round $round: !! no time left in the board window — seat $1/$2 recorded MISSING"
       return 0
     fi
-    reserve=$(reserve_pick) || reserve=""
+    reserve=""
+    if [[ -n "$conf" ]]; then
+      reserve=$(reserve_pick) || die "cannot pick a reserve from $conf (see the error above)"
+    fi
     if [[ -z "$reserve" ]]; then
       missing_seats=$((missing_seats + 1))
       alog "round $round: !! no reserve line left — seat $1/$2 recorded MISSING"
       return 0
     fi
-    IFS='|' read -r rlane rmodel <<< "$reserve"
+    IFS='|' read -r rlane rmodel reffort <<< "$reserve"
     pf="$dir/prompt-$1-$2.md"
     if [[ ! -f "$pf" ]]; then
       missing_seats=$((missing_seats + 1))
@@ -840,6 +862,7 @@ PY
     alog "round $round: substituting $1 → $rlane (reserve, same lens $2, ${remaining}s left in the window)"
     sub_cmd=(playmaker dispatch "$rlane" --json --batch "review-$wp-r$round" --read-only --cwd "$cwd" --prompt "$(cat "$pf")")
     if [[ "$rmodel" != "-" && -n "$rmodel" ]]; then sub_cmd+=(--model "$rmodel"); fi
+    if [[ -n "$reffort" ]]; then sub_cmd+=(--effort "$reffort"); fi
     sub_rc=0
     out=$(pm_run_limits "$remaining" "${sub_cmd[@]}") || sub_rc=$?
     if [[ $sub_rc -eq 200 ]]; then
@@ -1079,7 +1102,12 @@ PY
     fi
     dsp_rc=0
     dsp_err="$dir/.dispatch-r$round.err"
-    "$0" "$wp" "$dispatch_base" "${dsp_args[@]}" 2> >(tee "$dsp_err" >&2) || dsp_rc=$?
+    # Stream/capture stderr without process substitution (/dev/fd may be blocked).
+    # FD 3 preserves stdout; PIPESTATUS keeps the dispatch's own exit status.
+    {
+      "$0" "$wp" "$dispatch_base" "${dsp_args[@]}" 2>&1 1>&3 3>&- \
+        | tee "$dsp_err" >&2 || dsp_rc=${PIPESTATUS[0]}
+    } 3>&1
     if [[ $dsp_rc -ne 0 ]]; then
       reason=$(tail -n 1 "$dsp_err" 2>/dev/null)
       impl_exit4 "board dispatch failed (exit $dsp_rc): ${reason:-see the lines above}"
@@ -1197,6 +1225,13 @@ done
 case "$risk" in routine|normal|high|seams) ;; *) die "--risk must be routine, normal, high or seams" ;; esac
 [[ $no_precheck -eq 1 && $precheck_only -eq 1 ]] && die "pass either --no-precheck or --precheck-only, not both"
 
+conf=""
+for c in "$cwd/.playmaker/reviewers.conf" "$HOME/.playmaker/reviewers.conf"; do
+  [[ -f "$c" ]] && { conf="$c"; break; }
+done
+roster_rows=""
+if [[ -n "$conf" ]]; then roster_rows=$(parse_roster "$conf") || exit $?; fi
+
 dir="$cwd/.playmaker/reviews/$wp"
 mkdir -p "$dir"
 spec="${spec:-$dir/spec.md}"
@@ -1215,11 +1250,6 @@ if [[ -n "$untracked" ]]; then
   printf '     %s\n' $untracked >&2
   note "   if any belong to the WP: git -C \"$cwd\" add -N <file>… and re-run; otherwise say so in board.md"
 fi
-
-conf=""
-for c in "$cwd/.playmaker/reviewers.conf" "$HOME/.playmaker/reviewers.conf"; do
-  [[ -f "$c" ]] && { conf="$c"; break; }
-done
 
 # ── precheck: a cheap spec-vs-diff coverage check before the board ────────────
 # One cheap lane reads the spec's ## ACCEPTANCE section against diff-rN.patch and answers in
@@ -1274,16 +1304,19 @@ if [[ $no_precheck -eq 0 ]]; then
 
     pc_roster=()
     if [[ -n "$conf" ]]; then
-      while read -r r lane model _extra; do
-        [[ -z "${r:-}" || "$r" == \#* ]] && continue
+      while IFS='|' read -r r lane model _lens pc_effort lineno; do
         [[ "$r" == "precheck" ]] || continue
-        pc_roster+=("$lane|$model")
-      done < "$conf"
+        pc_roster+=("$lane|$model|$pc_effort")
+      done <<< "$roster_rows"
     fi
 
     if [[ $dry -eq 1 ]]; then
       pc_dry_lane="none — no precheck lane in the roster"
-      [[ ${#pc_roster[@]} -gt 0 ]] && pc_dry_lane="${pc_roster[0]%%|*}/${pc_roster[0]#*|}"
+      if [[ ${#pc_roster[@]} -gt 0 ]]; then
+        IFS='|' read -r pc_dry_l pc_dry_m pc_dry_e <<< "${pc_roster[0]}"
+        pc_dry_lane="$pc_dry_l/$pc_dry_m"
+        [[ -n "$pc_dry_e" ]] && pc_dry_lane="$pc_dry_lane · effort $pc_dry_e"
+      fi
       note "── precheck would dispatch: $pc_dry_lane — prompt at $precheck_prompt:"
       cat "$precheck_prompt" >&2
     elif [[ ${#pc_roster[@]} -eq 0 ]]; then
@@ -1292,10 +1325,12 @@ if [[ $no_precheck -eq 0 ]]; then
     else
       pc_reasons=""
       for entry in "${pc_roster[@]}"; do
-        IFS='|' read -r lane model <<< "$entry"
+        IFS='|' read -r lane model pc_eff <<< "$entry"
         cmd=(playmaker dispatch "$lane" --sync --read-only --batch "precheck-$wp-r$round" --cwd "$cwd" --prompt-file "$precheck_prompt")
         [[ "$model" != "-" && -n "$model" ]] && cmd+=(--model "$model")
-        note "precheck → $lane/${model:--} …"
+        [[ -n "$pc_eff" ]] && cmd+=(--effort "$pc_eff")
+        pc_eff_note=""; [[ -n "$pc_eff" ]] && pc_eff_note=" · effort $pc_eff"
+        note "precheck → $lane/${model:--}$pc_eff_note …"
         pc_t0=$(date +%s); pc_rc=0
         pc_wait="${PM_SEAT_DEADLINE:-1200}"
         pc_deadline=$(( $(date +%s) + pc_wait ))
@@ -1415,12 +1450,11 @@ fi
 
 roster=()
 if [[ -n "$conf" ]]; then
-  while read -r r lane model lens; do
-    [[ -z "${r:-}" || "$r" == \#* ]] && continue
+  while IFS='|' read -r r lane model lens effort lineno; do
     [[ "$r" == "$risk" ]] || continue
     [[ -n "$impl_agent" && "$lane" == "$impl_agent" ]] && { note "skipping $lane — it implemented this WP"; continue; }
-    roster+=("$lane|$model|$lens")
-  done < "$conf"
+    roster+=("$lane|$model|$lens|$effort")
+  done <<< "$roster_rows"
 else
   die "no reviewers.conf found — create ~/.playmaker/reviewers.conf (see the header of this script). There is no default: a silent fallback used to draw the Anthropic reserve."
 fi
@@ -1434,7 +1468,14 @@ if [[ ${#roster[@]} -lt $required ]]; then
     die "only ${#roster[@]} eligible reviewer line(s) for risk '$risk' in $conf, $required required — add a line on another lane, or set PM_REVIEW_ALLOW_SHORT=1 and record the shortfall in board.md"
   fi
 elif [[ ${#roster[@]} -gt $required ]]; then
-  for extra in "${roster[@]:$required}"; do note "reserve (not seated): ${extra//|/ }"; done
+  for extra in "${roster[@]:$required}"; do
+    IFS='|' read -r xl xm xn xe <<< "$extra"
+    if [[ -n "$xe" ]]; then
+      note "reserve (not seated): $xl · $xm · $xn · effort $xe"
+    else
+      note "reserve (not seated): $xl $xm $xn"
+    fi
+  done
   roster=("${roster[@]:0:$required}")
 fi
 
@@ -1457,7 +1498,7 @@ if [[ $dry -eq 0 ]]; then
 fi
 
 for entry in "${roster[@]}"; do
-  IFS='|' read -r lane model lens <<< "$entry"
+  IFS='|' read -r lane model lens effort <<< "$entry"
   prompt_file="$dir/prompt-$lane-$lens.md"
   {
     echo "You are reviewing one work package. You did NOT write it. Your job is to REFUTE it against"
@@ -1526,10 +1567,12 @@ for entry in "${roster[@]}"; do
 
   cmd=(playmaker dispatch "$lane" --json --batch "$batch" --read-only --cwd "$cwd")
   [[ "$model" != "-" && -n "$model" ]] && cmd+=(--model "$model")
+  [[ -n "$effort" ]] && cmd+=(--effort "$effort")
   cmd+=(--prompt "$(cat "$prompt_file")")
 
   if [[ $dry -eq 1 ]]; then
-    note "── would dispatch: $lane ${model:+($model)} / $lens — prompt at $prompt_file"
+    eff_note=""; [[ -n "$effort" ]] && eff_note=" · effort $effort"
+    note "── would dispatch: $lane ${model:+($model)} / $lens$eff_note — prompt at $prompt_file"
     continue
   fi
 
@@ -1548,7 +1591,8 @@ for entry in "${roster[@]}"; do
   id=$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("session_id",""))' 2>/dev/null || true)
   [[ -n "$id" ]] || { note "! could not parse a session id from: $out"; continue; }
   printf '%s|%s|%s|%s\n' "$id" "$lane" "$model" "$lens" >> "$dir/sessions.txt"
-  note "→ $lane/${model:--} [$lens] session $id"
+  eff_note=""; [[ -n "$effort" ]] && eff_note=" · effort $effort"
+  note "→ $lane/${model:--} [$lens]$eff_note session $id"
 done
 
 [[ $dry -eq 1 ]] && exit 0
