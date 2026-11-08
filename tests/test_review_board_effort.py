@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -154,11 +155,11 @@ def test_auto_board_effort_end_to_end(effort_repo, style: str) -> None:
     write_roster(
         repo,
         roster_whitespace(
-            "precheck stub pc-model precheck high\n"
+            "precheck codex pc-model precheck high\n"
             "high codex gpt-6-astra risk ultra\n"
             "high agy m-agy correctness\n"
             "high kimi m-kimi contracts -\n"
-            "high opencode m-op risk max\n",
+            "high claude opus risk xhigh\n",
             style,
         ),
     )
@@ -176,18 +177,18 @@ def test_auto_board_effort_end_to_end(effort_repo, style: str) -> None:
     assert "--effort" not in agy  # four-column line: argv identical to before
     (kimi,) = for_lane(lines, "kimi", sync=False)
     assert "--effort" not in kimi  # '-' means none
-    (sub,) = for_lane(lines, "opencode", sync=False)
-    assert "--effort max" in sub  # the substitute carries ITS OWN line's effort
-    (pre,) = for_lane(lines, "stub", sync=True)
+    (sub,) = for_lane(lines, "claude", sync=False)
+    assert "--effort xhigh" in sub  # the substitute carries ITS OWN line's effort
+    (pre,) = for_lane(lines, "codex", sync=True)
     assert "--effort high" in pre
-    assert "reserve (not seated): opencode · m-op · risk · effort max" in result.stdout
-    assert "precheck → stub/pc-model · effort high" in result.stdout
+    assert "reserve (not seated): claude · opus · risk · effort xhigh" in result.stdout
+    assert "precheck → codex/pc-model · effort high" in result.stdout
     sessions = repo / ".playmaker" / "reviews" / "wp" / "sessions.txt"
     assert sessions.read_text(encoding="utf-8").splitlines() == [
         "sess-codex|codex|gpt-6-astra|risk",
         "sess-agy|agy|m-agy|correctness",
         "sess-kimi|kimi|m-kimi|contracts",
-        "sess-opencode|opencode|m-op|risk",  # sessions.txt keeps its 4-field shape
+        "sess-claude|claude|opus|risk",  # sessions.txt keeps its 4-field shape
     ]
 
 
@@ -222,7 +223,7 @@ def test_board_invalid_effort_names_the_line(effort_repo) -> None:
     conf = write_roster(
         repo,
         "high codex gpt-6-astra risk ultra\n"
-        "high agy m-agy correctness turbo\n"
+        "high codex gpt-5.6-sol correctness turbo\n"
         "high kimi m-kimi contracts\n",
     )
 
@@ -235,11 +236,51 @@ def test_board_invalid_effort_names_the_line(effort_repo) -> None:
     assert "line 2" in result.stdout
 
 
+def test_board_claude_ultra_names_the_line(effort_repo) -> None:
+    repo, base, env, _log = effort_repo
+    conf = write_roster(
+        repo,
+        "high codex gpt-6-astra risk ultra\n"
+        "high claude-api opus correctness ultra\n"
+        "high kimi m-kimi contracts\n",
+    )
+
+    result = run(repo, env, str(BOARD), "wp", base, "--risk", "high",
+                 "--no-precheck", "--dry-run")
+
+    assert result.returncode != 0
+    assert "ultra" in result.stdout
+    assert "claude-api" in result.stdout
+    assert conf.name in result.stdout
+    assert "line 2" in result.stdout
+
+
+def test_board_effort_on_other_lane_is_dropped_with_a_note(effort_repo) -> None:
+    repo, base, env, log = effort_repo
+    conf = write_roster(
+        repo,
+        "high codex gpt-6-astra risk ultra\n"
+        "high agy m-agy correctness high\n"
+        "high kimi m-kimi contracts\n",
+    )
+
+    result = run(repo, env, str(BOARD), "wp", base, "--risk", "high", "--no-precheck")
+
+    assert result.returncode == 0, result.stdout
+    assert f"{conf} line 2" in result.stdout
+    assert "lane agy does not take --effort; ignored" in result.stdout
+    lines = dispatches(log)
+    (codex,) = for_lane(lines, "codex", sync=False)
+    assert "--effort ultra" in codex
+    (agy,) = for_lane(lines, "agy", sync=False)
+    assert "--effort" not in agy
+
+
 def test_auto_dry_run_invalid_effort_names_the_line(effort_repo) -> None:
     repo, base, env, _log = effort_repo
     conf = write_roster(
         repo,
-        "precheck stub pc-model precheck\n"
+        "precheck codex pc-model precheck\n"
         "high codex gpt-6-astra risk turbo\n"
         "high agy m-agy correctness\n"
         "high kimi m-kimi contracts\n",
@@ -263,7 +304,7 @@ def test_auto_dry_run_invalid_precheck_effort_names_the_line(effort_repo) -> Non
 
     conf = write_roster(
         repo,
-        "precheck stub pc-model precheck turbo\n"
+        "precheck codex pc-model precheck turbo\n"
         "high codex gpt-6-astra risk ultra\n"
         "high agy m-agy correctness\n"
         "high kimi m-kimi contracts\n",
@@ -278,8 +319,8 @@ def test_auto_dry_run_invalid_precheck_effort_names_the_line(effort_repo) -> Non
     # though the preview only shows the valid first line
     write_roster(
         repo,
-        "precheck stub pc-model precheck high\n"
-        "precheck stub2 pc-model2 precheck turbo\n"
+        "precheck codex pc-model precheck high\n"
+        "precheck codex pc-model2 precheck turbo\n"
         "high codex gpt-6-astra risk ultra\n"
         "high agy m-agy correctness\n"
         "high kimi m-kimi contracts\n",
@@ -363,7 +404,7 @@ def test_decision_invalid_effort_names_the_line(effort_repo) -> None:
     conf = write_roster(
         repo,
         "decision codex gpt-6-astra risk ultra\n"
-        "decision manus standard product turbo\n"
+        "decision codex gpt-5.6-sol product turbo\n"
         "decision agy m-agy correctness\n",
     )
 
@@ -374,6 +415,56 @@ def test_decision_invalid_effort_names_the_line(effort_repo) -> None:
     assert "turbo" in result.stdout
     assert conf.name in result.stdout
     assert "line 2" in result.stdout
+
+
+def test_decision_effort_on_other_lane_is_dropped_with_a_note(effort_repo) -> None:
+    repo, _base, env, log = effort_repo
+    conf = write_roster(
+        repo,
+        "decision codex gpt-6-astra risk ultra\n"
+        "decision manus standard product high\n"
+        "decision agy m-agy correctness\n",
+    )
+
+    result = run(repo, env, str(DECISION), "slug", "--question", "question.md")
+
+    assert result.returncode == 0, result.stdout
+    assert f"{conf} line 2" in result.stdout
+    assert "lane manus does not take --effort; ignored" in result.stdout
+    lines = dispatches(log)
+    (codex,) = for_lane(lines, "codex")
+    assert "--effort ultra" in codex
+    (manus,) = for_lane(lines, "manus")
+    assert "--effort" not in manus
+
+
+def test_decision_dispatch_stderr_kept_out_of_session_id_parse(effort_repo) -> None:
+    repo, _base, env, _log = effort_repo
+    write_roster(repo, DECISION_ROSTER)
+    fake = Path(env["PATH"].split(os.pathsep)[0]) / "playmaker"
+    noisy = STUB.replace(
+        'elif [[ "$1" == "dispatch" ]]; then\n  printf \'{"session_id":"sess-%s"}\' "$2"',
+        'elif [[ "$1" == "dispatch" ]]; then\n'
+        '  echo "lane warning: stderr must not join the dispatch file" >&2\n'
+        '  printf \'{"session_id":"sess-%s"}\' "$2"',
+    )
+    assert noisy != STUB
+    fake.write_text(noisy, encoding="utf-8")
+
+    result = run(repo, env, str(DECISION), "slug", "--question", "question.md")
+
+    assert result.returncode == 0, result.stdout
+    assert "Agreement" in result.stdout
+    out_dir = repo / ".playmaker" / "decision-reviews" / "slug"
+    for lane in ("codex", "manus", "agy"):
+        dispatch_file = out_dir / f"dispatch-{lane}.txt"
+        assert json.loads(dispatch_file.read_text(encoding="utf-8"))["session_id"] == (
+            f"sess-{lane}"
+        )
+        stderr_file = out_dir / f"dispatch-{lane}.stderr"
+        assert "stderr must not join the dispatch file" in stderr_file.read_text(
+            encoding="utf-8"
+        )
 
 
 def run_mode(
@@ -405,13 +496,13 @@ def run_mode(
 @pytest.mark.parametrize(
     ("index", "bad_row", "bad_token"),
     [
-        (1, "precheck\tsecond\tpc-model\tprecheck\tturbo", "turbo"),
-        (2, " \t  precheck third pc-model precheck turbo", "turbo"),
+        (1, "precheck\tcodex\tpc-model\tprecheck\tturbo", "turbo"),
+        (2, " \t  precheck claude pc-model precheck turbo", "turbo"),
         (3, "high codex gpt-6-astra risk ultra stray", "stray"),
-        (6, "high opencode m-op risk turbo", "turbo"),
+        (6, "high codex m-op risk turbo", "turbo"),
         (10, "decision claude opus architecture turbo", "turbo"),
-        (11, "normal other m-other correctness turbo", "turbo"),
-        (11, "high ignored m-impl risk turbo", "turbo"),
+        (11, "normal codex m-other correctness turbo", "turbo"),
+        (11, "high codex m-impl risk turbo", "turbo"),
         (11, "future-kind other m-other risk - stray", "stray"),
     ],
     ids=["second-precheck-tabs", "third-precheck-indented", "extra-field",
@@ -455,11 +546,11 @@ def test_auto_preview_uses_whitespace_and_comment_rules(effort_repo, style: str)
     repo, base, env, log = effort_repo
     write_roster(repo, roster_whitespace(
         "# header\n\n"
-        "precheck stub pc-model precheck medium #ignored turbo stray\n"
+        "precheck codex pc-model precheck medium #ignored turbo stray\n"
         "high codex gpt-6-astra risk ultra #ignored turbo stray\n"
         "high agy m-agy correctness #ignored turbo stray\n"
         "high kimi m-kimi contracts - #ignored turbo stray\n"
-        "high opencode m-op contracts max #ignored turbo stray",
+        "high claude opus contracts max #ignored turbo stray",
         style,
     ))
 
@@ -469,8 +560,8 @@ def test_auto_preview_uses_whitespace_and_comment_rules(effort_repo, style: str)
     assert "  seat: codex gpt-6-astra / risk · effort ultra" in result.stdout
     assert "  seat: agy m-agy / correctness\n" in result.stdout
     assert "  seat: kimi m-kimi / contracts\n" in result.stdout
-    assert "  reserve: opencode m-op / contracts · effort max" in result.stdout
-    assert "  precheck lane: precheck stub pc-model precheck · effort medium" in result.stdout
+    assert "  reserve: claude opus / contracts · effort max" in result.stdout
+    assert "  precheck lane: precheck codex pc-model precheck · effort medium" in result.stdout
     assert "ignored" not in result.stdout
     assert dispatches(log) == []
 
@@ -478,13 +569,13 @@ def test_auto_preview_uses_whitespace_and_comment_rules(effort_repo, style: str)
 @pytest.mark.parametrize("effort", ["", "-", "low", "medium", "high", "xhigh", "max", "ultra"])
 def test_precheck_effort_argv(effort_repo, effort: str) -> None:
     repo, base, env, log = effort_repo
-    write_roster(repo, f" \tprecheck\tstub\tpc-model\tprecheck\t{effort}\t#comment turbo stray")
+    write_roster(repo, f" \tprecheck\tcodex\tpc-model\tprecheck\t{effort}\t#comment turbo stray")
 
     result = run_mode(repo, base, env, "precheck-only")
 
     assert result.returncode == 0, result.stdout
     prompt = repo / ".playmaker" / "reviews" / "wp" / "precheck-prompt.md"
-    expected = (f"dispatch stub --sync --read-only --batch precheck-wp-r1 --cwd {repo} "
+    expected = (f"dispatch codex --sync --read-only --batch precheck-wp-r1 --cwd {repo} "
                 f"--prompt-file {prompt} --model pc-model")
     if effort not in ("", "-"):
         expected += f" --effort {effort}"
@@ -494,21 +585,21 @@ def test_precheck_effort_argv(effort_repo, effort: str) -> None:
 def test_precheck_fallbacks_use_parsed_rows(effort_repo) -> None:
     repo, base, env, log = effort_repo
     write_roster(repo,
-                 "precheck first pc-model precheck #comment\n"
-                 "precheck\tsecond\tpc-model\tprecheck\tmedium\n"
-                 " \t precheck third pc-model precheck ultra #comment")
-    env["PLAYMAKER_PRECHECK_UNAVAILABLE"] = "first second"
+                 "precheck agy pc-model precheck #comment\n"
+                 "precheck\tclaude\tpc-model\tprecheck\tmedium\n"
+                 " \t precheck codex pc-model precheck ultra #comment")
+    env["PLAYMAKER_PRECHECK_UNAVAILABLE"] = "agy claude"
 
     result = run_mode(repo, base, env, "precheck-only")
 
     assert result.returncode == 0, result.stdout
     lines = dispatches(log)
-    assert [line.split()[1] for line in lines] == ["first", "second", "third"]
+    assert [line.split()[1] for line in lines] == ["agy", "claude", "codex"]
     assert "--effort" not in lines[0]
     assert "--effort medium" in lines[1]
     assert "--effort ultra" in lines[2]
     board_env = repo / ".playmaker" / "reviews" / "wp" / "board.env"
-    assert "precheck_lane=third/pc-model" in board_env.read_text(encoding="utf-8")
+    assert "precheck_lane=codex/pc-model" in board_env.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("mode", ["board", "decision"])

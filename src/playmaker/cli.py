@@ -1058,7 +1058,8 @@ def continue_(
         "--effort",
         help="reasoning effort: claude lanes low|medium|high|xhigh|max; codex "
         "low|medium|high|xhigh|max|ultra (checked against the model). Defaults to "
-        "the parent codex session, then [agents.codex] reasoning_effort; claude "
+        "the parent codex session, then PLAYMAKER_CODEX_EFFORT, then "
+        "[agents.codex] reasoning_effort; claude "
         "lanes default to [agents.<lane>] effort",
     ),
     sync: bool = typer.Option(

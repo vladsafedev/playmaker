@@ -52,17 +52,25 @@ def configured_model() -> str | None:
 def resolve_effort(
     override: str | None = None, parent_effort: str | None = None
 ) -> tuple[str | None, str | None]:
-    """Resolve Codex effort and report the source used for diagnostics."""
+    """Resolve Codex effort and report the source used for diagnostics.
+
+    Precedence: `--effort`, then the parent session's recorded effort, then
+    PLAYMAKER_CODEX_EFFORT, then [agents.codex] reasoning_effort. A plain
+    dispatch passes no parent, so it keeps `--effort` > env > config; on
+    `continue` (and queued delivery, which mirrors this order) the parent's
+    recorded effort wins over an env var exported in the coach's shell, so a
+    fix cycle never downgrades the effort the implementer ran at.
+    """
     raw: object | None = override
     source = "--effort" if override is not None else None
+    if raw is None and parent_effort is not None:
+        raw = parent_effort
+        source = "parent session"
     if raw is None:
         env_effort = os.environ.get(CODEX_EFFORT_ENV_VAR, "").strip()
         if env_effort:
             raw = env_effort
             source = CODEX_EFFORT_ENV_VAR
-    if raw is None and parent_effort is not None:
-        raw = parent_effort
-        source = "parent session"
     if raw is None:
         raw = agent_setting("codex", "reasoning_effort")
         if raw is not None:

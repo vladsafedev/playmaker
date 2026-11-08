@@ -36,8 +36,10 @@
 # Format — one reviewer per line, comments with '#':
 #   <risk> <lane> <model|-> <lens> [<effort>]
 # The optional fifth field is the seat's per-dispatch reasoning effort
-# (low|medium|high|xhigh|max|ultra; absent or '-' = none), passed as
-# `playmaker dispatch --effort <value>`; a '#' starts a trailing comment.
+# (absent or '-' = none), passed as `playmaker dispatch --effort <value>`;
+# a '#' starts a trailing comment. Only codex takes low…ultra and claude /
+# claude-api take low…max (anything else on those lanes stops the script);
+# on any other lane the effort is dropped with a note naming the line.
 # e.g.
 #   normal  agy      gemini-3.1-pro-high        correctness
 #   normal  opencode zai-coding-plan/glm-5.3    contracts
@@ -126,8 +128,11 @@ note() { printf '%s\n' "$*" >&2; }
 # Parse and validate the entire roster before any caller selects rows. Keep this
 # function identical in review-board.sh and review-decision.sh. Output records:
 # kind|lane|model|lens|effort|line-number (effort is empty when absent or '-').
+# Only the lanes that take --effort keep it: codex takes low…ultra, claude and
+# claude-api take low…max; on any other lane the effort is dropped with one
+# note and the seat dispatches without --effort.
 parse_roster() {
-  local file="$1" line lineno=0 token effort
+  local file="$1" line lineno=0 token effort lane
   local -a tokens fields
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -139,17 +144,50 @@ parse_roster() {
     done
     # Blank/comment lines and incomplete rows cannot seat a reviewer.
     [[ ${#fields[@]} -ge 4 ]] || continue
+    lane="${fields[1]}"
     effort="${fields[4]:-}"
     case "$effort" in
       ''|-) effort="" ;;
-      low|medium|high|xhigh|max|ultra) ;;
-      *) die "bad effort '$effort' ($file line $lineno): $line" ;;
+      *)
+        case "$lane" in
+          codex)
+            case "$effort" in
+              low|medium|high|xhigh|max|ultra) ;;
+              *) die "bad effort '$effort' for lane '$lane' ($file line $lineno): $line" ;;
+            esac ;;
+          claude|claude-api)
+            case "$effort" in
+              low|medium|high|xhigh|max) ;;
+              *) die "bad effort '$effort' for lane '$lane' ($file line $lineno): $line" ;;
+            esac ;;
+          *)
+            note "$file line $lineno: lane $lane does not take --effort; ignored"
+            effort="" ;;
+        esac ;;
     esac
     if [[ ${#fields[@]} -gt 5 ]]; then
       die "unexpected field '${fields[5]}' after effort ($file line $lineno): $line"
     fi
     printf '%s|%s|%s|%s|%s|%s\n' "${fields[0]}" "${fields[1]}" "${fields[2]}" "${fields[3]}" "$effort" "$lineno"
   done < "$file"
+}
+
+# Per-seat file suffix when a lane+lens pair repeats in one round: the first
+# seat keeps today's names (""), the second gets "-2", the third "-3", ….
+# Callers hold SEEN_SEATS ("|lane|lens|…" of every seat already placed, in
+# sessions.txt order) and read the suffix back from SEAT_SUFFIX — a command
+# substitution would run in a subshell and lose the recording.
+SEEN_SEATS=""
+SEAT_SUFFIX=""
+seat_suffix() { # $1 "lane|lens"
+  local key="|$1|" rest="$SEEN_SEATS" n=0
+  while [[ "$rest" == *"$key"* ]]; do
+    rest="${rest#*"$key"}"
+    n=$((n + 1))
+  done
+  SEEN_SEATS="$SEEN_SEATS$key"
+  SEAT_SUFFIX=""
+  if [[ $n -gt 0 ]]; then SEAT_SUFFIX="-$((n + 1))"; fi
 }
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -272,11 +310,16 @@ if [[ "${1:-}" == "--collect" ]]; then
   dir="$cwd/.playmaker/reviews/$wp"
   [[ -f "$dir/sessions.txt" ]] || die "no dispatched round found at $dir/sessions.txt"
   pending=0; dead=0; got=0
+  SEEN_SEATS=""
   while IFS='|' read -r id lane model lens; do
+    [[ -n "${lane:-}" ]] || continue
+    # Count every line — even an undispatched one, which still took a prompt
+    # file — so a repeated lane+lens pair maps back to its own files.
+    seat_suffix "$lane|$lens"; suffix="$SEAT_SUFFIX"
     [[ -n "${id:-}" ]] || continue
     status=$(playmaker get "$id" --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo "")
     if [[ "$status" == "failed" || "$status" == "killed" ]]; then
-      note "! $lane/$lens ($id): $status — DEAD (quota, auth or crash: playmaker logs $id). Seat a substitute: dispatch prompt-$lane-$lens.md on another lane --read-only and append '<id>|<lane>|<model>|$lens' to sessions.txt"
+      note "! $lane/$lens ($id): $status — DEAD (quota, auth or crash: playmaker logs $id). Seat a substitute: dispatch prompt-$lane-$lens$suffix.md on another lane --read-only and append '<id>|<lane>|<model>|$lens' to sessions.txt"
       dead=$((dead + 1))
       continue
     fi
@@ -289,7 +332,7 @@ if [[ "${1:-}" == "--collect" ]]; then
       || { note "! $lane/$lens ($id): could not read the session output — retry --collect"; continue; }
     # Parse into a temp file and only then publish it: a reviewer that answers in prose must not
     # leave a zero-byte verdict-*.json behind, or every later --collect chokes on it.
-    tmp="$dir/.verdict-$lane-$lens.partial"
+    tmp="$dir/.verdict-$lane-$lens$suffix.partial"
     # tolerate a fenced or prose-wrapped object: take the LAST object that parses AND carries the
     # contract — a reasoning block or a quoted example earlier in the text must not win
     printf '%s' "$out" | python3 -c '
@@ -312,8 +355,8 @@ if found is None:
 json.dump(found, sys.stdout, indent=2, ensure_ascii=False)
 ' > "$tmp" 2>/dev/null \
       || { rm -f "$tmp"; note "! $lane/$lens ($id): did not return the JSON contract — re-prompt once, then drop"; continue; }
-    mv "$tmp" "$dir/verdict-$lane-$lens.json"
-    note "✓ $dir/verdict-$lane-$lens.json"
+    mv "$tmp" "$dir/verdict-$lane-$lens$suffix.json"
+    note "✓ $dir/verdict-$lane-$lens$suffix.json"
     got=$((got + 1))
   done < "$dir/sessions.txt"
   [[ $pending -eq 0 ]] || note "$pending reviewer(s) still running"
@@ -834,7 +877,7 @@ for l in d.get("leftovers") or []:
     done <<< "$roster_rows"
   }
 
-  substitute_seat() { # $1 dead lane, $2 lens, $3 board deadline (epoch) — one substitution
+  substitute_seat() { # $1 dead lane, $2 lens, $3 board deadline (epoch), $4 prompt suffix — one substitution
     local reserve rlane rmodel reffort pf out nid st2 first sub_rc remaining remaining2
     local -a sub_cmd
     remaining=$(( $3 - $(date +%s) ))
@@ -853,7 +896,7 @@ for l in d.get("leftovers") or []:
       return 0
     fi
     IFS='|' read -r rlane rmodel reffort <<< "$reserve"
-    pf="$dir/prompt-$1-$2.md"
+    pf="$dir/prompt-$1-$2$4.md"
     if [[ ! -f "$pf" ]]; then
       missing_seats=$((missing_seats + 1))
       alog "round $round: !! no prompt file for $1/$2 — seat MISSING"
@@ -1124,25 +1167,28 @@ PY
     fi
     orig_seats=()
     dead_seats=()
+    SEEN_SEATS=""
     while IFS='|' read -r sid slane smodel slens; do
       if [[ -n "${sid:-}" ]]; then
-        orig_seats+=("$sid|$slane|$smodel|$slens")
+        seat_suffix "$slane|$slens"; suffix="$SEAT_SUFFIX"
+        orig_seats+=("$sid|$slane|$smodel|$slens|$suffix")
       elif [[ -n "${slane:-}" ]]; then
-        dead_seats+=("$slane|$slens")   # the board could not dispatch it (limits to the deadline)
+        seat_suffix "$slane|$slens"; suffix="$SEAT_SUFFIX"
+        dead_seats+=("$slane|$slens|$suffix")   # the board could not dispatch it (limits to the deadline)
       fi
     done < "$dir/sessions.txt"
     if [[ -z "$required" ]]; then required=$(( ${#orig_seats[@]} + ${#dead_seats[@]} )); fi
     seats_dispatched=$((seats_dispatched + ${#orig_seats[@]}))
     if [[ ${#dead_seats[@]} -gt 0 ]]; then
       for dead in "${dead_seats[@]}"; do
-        IFS='|' read -r dslane dslens <<< "$dead"
+        IFS='|' read -r dslane dslens dsuffix <<< "$dead"
         alog "round $round: ! $dslane/$dslens was never dispatched — dead seat"
-        substitute_seat "$dslane" "$dslens" "$board_deadline"
+        substitute_seat "$dslane" "$dslens" "$board_deadline" "$dsuffix"
       done
     fi
     if [[ ${#orig_seats[@]} -gt 0 ]]; then
       for entry in "${orig_seats[@]}"; do
-        IFS='|' read -r sid slane smodel slens <<< "$entry"
+        IFS='|' read -r sid slane smodel slens ssuffix <<< "$entry"
         remaining=$(( board_deadline - $(date +%s) ))
         alog "round $round: seat $slane/$slens (${sid:0:8}) — waiting (${remaining}s left in the window)"
         st=$(wait_seat "$sid" "$remaining")
@@ -1151,7 +1197,7 @@ PY
           continue
         fi
         alog "round $round: ! $slane/$slens $st"
-        substitute_seat "$slane" "$slens" "$board_deadline"
+        substitute_seat "$slane" "$slens" "$board_deadline" "$ssuffix"
       done
     fi
 
@@ -1497,9 +1543,13 @@ if [[ $dry -eq 0 ]]; then
   [[ -n "$pc_status" ]] && pc_record_env "$pc_status" "$pc_lane"
 fi
 
+SEEN_SEATS=""
 for entry in "${roster[@]}"; do
   IFS='|' read -r lane model lens effort <<< "$entry"
-  prompt_file="$dir/prompt-$lane-$lens.md"
+  # A repeated lane+lens pair gets its own prompt file (prompt-…-2.md, …);
+  # the first seat keeps today's name. --collect maps back the same way.
+  seat_suffix "$lane|$lens"; suffix="$SEAT_SUFFIX"
+  prompt_file="$dir/prompt-$lane-$lens$suffix.md"
   {
     echo "You are reviewing one work package. You did NOT write it. Your job is to REFUTE it against"
     echo "its acceptance criteria, not to summarize it. Change nothing — this review is read-only."

@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Callable
 from typing import Any
 
 from playmaker import state
+from playmaker.agents.codex import CODEX_EFFORT_ENV_VAR, validate_model_effort
 from playmaker.agents.codex import VALID_EFFORTS as CODEX_VALID_EFFORTS
 from playmaker.agents.codex import configured_model as configured_codex_model
-from playmaker.agents.codex import validate_model_effort
 from playmaker.config import agent_setting
 
 
@@ -200,7 +201,14 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
         item = dict(item)
         delivered_effort = item.get("effort")
         if parent["agent"] == "codex" and delivered_effort is None:
+            # Same order as continue: parent's recorded effort, then the env,
+            # then config. An invalid env value falls through to config rather
+            # than blocking delivery.
             inherited = parent.get("effort")
+            if inherited is None:
+                env_effort = os.environ.get(CODEX_EFFORT_ENV_VAR, "").strip()
+                if env_effort in CODEX_VALID_EFFORTS:
+                    inherited = env_effort
             if inherited is None:
                 configured = agent_setting("codex", "reasoning_effort")
                 normalized = str(configured).strip() if configured is not None else None

@@ -101,7 +101,8 @@ def test_effort_precedence(monkeypatch) -> None:
     monkeypatch.setenv(CODEX_EFFORT_ENV_VAR, "medium")
 
     assert resolve_effort("ultra", "high") == ("ultra", "--effort")
-    assert resolve_effort(None, "high") == ("medium", CODEX_EFFORT_ENV_VAR)
+    assert resolve_effort(None, "high") == ("high", "parent session")
+    assert resolve_effort(None, None) == ("medium", CODEX_EFFORT_ENV_VAR)
     monkeypatch.delenv(CODEX_EFFORT_ENV_VAR)
     assert resolve_effort(None, "high") == ("high", "parent session")
     assert resolve_effort() == ("low", "[agents.codex] reasoning_effort")
@@ -388,6 +389,52 @@ def test_continue_inherits_parent_effort_before_config(db, monkeypatch, tmp_path
     child = state.list_sessions(limit=1)[0]
     assert child["parent_id"] == sid
     assert child["effort"] == "ultra"
+
+
+def test_continue_prefers_parent_effort_over_env(db, monkeypatch, tmp_path) -> None:
+    _detached_cli(monkeypatch)
+    monkeypatch.setenv(CODEX_EFFORT_ENV_VAR, "medium")
+    sid = state.insert_session(
+        agent="codex", prompt="first", cwd=str(tmp_path), model="gpt-6-astra", effort="ultra"
+    )
+    state.update_session(sid, status="done", agent_session_id="thread-1")
+
+    result = runner.invoke(cli.app, ["continue", sid, "--prompt", "next"])
+
+    assert result.exit_code == 0, result.output
+    child = state.list_sessions(limit=1)[0]
+    assert child["parent_id"] == sid
+    assert child["effort"] == "ultra"
+
+
+def test_continue_effort_override_beats_parent_and_env(db, monkeypatch, tmp_path) -> None:
+    _detached_cli(monkeypatch)
+    monkeypatch.setenv(CODEX_EFFORT_ENV_VAR, "medium")
+    sid = state.insert_session(
+        agent="codex", prompt="first", cwd=str(tmp_path), model="gpt-6-astra", effort="ultra"
+    )
+    state.update_session(sid, status="done", agent_session_id="thread-1")
+
+    result = runner.invoke(cli.app, ["continue", sid, "--prompt", "next", "--effort", "low"])
+
+    assert result.exit_code == 0, result.output
+    child = state.list_sessions(limit=1)[0]
+    assert child["parent_id"] == sid
+    assert child["effort"] == "low"
+
+
+def test_continue_falls_back_to_env_without_parent_effort(db, monkeypatch, tmp_path) -> None:
+    _detached_cli(monkeypatch)
+    monkeypatch.setenv(CODEX_EFFORT_ENV_VAR, "high")
+    sid = state.insert_session(agent="codex", prompt="first", cwd=str(tmp_path))
+    state.update_session(sid, status="done", agent_session_id="thread-1")
+
+    result = runner.invoke(cli.app, ["continue", sid, "--prompt", "next"])
+
+    assert result.exit_code == 0, result.output
+    child = state.list_sessions(limit=1)[0]
+    assert child["parent_id"] == sid
+    assert child["effort"] == "high"
 
 
 def test_queued_continue_keeps_effort_through_resume_argv(db, monkeypatch, tmp_path) -> None:

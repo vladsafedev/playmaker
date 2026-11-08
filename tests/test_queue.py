@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from playmaker import cli, config, queue, state
 from playmaker.agents.base import DispatchResult
+from playmaker.agents.codex import CODEX_EFFORT_ENV_VAR
 
 runner = CliRunner()
 
@@ -340,6 +341,37 @@ def test_delivery_of_old_codex_item_inherits_parent_effort(db: None, tmp_path: P
 
     assert child is not None
     assert state.get_session(child)["effort"] == "ultra"
+
+
+def test_delivery_prefers_parent_over_env(db: None, monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv(CODEX_EFFORT_ENV_VAR, "medium")
+    root = state.insert_session(
+        agent="codex", prompt="root", cwd=str(tmp_path), effort="ultra"
+    )
+    state.update_session(root, status="done", agent_session_id="thread-1")
+    queue.enqueue(root, "later")
+
+    child = queue.deliver_next(root, root, lambda sid: 1)
+
+    assert child is not None
+    assert state.get_session(child)["effort"] == "ultra"
+
+
+def test_delivery_of_codex_item_uses_env_before_config(
+    db: None, monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(CODEX_EFFORT_ENV_VAR, "high")
+    monkeypatch.setattr(
+        config, "load_config", lambda: {"agents": {"codex": {"reasoning_effort": "low"}}}
+    )
+    root = state.insert_session(agent="codex", prompt="root", cwd=str(tmp_path))
+    state.update_session(root, status="done", agent_session_id="thread-1")
+    queue.enqueue(root, "later")
+
+    child = queue.deliver_next(root, root, lambda sid: 1)
+
+    assert child is not None
+    assert state.get_session(child)["effort"] == "high"
 
 
 def test_delivery_of_old_codex_item_falls_back_to_config(

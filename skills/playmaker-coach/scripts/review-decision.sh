@@ -7,8 +7,10 @@
 # The roster is ./.playmaker/reviewers.conf, falling back to ~/.playmaker/reviewers.conf:
 #   decision <lane> <model|-> <lens> [<effort>]
 # The optional fifth field is the seat's per-dispatch reasoning effort
-# (low|medium|high|xhigh|max|ultra; absent or '-' = none), passed as
-# `playmaker dispatch --effort <value>`; a '#' starts a trailing comment, e.g.
+# (absent or '-' = none), passed as `playmaker dispatch --effort <value>`;
+# only codex takes low…ultra and claude / claude-api take low…max — on any
+# other lane the effort is dropped with a note naming the line.
+# A '#' starts a trailing comment, e.g.
 #   decision codex gpt-6-astra risk ultra
 # The first three lines are seats; `claude` is included only with --opus.  It is a
 # read-only, advisory review: it never stops the cores of a work wave.
@@ -22,8 +24,11 @@ note() { printf '%s\n' "$*" >&2; }
 # Parse and validate the entire roster before any caller selects rows. Keep this
 # function identical in review-board.sh and review-decision.sh. Output records:
 # kind|lane|model|lens|effort|line-number (effort is empty when absent or '-').
+# Only the lanes that take --effort keep it: codex takes low…ultra, claude and
+# claude-api take low…max; on any other lane the effort is dropped with one
+# note and the seat dispatches without --effort.
 parse_roster() {
-  local file="$1" line lineno=0 token effort
+  local file="$1" line lineno=0 token effort lane
   local -a tokens fields
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -35,11 +40,26 @@ parse_roster() {
     done
     # Blank/comment lines and incomplete rows cannot seat a reviewer.
     [[ ${#fields[@]} -ge 4 ]] || continue
+    lane="${fields[1]}"
     effort="${fields[4]:-}"
     case "$effort" in
       ''|-) effort="" ;;
-      low|medium|high|xhigh|max|ultra) ;;
-      *) die "bad effort '$effort' ($file line $lineno): $line" ;;
+      *)
+        case "$lane" in
+          codex)
+            case "$effort" in
+              low|medium|high|xhigh|max|ultra) ;;
+              *) die "bad effort '$effort' for lane '$lane' ($file line $lineno): $line" ;;
+            esac ;;
+          claude|claude-api)
+            case "$effort" in
+              low|medium|high|xhigh|max) ;;
+              *) die "bad effort '$effort' for lane '$lane' ($file line $lineno): $line" ;;
+            esac ;;
+          *)
+            note "$file line $lineno: lane $lane does not take --effort; ignored"
+            effort="" ;;
+        esac ;;
     esac
     if [[ ${#fields[@]} -gt 5 ]]; then
       die "unexpected field '${fields[5]}' after effort ($file line $lineno): $line"
@@ -138,7 +158,7 @@ done <<< "$roster_rows"
 [[ ${#seats[@]} -ge 2 ]] || die "fewer than two live decision seats in $conf — one opinion is not a decision review"
 
 dir="$cwd/.playmaker/decision-reviews/$slug"; mkdir -p "$dir"
-rm -f "$dir"/answer-*.json "$dir"/raw-*.txt "$dir"/summary.md   # a re-run never aggregates stale answers
+rm -f "$dir"/answer-*.json "$dir"/raw-*.txt "$dir"/summary.md "$dir"/dispatch-*.stderr  # a re-run never aggregates stale answers
 cp "$question" "$dir/question.md"
 if [[ $opus -eq 1 ]]; then note "--opus adds a coordinator-bucket seat; use it deliberately."; fi
 
@@ -197,7 +217,11 @@ for seat in "${seats[@]}"; do
     [[ "$model" != - ]] && cmd+=(--model "$model")
     [[ -n "$effort" ]] && cmd+=(--effort "$effort")
     set +e
-    "${cmd[@]}" >"$dir/dispatch-$lane.txt" 2>&1
+    # Stdout and stderr land in separate files: the dispatch file is
+    # JSON-parsed below, and a stderr line merged into it would break both
+    # the parse and the session id fallback. Stderr is kept for the failure
+    # reason, as review-board.sh does.
+    "${cmd[@]}" >"$dir/dispatch-$lane.txt" 2>"$dir/dispatch-$lane.stderr"
     dispatch_rc=$?
     set -e
     printf '%s\n' "$dispatch_rc" >"$dir/dispatch-$lane.rc"
@@ -217,7 +241,10 @@ for seat in "${seats[@]}"; do
   IFS='|' read -r lane model lens _eff <<< "$seat"
   dispatch_rc=$(cat "$dir/dispatch-$lane.rc" 2>/dev/null || echo 1)
   if [[ "$dispatch_rc" != 0 ]]; then
-    printf 'no answer (dispatch failed)\n' > "$dir/raw-$lane.txt"
+    {
+      printf 'no answer (dispatch failed)\n'
+      cat "$dir/dispatch-$lane.stderr" 2>/dev/null || true
+    } > "$dir/raw-$lane.txt"
     continue
   fi
   sid=$(python3 - "$dir/dispatch-$lane.txt" <<'PY'
