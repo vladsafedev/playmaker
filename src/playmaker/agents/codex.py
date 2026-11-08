@@ -16,16 +16,104 @@ inside the rollout file, OR via stdout `item.completed` events with
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 
 from playmaker.agents.base import DispatchResult, SessionStartedCallback, Turn
 from playmaker.config import agent_binary, agent_setting
 
 CODEX_SESSIONS_ROOT = Path("~/.codex/sessions").expanduser()
+CODEX_EFFORT_ENV_VAR = "PLAYMAKER_CODEX_EFFORT"
+VALID_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
+IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+
+
+def codex_home() -> Path:
+    """The Codex configuration root, honouring the CLI's CODEX_HOME."""
+    configured = os.environ.get("CODEX_HOME", "").strip()
+    return Path(configured or "~/.codex").expanduser()
+
+
+def configured_model() -> str | None:
+    """Codex's configured default model, or None when config is unavailable."""
+    try:
+        with (codex_home() / "config.toml").open("rb") as fh:
+            value = tomllib.load(fh).get("model")
+    except (OSError, tomllib.TOMLDecodeError, UnicodeError):
+        return None
+    return str(value).strip() if value is not None and str(value).strip() else None
+
+
+def resolve_effort(
+    override: str | None = None, parent_effort: str | None = None
+) -> tuple[str | None, str | None]:
+    """Resolve Codex effort and report the source used for diagnostics."""
+    raw: object | None = override
+    source = "--effort" if override is not None else None
+    if raw is None:
+        env_effort = os.environ.get(CODEX_EFFORT_ENV_VAR, "").strip()
+        if env_effort:
+            raw = env_effort
+            source = CODEX_EFFORT_ENV_VAR
+    if raw is None and parent_effort is not None:
+        raw = parent_effort
+        source = "parent session"
+    if raw is None:
+        raw = agent_setting("codex", "reasoning_effort")
+        if raw is not None:
+            source = "[agents.codex] reasoning_effort"
+    if raw is None:
+        return None, None
+    value = str(raw).strip()
+    if value not in VALID_EFFORTS:
+        raise ValueError(
+            f"codex has no reasoning effort {raw!r}; valid: {', '.join(VALID_EFFORTS)} "
+            f"(from {source})"
+        )
+    return value, source
+
+
+def validate_model_effort(model: str | None, effort: str | None) -> None:
+    """Reject a model/effort pair only when Codex's cache describes the model."""
+    if model is None or effort is None:
+        return
+    cache_path = codex_home() / "models_cache.json"
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        models = data.get("models")
+        if not isinstance(models, list):
+            return
+    except (OSError, json.JSONDecodeError, UnicodeError, AttributeError):
+        return
+    for entry in models:
+        if not isinstance(entry, dict) or entry.get("slug") != model:
+            continue
+        levels = entry.get("supported_reasoning_levels")
+        if not isinstance(levels, list) or not levels:
+            return
+        if any(
+            not isinstance(level, dict)
+            or not isinstance(level.get("effort"), str)
+            or not level["effort"].strip()
+            for level in levels
+        ):
+            return
+        valid = [level["effort"] for level in levels]
+        if effort not in valid:
+            raise ValueError(
+                f"codex model {model} has no reasoning effort {effort!r}; "
+                f"valid: {', '.join(valid)} (from {cache_path})"
+            )
+        return
+
+
+def is_image_file(path: Path) -> bool:
+    return path.suffix.lower() in IMAGE_SUFFIXES
 
 
 def sandbox_args() -> list[str]:
@@ -53,8 +141,10 @@ class CodexHandler:
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
         model: str | None = None,
+        effort: str | None = None,
     ) -> DispatchResult:
-        full_prompt = self._build_prompt(prompt, files or [])
+        images, prompt_files = self._split_files(files or [], cwd)
+        full_prompt = self._build_prompt(prompt, prompt_files)
 
         with tempfile.NamedTemporaryFile(
             "w+", suffix=".txt", delete=False, prefix="codex-last-"
@@ -74,6 +164,9 @@ class CodexHandler:
         cmd += sandbox_args()
         if model:
             cmd += ["-m", model]
+        if effort:
+            cmd += ["-c", f'model_reasoning_effort="{effort}"']
+        cmd += [f"--image={path}" for path in images]
         cmd.append(full_prompt)
         t0 = time.monotonic()
         proc = subprocess.Popen(
@@ -216,8 +309,10 @@ class CodexHandler:
         files: list[Path] | None = None,
         on_session_started: SessionStartedCallback | None = None,
         model: str | None = None,
+        effort: str | None = None,
     ) -> DispatchResult:
-        full_prompt = self._build_prompt(prompt, files or [])
+        images, prompt_files = self._split_files(files or [], cwd)
+        full_prompt = self._build_prompt(prompt, prompt_files)
 
         with tempfile.NamedTemporaryFile(
             "w+", suffix=".txt", delete=False, prefix="codex-last-"
@@ -236,6 +331,9 @@ class CodexHandler:
         ]
         if model:
             cmd += ["-m", model]
+        if effort:
+            cmd += ["-c", f'model_reasoning_effort="{effort}"']
+        cmd += [f"--image={path}" for path in images]
         cmd += [agent_session_id, full_prompt]
         t0 = time.monotonic()
         proc = subprocess.Popen(
@@ -392,6 +490,20 @@ class CodexHandler:
                         )
                     )
         return turns
+
+    @staticmethod
+    def _split_files(files: list[Path], cwd: Path) -> tuple[list[Path], list[Path]]:
+        images: list[Path] = []
+        prompt_files: list[Path] = []
+        for path in files:
+            if is_image_file(path):
+                absolute = path.expanduser()
+                if not absolute.is_absolute():
+                    absolute = cwd / absolute
+                images.append(Path(os.path.abspath(absolute)))
+            else:
+                prompt_files.append(path)
+        return images, prompt_files
 
     @staticmethod
     def _build_prompt(prompt: str, files: list[Path]) -> str:

@@ -223,10 +223,13 @@ def test_apply_override_sets_env_for_claude(capsys, monkeypatch) -> None:
 
 
 def test_apply_override_ignores_other_agents_with_one_stderr_line(capsys, monkeypatch) -> None:
-    cli._apply_effort_override("codex", "high")
+    cli._apply_effort_override("agy", "high")
 
     captured = capsys.readouterr()
-    assert "--effort is forwarded to the claude lanes only; ignored for codex" in captured.err
+    assert (
+        "--effort is forwarded to the claude and codex lanes only; ignored for agy"
+        in captured.err
+    )
     assert captured.err.strip().count("\n") == 0  # exactly one line
     assert EFFORT_ENV_VAR not in os.environ
 
@@ -276,10 +279,13 @@ def test_dispatch_accepts_and_ignores_effort_for_other_agents(db, monkeypatch) -
     monkeypatch.setattr("playmaker.cli.get_handler", lambda name: _AvailableHandler())
     monkeypatch.setattr("playmaker.cli.subprocess.Popen", _FakeDetachedPopen)
 
-    result = runner.invoke(cli.app, ["dispatch", "codex", "--prompt", "hi", "--effort", "high"])
+    result = runner.invoke(cli.app, ["dispatch", "agy", "--prompt", "hi", "--effort", "high"])
 
     assert result.exit_code == 0, result.output
-    assert "--effort is forwarded to the claude lanes only; ignored for codex" in result.stderr
+    assert (
+        "--effort is forwarded to the claude and codex lanes only; ignored for agy"
+        in result.stderr
+    )
     assert EFFORT_ENV_VAR not in os.environ
 
 
@@ -292,3 +298,18 @@ def test_dispatch_forwards_effort_for_claude(db, monkeypatch) -> None:
     assert result.exit_code == 0, result.output
     # In-process CLI run: the override is exported for the spawned run.
     assert os.environ[EFFORT_ENV_VAR] == "xhigh"
+    assert state.list_sessions(limit=1)[0]["effort"] == "xhigh"
+
+
+@pytest.mark.parametrize("lane", ["claude", "claude-api"])
+def test_dispatch_records_config_effort_for_claude_lanes(
+    db, configured, monkeypatch, lane
+) -> None:
+    configured({"agents": {lane: {"effort": "high"}}})
+    monkeypatch.setattr("playmaker.cli.get_handler", lambda name: _AvailableHandler())
+    monkeypatch.setattr("playmaker.cli.subprocess.Popen", _FakeDetachedPopen)
+
+    result = runner.invoke(cli.app, ["dispatch", lane, "--prompt", "hi"])
+
+    assert result.exit_code == 0, result.output
+    assert state.list_sessions(limit=1)[0]["effort"] == "high"

@@ -7,6 +7,8 @@ from collections.abc import Callable
 from typing import Any
 
 from playmaker import state
+from playmaker.agents.codex import VALID_EFFORTS as CODEX_VALID_EFFORTS
+from playmaker.config import agent_setting
 
 
 def _renumber(c, thread_id: str) -> None:
@@ -26,6 +28,7 @@ def enqueue(
     files: list[str] | None = None,
     gate_cmd: str | None = None,
     model: str | None = None,
+    effort: str | None = None,
     expect_changes: bool | None = None,
     first: bool = False,
     position: int | None = None,
@@ -44,8 +47,8 @@ def enqueue(
         )
         cur = c.execute(
             """INSERT INTO queue (thread_id, position, prompt, cwd, files, gate_cmd,
-            model, expect_changes, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)""",
+            model, effort, expect_changes, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)""",
             (
                 thread_id,
                 pos,
@@ -54,6 +57,7 @@ def enqueue(
                 json.dumps(files) if files else None,
                 gate_cmd,
                 model,
+                effort,
                 int(expect_changes) if expect_changes is not None else None,
                 state.now_iso(),
             ),
@@ -191,6 +195,14 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
         if item is None:
             return None
         item = dict(item)
+        delivered_effort = item.get("effort")
+        if parent["agent"] == "codex" and delivered_effort is None:
+            delivered_effort = parent.get("effort")
+            if delivered_effort is None:
+                configured = agent_setting("codex", "reasoning_effort")
+                normalized = str(configured).strip() if configured is not None else None
+                if normalized in CODEX_VALID_EFFORTS:
+                    delivered_effort = normalized
         sid = state.new_session_id()
         claimed = c.execute(
             "UPDATE queue SET status='delivered', delivered_as=?, updated_at=? "
@@ -202,9 +214,9 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
             return None
         c.execute(
             """INSERT INTO sessions (id,agent,agent_session_id,prompt,cwd,files,
-            status,started_at,parent_id,model,batch_id,expect_changes,worktree_path,
+            status,started_at,parent_id,model,effort,batch_id,expect_changes,worktree_path,
             worktree_branch,repo_root,gate_cmd)
-        VALUES (?,?,?,?,?,?, 'pending',?,?,?,?,?,?,?,?,?)""",
+        VALUES (?,?,?,?,?,?, 'pending',?,?,?,?,?,?,?,?,?,?)""",
             (
                 sid,
                 parent["agent"],
@@ -215,6 +227,7 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
                 state.now_iso(),
                 parent_id,
                 item["model"],
+                delivered_effort,
                 parent["batch_id"],
                 item["expect_changes"],
                 parent["worktree_path"],

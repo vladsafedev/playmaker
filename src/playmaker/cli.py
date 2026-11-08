@@ -21,7 +21,12 @@ from playmaker import events as events_mod
 from playmaker import (
     queue as queue_mod,
 )
-from playmaker.agents.claude import EFFORT_ENV_VAR, VALID_EFFORTS
+from playmaker.agents.claude import EFFORT_ENV_VAR
+from playmaker.agents.claude import VALID_EFFORTS as CLAUDE_VALID_EFFORTS
+from playmaker.agents.claude import resolve_effort as resolve_claude_effort
+from playmaker.agents.codex import configured_model as configured_codex_model
+from playmaker.agents.codex import is_image_file, validate_model_effort
+from playmaker.agents.codex import resolve_effort as resolve_codex_effort
 from playmaker.registry import claude_lanes, get_handler
 
 app = typer.Typer(
@@ -280,27 +285,83 @@ def sdk_install() -> None:
 
 
 def _apply_effort_override(agent: str, effort: str | None) -> None:
-    """Route `--effort` to a claude lane (claude, claude-api) for this run only.
+    """Route `--effort` to a supported lane for this run only.
 
     The value travels in EFFORT_ENV_VAR, which ClaudeHandler reads before
     each spawn — nothing is persisted, so a later `continue` without --effort
-    falls back to [agents.<lane>] effort. Other lanes accept the flag so
-    scripts can pass it uniformly, and ignore it with one stderr line.
+    falls back to [agents.<lane>] effort. Codex receives its value from the
+    session row instead. Other lanes accept the flag so scripts can pass it
+    uniformly, and ignore it with one stderr line.
     """
     if effort is None:
         return
-    if agent not in claude_lanes():
-        err_console.print(f"--effort is forwarded to the claude lanes only; ignored for {agent}")
+    if agent == "codex":
         return
-    if effort not in VALID_EFFORTS:
+    if agent not in claude_lanes():
+        err_console.print(
+            f"--effort is forwarded to the claude and codex lanes only; ignored for {agent}"
+        )
+        return
+    if effort not in CLAUDE_VALID_EFFORTS:
         err_console.print(
             escape(
-                f"{agent} has no effort {effort!r}; valid efforts: {', '.join(VALID_EFFORTS)} "
+                f"{agent} has no effort {effort!r}; "
+                f"valid efforts: {', '.join(CLAUDE_VALID_EFFORTS)} "
                 f"([agents.{agent}] effort or --effort)"
             )
         )
         raise typer.Exit(2)
     os.environ[EFFORT_ENV_VAR] = effort
+
+
+def _resolve_session_effort(
+    agent: str,
+    override: str | None,
+    *,
+    model: str | None = None,
+    parent_effort: str | None = None,
+) -> str | None:
+    """Resolve and validate the effort that will be stored on a session row."""
+    _apply_effort_override(agent, override)
+    try:
+        if agent == "codex":
+            resolved, _source = resolve_codex_effort(override, parent_effort)
+            validate_model_effort(model, resolved)
+            return resolved
+        if agent in claude_lanes():
+            return resolve_claude_effort(agent)
+    except (RuntimeError, ValueError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]", soft_wrap=True)
+        raise typer.Exit(2) from exc
+    return None
+
+
+def _prepare_files(agent: str, files: list[Path] | None, cwd: Path) -> list[str]:
+    """Resolve and validate Codex image attachments; preserve all other paths."""
+    prepared: list[str] = []
+    for path in files or []:
+        if agent != "codex" or not is_image_file(path):
+            prepared.append(str(path))
+            continue
+        absolute = path.expanduser()
+        if not absolute.is_absolute():
+            absolute = cwd / absolute
+        absolute = Path(os.path.abspath(absolute))
+        if not absolute.is_file():
+            err_console.print(
+                f"[red]codex image file not found: {escape(str(path))}[/red]", soft_wrap=True
+            )
+            raise typer.Exit(2)
+        prepared.append(str(absolute))
+    return prepared
+
+
+def _normalize_model(agent: str, model: str | None) -> str | None:
+    """Empty Codex model overrides mean unset, matching the Codex CLI."""
+    if agent != "codex" or model is None:
+        return model
+    normalized = model.strip()
+    return normalized or None
 
 
 def _preflight(agent: str, handler: object) -> None:
@@ -469,8 +530,9 @@ def dispatch(
     effort: str | None = typer.Option(
         None,
         "--effort",
-        help="forwarded to the claude CLI's --effort (low|medium|high|xhigh|max) on the "
-        "claude and claude-api lanes; overrides [agents.<lane>] effort for this run; "
+        help="reasoning effort: claude lanes low|medium|high|xhigh|max; codex "
+        "low|medium|high|xhigh|max|ultra (checked against the model). Overrides "
+        "[agents.<lane>] effort for claude or [agents.codex] reasoning_effort; "
         "accepted and ignored for other agents",
     ),
     sync: bool = typer.Option(
@@ -531,22 +593,28 @@ def dispatch(
         _preflight(agent, handler)
         err_console.print(_unavailable(agent))
         raise typer.Exit(1)
-    _apply_effort_override(agent, effort)
+    model = _normalize_model(agent, model)
+    effective_model = model
+    if effective_model is None and agent == "codex":
+        effective_model = configured_codex_model()
+    effective_effort = _resolve_session_effort(agent, effort, model=effective_model)
     _preflight(agent, handler)
     if not force:
         _refuse_if_limited()
         _refuse_if_credits_spent(agent)
 
     cwd_resolved = cwd.expanduser().resolve()
+    prepared_files = _prepare_files(agent, files, cwd_resolved)
     explicit_expectation = _expectation_from_flags(expect_changes, read_only)
     try:
         sid = state.insert_session(
             agent=agent,
             prompt=prompt,
             cwd=str(cwd_resolved),
-            files=[str(f) for f in (files or [])],
+            files=prepared_files,
             parent_id=parent,
             model=model,
+            effort=effective_effort,
             batch_id=batch,
             expect_changes=state.expects_changes(prompt, explicit_expectation),
             gate_cmd=gate_cmd,
@@ -631,24 +699,24 @@ def _run_dispatch(sid: str, *, can_fallback: bool = False) -> None:
     # of an existing agent thread (set by `continue` before spawning).
     resume_target = row.get("agent_session_id")
     model = row.get("model")
+    effort = row.get("effort")
     try:
         if resume_target:
-            result = handler.resume(
-                row["prompt"],
-                cwd,
-                resume_target,
-                files,
-                on_session_started=_on_session_started,
-                model=model,
-            )
+            resume_kwargs = {
+                "on_session_started": _on_session_started,
+                "model": model,
+            }
+            if row["agent"] == "codex" and effort is not None:
+                resume_kwargs["effort"] = effort
+            result = handler.resume(row["prompt"], cwd, resume_target, files, **resume_kwargs)
         else:
-            result = handler.dispatch(
-                row["prompt"],
-                cwd,
-                files,
-                on_session_started=_on_session_started,
-                model=model,
-            )
+            dispatch_kwargs = {
+                "on_session_started": _on_session_started,
+                "model": model,
+            }
+            if row["agent"] == "codex" and effort is not None:
+                dispatch_kwargs["effort"] = effort
+            result = handler.dispatch(row["prompt"], cwd, files, **dispatch_kwargs)
     except Exception as exc:
         before_snapshot.cleanup()
         reason = events_mod.classify_failure(
@@ -809,6 +877,17 @@ def _maybe_fallback(sid: str, row: dict, reason: str) -> None:
     if reason not in FALLBACK_REASONS and not _within_fallback_window(row.get("started_at")):
         return
     lane, remaining = lanes[0], lanes[1:]
+    fallback_effort = None
+    if lane == "codex":
+        try:
+            fallback_effort, _source = resolve_codex_effort()
+            validate_model_effort(configured_codex_model(), fallback_effort)
+        except ValueError as exc:
+            err_console.print(
+                f"[yellow]codex fallback continuing without effort: {escape(str(exc))}[/yellow]",
+                soft_wrap=True,
+            )
+            fallback_effort = None
     new_sid = state.insert_session(
         agent=lane,
         prompt=row["prompt"],
@@ -816,6 +895,7 @@ def _maybe_fallback(sid: str, row: dict, reason: str) -> None:
         files=json.loads(row["files"] or "[]"),
         parent_id=sid,
         model=None,
+        effort=fallback_effort,
         batch_id=row.get("batch_id"),
         expect_changes=(
             bool(row["expect_changes"]) if row.get("expect_changes") is not None else None
@@ -950,8 +1030,10 @@ def continue_(
     effort: str | None = typer.Option(
         None,
         "--effort",
-        help="override the effort for this turn (claude lanes); defaults to the lane's "
-        "[agents.<lane>] effort",
+        help="reasoning effort: claude lanes low|medium|high|xhigh|max; codex "
+        "low|medium|high|xhigh|max|ultra (checked against the model). Defaults to "
+        "the parent codex session, then [agents.codex] reasoning_effort; claude "
+        "lanes default to [agents.<lane>] effort",
     ),
     sync: bool = typer.Option(
         False, "--sync", help="block until done and print final output (default is detached)"
@@ -999,14 +1081,25 @@ def continue_(
         _preflight(parent["agent"], handler)
         err_console.print(_unavailable(parent["agent"]))
         raise typer.Exit(1)
-    _apply_effort_override(parent["agent"], effort)
+    model = _normalize_model(parent["agent"], model)
+    effective_model = model if model is not None else parent.get("model")
+    effective_model = _normalize_model(parent["agent"], effective_model)
+    validation_model = effective_model
+    if validation_model is None and parent["agent"] == "codex":
+        validation_model = configured_codex_model()
+    effective_effort = _resolve_session_effort(
+        parent["agent"],
+        effort,
+        model=validation_model,
+        parent_effort=parent.get("effort") if parent["agent"] == "codex" else None,
+    )
     _preflight(parent["agent"], handler)
     if not force:
         _refuse_if_limited()
         _refuse_if_credits_spent(parent["agent"])
 
     cwd_resolved = (cwd or Path(parent["cwd"])).expanduser().resolve()
-    effective_model = model if model is not None else parent.get("model")
+    prepared_files = _prepare_files(parent["agent"], files, cwd_resolved)
     explicit_expectation = _expectation_from_flags(expect_changes, read_only)
     inherited_expectation = parent.get("expect_changes")
     session_expects_changes = (
@@ -1023,9 +1116,10 @@ def continue_(
             root,
             prompt,
             cwd=str(cwd_resolved) if cwd is not None else None,
-            files=[str(f) for f in (files or [])],
+            files=prepared_files,
             gate_cmd=gate_cmd if gate_cmd is not None else root_row.get("gate_cmd"),
             model=effective_model,
+            effort=effective_effort,
             expect_changes=session_expects_changes,
         )
         if json_out:
@@ -1055,9 +1149,10 @@ def continue_(
             agent=parent["agent"],
             prompt=prompt,
             cwd=str(cwd_resolved),
-            files=[str(f) for f in (files or [])],
+            files=prepared_files,
             parent_id=parent["id"],
             model=effective_model,
+            effort=effective_effort,
             expect_changes=session_expects_changes,
             worktree_path=parent.get("worktree_path") if inherits_worktree else None,
             worktree_branch=parent.get("worktree_branch") if inherits_worktree else None,
@@ -1177,7 +1272,7 @@ def queue_add(
     item = queue_mod.enqueue(
         root,
         prompt,
-        files=[str(x) for x in (files or [])],
+        files=_prepare_files(row["agent"], files, Path(row["cwd"])),
         gate_cmd=gate_cmd if gate_cmd is not None else root_row.get("gate_cmd"),
         model=model if model is not None else row.get("model"),
         expect_changes=item_expect_changes,
@@ -1648,6 +1743,8 @@ def get(
         console.print(f"  fallback of:  {row['fallback_of']}")
     if row.get("fell_back_to"):
         console.print(f"  fell back to: {row['fell_back_to']}")
+    if row.get("effort"):
+        console.print(f"  effort:   {row['effort']}")
     if row["cost_usd"] is not None:
         console.print(f"  cost:     ${row['cost_usd']:.4f}")
     if row["session_file_path"]:

@@ -48,6 +48,7 @@ def test_insert_and_get_round_trip(db: Path) -> None:
         cwd="/repo",
         files=["a.py", "b.py"],
         model="Claude Opus 4.6 (Thinking)",
+        effort="ultra",
         batch_id="dash",
     )
 
@@ -57,6 +58,7 @@ def test_insert_and_get_round_trip(db: Path) -> None:
     assert row["agent"] == "agy"
     assert row["status"] == "pending"
     assert row["model"] == "Claude Opus 4.6 (Thinking)"
+    assert row["effort"] == "ultra"
     assert row["batch_id"] == "dash"
     assert row["files"] == '["a.py", "b.py"]'
 
@@ -157,7 +159,7 @@ def test_claim_batch_of_nothing_is_not_a_win(db: Path) -> None:
     assert state.claim_batch([]) is False
 
 
-def test_init_db_migrates_a_database_without_model_and_batch_columns(
+def test_init_db_migrates_a_database_without_model_effort_and_batch_columns(
     monkeypatch, tmp_path: Path
 ) -> None:
     # Databases created before 0.3/0.4 lack these columns; init_db must add
@@ -182,6 +184,16 @@ def test_init_db_migrates_a_database_without_model_and_batch_columns(
         """
     )
     legacy.execute(
+        """
+        CREATE TABLE queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL,
+            position INTEGER NOT NULL, prompt TEXT NOT NULL, cwd TEXT, files TEXT,
+            gate_cmd TEXT, model TEXT, expect_changes INTEGER, status TEXT NOT NULL,
+            created_at TEXT NOT NULL, updated_at TEXT, delivered_as TEXT, note TEXT
+        )
+        """
+    )
+    legacy.execute(
         "INSERT INTO sessions (id, agent, prompt, cwd, status, started_at) "
         "VALUES ('old-1', 'codex', 'p', '/repo', 'done', '2020-01-01T00:00:00')"
     )
@@ -193,6 +205,10 @@ def test_init_db_migrates_a_database_without_model_and_batch_columns(
     row = state.get_session("old-1")
     assert row is not None
     assert row["model"] is None
+    assert row["effort"] is None
+    with state.connect() as conn:
+        queue_columns = {column["name"] for column in conn.execute("PRAGMA table_info(queue)")}
+    assert "effort" in queue_columns
     assert row["batch_id"] is None
     assert state.insert_session(agent="agy", prompt="p", cwd="/r", batch_id="b")
 

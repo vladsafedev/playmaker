@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     parent_id TEXT,
     pid INTEGER,
     model TEXT,
+    effort TEXT,
     batch_id TEXT,
     batch_notified INTEGER,
     files_changed INTEGER,
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS queue (
     files TEXT,
     gate_cmd TEXT,
     model TEXT,
+    effort TEXT,
     expect_changes INTEGER,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -130,8 +132,12 @@ def init_db() -> None:
         queue_cols = {row["name"] for row in c.execute("PRAGMA table_info(queue)")}
         if "cwd" not in queue_cols:
             c.execute("ALTER TABLE queue ADD COLUMN cwd TEXT")
+        if "effort" not in queue_cols:
+            c.execute("ALTER TABLE queue ADD COLUMN effort TEXT")
         if "model" not in existing_cols:
             c.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
+        if "effort" not in existing_cols:
+            c.execute("ALTER TABLE sessions ADD COLUMN effort TEXT")
         if "batch_id" not in existing_cols:
             c.execute("ALTER TABLE sessions ADD COLUMN batch_id TEXT")
         if "batch_notified" not in existing_cols:
@@ -281,6 +287,7 @@ def insert_session(
     files: list[str] | None = None,
     parent_id: str | None = None,
     model: str | None = None,
+    effort: str | None = None,
     batch_id: str | None = None,
     expect_changes: bool | None = None,
     worktree_path: str | None = None,
@@ -313,9 +320,9 @@ def insert_session(
             """
             INSERT INTO sessions (
                 id, agent, prompt, cwd, files,
-                status, started_at, parent_id, model, batch_id, expect_changes,
+                status, started_at, parent_id, model, effort, batch_id, expect_changes,
                 worktree_path, worktree_branch, repo_root, gate_cmd
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 sid,
@@ -327,6 +334,7 @@ def insert_session(
                 now_iso(),
                 parent_id,
                 model,
+                effort,
                 batch_id,
                 int(expect_changes) if expect_changes is not None else None,
                 worktree_path,

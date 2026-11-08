@@ -10,7 +10,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from playmaker import cli, queue, state
+from playmaker import cli, config, queue, state
 from playmaker.agents.base import DispatchResult
 
 runner = CliRunner()
@@ -40,10 +40,12 @@ class _Worker:
     def is_available(self) -> bool:
         return True
 
-    def dispatch(self, prompt, cwd, files, *, on_session_started, model):
+    def dispatch(self, prompt, cwd, files, *, on_session_started, model, **kwargs):
         return self._run(cwd, on_session_started)
 
-    def resume(self, prompt, cwd, agent_session_id, files, *, on_session_started, model):
+    def resume(
+        self, prompt, cwd, agent_session_id, files, *, on_session_started, model, **kwargs
+    ):
         return self._run(cwd, on_session_started)
 
     def _run(self, cwd, on_session_started):
@@ -301,6 +303,58 @@ def test_queue_prompt_files(db: None, tmp_path: Path) -> None:
     )
     assert edited.exit_code == 0, edited.output
     assert queue.get(item["id"])["prompt"] == "edited file"
+
+
+def test_queue_add_prepares_codex_images_before_enqueue(
+    db: None, monkeypatch, tmp_path: Path
+) -> None:
+    root = state.insert_session(agent="codex", prompt="root", cwd=str(tmp_path))
+    state.update_session(root, status="done", agent_session_id="thread-1")
+    image = tmp_path / "shot.png"
+    image.write_bytes(b"png")
+
+    added = runner.invoke(
+        cli.app, ["queue", "add", root, "-p", "look", "--files", "shot.png"]
+    )
+
+    assert added.exit_code == 0, added.output
+    assert json.loads(queue.list_items(root)[0]["files"]) == [str(image)]
+
+    missing = runner.invoke(
+        cli.app, ["queue", "add", root, "-p", "missing", "--files", "absent.webp"]
+    )
+    assert missing.exit_code == 2
+    assert "absent.webp" in missing.output
+    assert queue.queued_count(root) == 1
+
+
+def test_delivery_of_old_codex_item_inherits_parent_effort(db: None, tmp_path: Path) -> None:
+    root = state.insert_session(
+        agent="codex", prompt="root", cwd=str(tmp_path), effort="ultra"
+    )
+    state.update_session(root, status="done", agent_session_id="thread-1")
+    queue.enqueue(root, "later")
+
+    child = queue.deliver_next(root, root, lambda sid: 1)
+
+    assert child is not None
+    assert state.get_session(child)["effort"] == "ultra"
+
+
+def test_delivery_of_old_codex_item_falls_back_to_config(
+    db: None, monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        config, "load_config", lambda: {"agents": {"codex": {"reasoning_effort": "high"}}}
+    )
+    root = state.insert_session(agent="codex", prompt="root", cwd=str(tmp_path))
+    state.update_session(root, status="done", agent_session_id="thread-1")
+    queue.enqueue(root, "later")
+
+    child = queue.deliver_next(root, root, lambda sid: 1)
+
+    assert child is not None
+    assert state.get_session(child)["effort"] == "high"
 
 
 def test_init_template_carries_commented_setting_sections() -> None:
