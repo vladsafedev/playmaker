@@ -1077,3 +1077,245 @@ def test_environment_api_key_is_stripped(monkeypatch, value):
         assert not manus.ManusHandler().is_available()
         monkeypatch.setattr(manus, "_keychain_api_key", lambda: "keychain-key")
         assert manus.load_api_key() == "keychain-key"
+
+
+def test_cascade_self_wait_reaches_result_and_attachment(configured, tmp_path, monkeypatch):
+    handler = manus.ManusHandler()
+    events = _events("manus_events_cascade.jsonl")
+    details = iter(
+        [
+            _fixture("manus_detail_cascade_running.json"),
+            _fixture("manus_detail_cascade_final.json"),
+            _fixture("manus_detail_cascade_final.json"),
+        ]
+    )
+    message_pages = iter([events[:5], events[5:], [], []])
+
+    def request(method, path, key, body=None, *, query=None):
+        if path.endswith("task.create"):
+            return {"task_id": "iEYga7GeD8HEKJ7M38Jdm4"}
+        if path.endswith("listMessages"):
+            return {"messages": next(message_pages), "has_more": False}
+        if path.endswith("task.detail"):
+            return next(details)
+        raise AssertionError(path)
+
+    monkeypatch.setattr(handler, "_request", request)
+    monkeypatch.setattr(
+        manus.urllib.request, "urlopen", lambda request, timeout: _JSONResponse("x")
+    )
+    result = handler.dispatch("prompt", tmp_path, model="max")
+
+    assert result.exit_code == 0
+    assert result.initial_output.startswith("[Download the reference]")
+    assert result.initial_output.endswith("reference.md")
+    meta = json.loads(result.session_file.read_text().splitlines()[-1])
+    assert meta["credit_usage"] == 230
+
+
+@pytest.mark.parametrize("event_type", ["messageAskUser", "gmailSendAction"])
+def test_user_wait_returns_without_another_poll(configured, tmp_path, monkeypatch, event_type):
+    handler = manus.ManusHandler()
+    list_calls = 0
+
+    def request(method, path, key, body=None, *, query=None):
+        nonlocal list_calls
+        if path.endswith("task.create"):
+            return {"task_id": "task"}
+        if path.endswith("listMessages"):
+            list_calls += 1
+            return {
+                "messages": [
+                    {
+                        "type": "status_update",
+                        "status_update": {
+                            "agent_status": "waiting",
+                            "status_detail": {
+                                "waiting_for_event_type": event_type,
+                                "waiting_description": "client input",
+                            },
+                        },
+                    }
+                ]
+            }
+        if path.endswith("task.detail"):
+            return {"task": {}}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(handler, "_request", request)
+    result = handler.dispatch("prompt", tmp_path)
+    assert result.initial_output == f"[manus waiting: {event_type}] client input"
+    assert list_calls == 1
+
+
+@pytest.mark.parametrize("detail_status, expected_wait", [("waiting", True), ("running", False)])
+def test_unknown_wait_checks_detail(
+    configured, tmp_path, monkeypatch, detail_status, expected_wait
+):
+    handler = manus.ManusHandler()
+    pages = iter(
+        [
+            [
+                {
+                    "id": "wait",
+                    "type": "status_update",
+                    "status_update": {
+                        "agent_status": "waiting",
+                        "status_detail": {"waiting_for_event_type": "futureWait"},
+                    },
+                }
+            ],
+            [_status("stopped", "stop")],
+            [],
+        ]
+    )
+    detail_calls = 0
+
+    def request(method, path, key, body=None, *, query=None):
+        nonlocal detail_calls
+        if path.endswith("task.create"):
+            return {"task_id": "task"}
+        if path.endswith("listMessages"):
+            return {"messages": next(pages), "has_more": False}
+        if path.endswith("task.detail"):
+            detail_calls += 1
+            if detail_calls == 1:
+                return {"task": {"status": detail_status}}
+            return {"task": {"status": "stopped"}}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(handler, "_request", request)
+    result = handler.dispatch("prompt", tmp_path)
+    assert result.initial_output.startswith("[manus waiting:") is expected_wait
+
+
+def test_configured_custom_self_wait(configured, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        manus,
+        "agent_setting",
+        lambda agent, key, default=None: {
+            "poll_seconds": 0,
+            "max_wait_minutes": 30,
+            "self_wait_types": ["customInternal"],
+        }.get(key, default),
+    )
+    handler = manus.ManusHandler()
+    pages = iter(
+        [
+            [
+                {
+                    "id": "wait",
+                    "type": "status_update",
+                    "status_update": {
+                        "agent_status": "waiting",
+                        "status_detail": {"waiting_for_event_type": "customInternal"},
+                    },
+                }
+            ],
+            [_status("stopped", "stop")],
+            [],
+        ]
+    )
+
+    def request(method, path, key, body=None, *, query=None):
+        if path.endswith("task.create"):
+            return {"task_id": "task"}
+        if path.endswith("listMessages"):
+            return {"messages": next(pages), "has_more": False}
+        if path.endswith("task.detail"):
+            return {"task": {"status": "stopped"}}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(handler, "_request", request)
+    assert not handler.dispatch("prompt", tmp_path).initial_output.startswith("[manus waiting:")
+
+
+def test_stop_remote_already_stopped_skips_stop(configured, monkeypatch):
+    handler = manus.ManusHandler()
+    calls = []
+
+    def request(method, path, key, body=None, *, query=None):
+        calls.append((method, path, body, query))
+        return {"task": {"status": "stopped", "has_running_background_jobs": False}}
+
+    monkeypatch.setattr(handler, "_request", request)
+    assert handler.stop_remote("task") == "stopped"
+    assert [call[1] for call in calls] == ["/v2/task.detail"]
+
+
+def test_stop_remote_running_stops_then_reads_status(configured, monkeypatch):
+    handler = manus.ManusHandler()
+    calls = []
+    details = iter([{"task": {"status": "running"}}, {"task": {"status": "stopped"}}])
+
+    def request(method, path, key, body=None, *, query=None):
+        calls.append((method, path, body, query))
+        if path.endswith("task.stop"):
+            return {"ok": True}
+        return next(details)
+
+    monkeypatch.setattr(handler, "_request", request)
+    assert handler.stop_remote("task") == "stopped"
+    assert [call[1] for call in calls] == [
+        "/v2/task.detail",
+        "/v2/task.stop",
+        "/v2/task.detail",
+    ]
+
+
+def test_stop_remote_stop_error_is_ignored_when_detail_is_stopped(configured, monkeypatch):
+    handler = manus.ManusHandler()
+    details = iter([{"task": {"status": "running"}}, {"task": {"status": "stopped"}}])
+
+    def request(method, path, key, body=None, *, query=None):
+        if path.endswith("task.stop"):
+            raise RuntimeError("stop response unavailable")
+        return next(details)
+
+    monkeypatch.setattr(handler, "_request", request)
+    assert handler.stop_remote("task") == "stopped"
+
+
+def test_unknown_wait_detail_is_not_reused_after_later_error(
+    configured, tmp_path, monkeypatch
+):
+    handler = manus.ManusHandler()
+    pages = iter(
+        [
+            [
+                {
+                    "id": "wait",
+                    "type": "status_update",
+                    "status_update": {
+                        "agent_status": "waiting",
+                        "status_detail": {"waiting_for_event_type": "futureWait"},
+                    },
+                }
+            ],
+            [
+                {"id": "error-message", "type": "error_message", "error_message": "failed"},
+                _status("error", "error-status"),
+            ],
+        ]
+    )
+    details = iter(
+        [
+            {"task": {"status": "running", "credit_usage": 40}},
+            {"task": {"status": "error", "credit_usage": 41}},
+        ]
+    )
+
+    def request(method, path, key, body=None, *, query=None):
+        if path.endswith("task.create"):
+            return {"task_id": "task"}
+        if path.endswith("listMessages"):
+            return {"messages": next(pages), "has_more": False}
+        if path.endswith("task.detail"):
+            return next(details)
+        raise AssertionError(path)
+
+    monkeypatch.setattr(handler, "_request", request)
+    result = handler.dispatch("prompt", tmp_path)
+    meta = json.loads(result.session_file.read_text().splitlines()[-1])
+    assert result.exit_code == 1
+    assert meta["credit_usage"] == 41

@@ -1,0 +1,22 @@
+{
+ "ok": true,
+ "request_id": "48239968-08b9-448f-91ae-024835664ef0",
+ "task": {
+  "agent_profile": "manus-1.6-max",
+  "created_at": "1794129282",
+  "created_by_api_key": {
+   "id": "SnGzZEYfZyVnqxpp8DysJq",
+   "name": "playmaker"
+  },
+  "credit_usage": 230,
+  "has_running_background_jobs": false,
+  "id": "iEYga7GeD8HEKJ7M38Jdm4",
+  "is_archived": false,
+  "share_visibility": "private",
+  "status": "stopped",
+  "task_type": "standard",
+  "task_url": "https://example.invalid/redacted",
+  "title": "playmaker fixture — max fan-out",
+  "updated_at": "1794130487"
+ }
+}

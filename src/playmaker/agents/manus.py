@@ -30,6 +30,7 @@ NO_KEY_MESSAGE = (
     "manus: no API key — add one: security add-generic-password "
     "-s playmaker-manus-api -a playmaker -w  (or set MANUS_API_KEY)"
 )
+USER_WAIT_TYPES = {"messageAskUser", "cascadeAskUser", "needConnectMyBrowser"}
 
 
 def _keychain_api_key() -> str | None:
@@ -267,6 +268,42 @@ class ManusHandler:
         finally:
             self._deadline = deadline
 
+    def stop_remote(self, agent_session_id: str) -> str:
+        """Stop a cloud task and return its resulting status."""
+        key = load_api_key()
+        deadline = getattr(self, "_deadline", None)
+        self._deadline = time.monotonic() + 15
+        try:
+            response = self._request(
+                "GET", "/v2/task.detail", key, query={"task_id": agent_session_id}
+            )
+            task = response.get("task")
+            if (
+                isinstance(task, dict)
+                and task.get("status") == "stopped"
+                and not task.get("has_running_background_jobs")
+            ):
+                return "stopped"
+            stop_error: RuntimeError | OSError | None = None
+            try:
+                self._request("POST", "/v2/task.stop", key, {"task_id": agent_session_id})
+            except (RuntimeError, OSError) as exc:
+                stop_error = exc
+            response = self._request(
+                "GET", "/v2/task.detail", key, query={"task_id": agent_session_id}
+            )
+            task = response.get("task")
+            status = task.get("status") if isinstance(task, dict) else None
+            if status == "stopped":
+                return "stopped"
+            if stop_error is not None:
+                raise stop_error
+            return status if isinstance(status, str) and status else "unknown"
+        except (RuntimeError, OSError) as exc:
+            raise RuntimeError(str(exc).replace(key, "[redacted]")) from None
+        finally:
+            self._deadline = deadline
+
     def _poll(self, task_id: str, cwd: Path, key: str, profile: str, task_url: object):
         started = time.monotonic()
         minutes = float(agent_setting("manus", "max_wait_minutes", 30))
@@ -301,6 +338,12 @@ class ManusHandler:
         error_text = ""
         detail: dict[str, Any] = {}
         final_pass = False
+        configured_self_waits = agent_setting("manus", "self_wait_types", ["cascadeJobCall"])
+        self_wait_types = (
+            {value for value in configured_self_waits if isinstance(value, str)}
+            if isinstance(configured_self_waits, list)
+            else {"cascadeJobCall"}
+        )
 
         cursor: str | None = None
         last_id = None
@@ -364,15 +407,43 @@ class ManusHandler:
             status = latest_status.get("agent_status") if latest_status else None
             if status == "waiting":
                 detail_status = latest_status.get("status_detail")
-                detail_status = detail_status if isinstance(detail_status, dict) else {}
-                event_type = detail_status.get("waiting_for_event_type", "event")
-                description = detail_status.get("waiting_description", "")
+                detail_status = detail_status if isinstance(detail_status, dict) else None
+                event_type = (
+                    detail_status.get("waiting_for_event_type", "event")
+                    if detail_status is not None
+                    else "event"
+                )
+                description = (
+                    detail_status.get("waiting_description", "")
+                    if detail_status is not None
+                    else ""
+                )
+                user_wait = event_type in USER_WAIT_TYPES or (
+                    isinstance(event_type, str) and event_type.endswith("Action")
+                )
+                keep_polling = event_type in self_wait_types
+                if not keep_polling and not user_wait:
+                    response = self._request(
+                        "GET", "/v2/task.detail", key, query={"task_id": task_id}
+                    )
+                    raw_wait_detail = response.get("task")
+                    wait_detail = raw_wait_detail if isinstance(raw_wait_detail, dict) else {}
+                    task_url = wait_detail.get("task_url", task_url)
+                    keep_polling = wait_detail.get("status") == "running"
+                if keep_polling:
+                    remaining = self._deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError("manus polling deadline exceeded")
+                    time.sleep(min(poll_seconds, remaining))
+                    continue
                 output = f"[manus waiting: {event_type}] {description}".rstrip()
                 last = self._last_assistant(assistant)
                 if last:
                     output += "\n" + last
+                # {} makes _finish read a fresh task.detail (final credit_usage), not one
+                # left over from an earlier stopped-with-background-jobs iteration.
                 return self._finish(
-                    task_id, cwd, path, started, output, 0, detail, task_url, profile, key
+                    task_id, cwd, path, started, output, 0, {}, task_url, profile, key
                 )
             if status == "error":
                 return self._finish(
@@ -382,7 +453,7 @@ class ManusHandler:
                     started,
                     error_text or "Manus reported an error (no message)",
                     1,
-                    detail,
+                    {},
                     task_url,
                     profile,
                     key,

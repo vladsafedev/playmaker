@@ -2124,26 +2124,87 @@ def kill(
     if row is None:
         err_console.print(f"[red]session {session_id!r} not found[/red]")
         raise typer.Exit(1)
+    try:
+        handler = get_handler(row["agent"])
+    except KeyError:
+        handler = None  # a lane no longer registered still gets its local process killed
+    stop_remote = getattr(handler, "stop_remote", None)
+    task_id = row.get("agent_session_id")
+    remote_stop = stop_remote if callable(stop_remote) and task_id else None
+    siblings = []
+    if remote_stop is not None:
+        siblings = [
+            candidate
+            for candidate in state.list_sessions(agent=row["agent"], limit=1_000_000)
+            if candidate["id"] != row["id"]
+            and candidate.get("agent_session_id") == task_id
+            and candidate["status"] in ("running", "pending")
+        ]
+    for local_row in siblings:
+        pid = local_row.get("pid")
+        if pid:
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except PermissionError as exc:
+                err_console.print(f"[red]cannot kill pid {pid}: {escape(str(exc))}[/red]")
+                raise typer.Exit(1) from exc
+        state.update_session(
+            local_row["id"], status="killed", finished_at=state.now_iso(), exit_code=143
+        )
+        _maybe_finalize_batch(local_row.get("batch_id"))
+        console.print(f"[magenta]killed[/magenta] {local_row['id']} (pid {pid})")
     if row["status"] not in ("running", "pending"):
+        if remote_stop is not None:
+            try:
+                remote_status = remote_stop(task_id)
+            except Exception as exc:
+                err_console.print(
+                    f"[red]manus task {escape(str(task_id))}: "
+                    f"stop failed: {escape(str(exc))}[/red]"
+                )
+                raise typer.Exit(1) from exc
+            console.print(
+                f"session is {row['status']}; manus task {escape(str(task_id))}: "
+                f"{escape(str(remote_status))}"
+            )
+            raise typer.Exit(0)
         err_console.print(f"[yellow]session is {row['status']}; nothing to kill[/yellow]")
         raise typer.Exit(0)
     pid = row.get("pid")
-    if not pid:
+    if not pid and remote_stop is None:
         err_console.print(f"[red]no pid recorded for {row['id']}[/red]")
         raise typer.Exit(1)
-    try:
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
-    except ProcessLookupError:
-        # Process already gone; just mark killed.
-        pass
-    except PermissionError as exc:
-        err_console.print(f"[red]cannot kill pid {pid}: {exc}[/red]")
-        raise typer.Exit(1) from exc
+    if pid:
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except ProcessLookupError:
+            # Process already gone; just mark killed.
+            pass
+        except PermissionError as exc:
+            err_console.print(f"[red]cannot kill pid {pid}: {escape(str(exc))}[/red]")
+            raise typer.Exit(1) from exc
     state.update_session(row["id"], status="killed", finished_at=state.now_iso(), exit_code=143)
     # killed is terminal too: if this was the batch's last live session, nobody
     # else is left to notice the fan-out drained.
     _maybe_finalize_batch(row.get("batch_id"))
+    remote_error: Exception | None = None
+    if remote_stop is not None:
+        try:
+            remote_status = remote_stop(task_id)
+            console.print(
+                f"manus task {escape(str(task_id))}: {escape(str(remote_status))}"
+            )
+        except Exception as exc:
+            remote_error = exc
+            err_console.print(
+                f"[red]manus task {escape(str(task_id))}: "
+                f"stop failed: {escape(str(exc))}[/red]"
+            )
     console.print(f"[magenta]killed[/magenta] {row['id']} (pid {pid})")
+    if remote_error is not None:
+        raise typer.Exit(1)
 
 
 @app.command()

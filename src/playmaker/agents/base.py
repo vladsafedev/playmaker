@@ -42,6 +42,9 @@ class Turn:
 class AgentHandler(Protocol):
     """Each supported agent (claude/codex/agy/gemini) implements this Protocol."""
 
+    # Cloud-backed handlers may additionally expose the optional
+    # stop_remote(agent_session_id) -> str hook used by `playmaker kill`.
+
     name: str
 
     def is_available(self) -> bool:
