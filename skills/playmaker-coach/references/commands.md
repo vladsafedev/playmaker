@@ -36,8 +36,9 @@ Every command takes `--json`.
   claude lanes, plus `ultra` on codex. On codex it is passed to `codex exec` / `codex exec
   resume` as `-c model_reasoning_effort="<value>"`, checked against the model's
   `supported_reasoning_levels` in `$CODEX_HOME/models_cache.json` when present; precedence
-  is the flag, `PLAYMAKER_CODEX_EFFORT`, the parent session's effort on `continue`,
-  `[agents.codex] reasoning_effort`, else Codex's own default. Accepted and ignored on every
+  on `dispatch` is the flag, `PLAYMAKER_CODEX_EFFORT`, `[agents.codex] reasoning_effort`; on
+  `continue` (queued or not) the flag, the parent session's effort,
+  `PLAYMAKER_CODEX_EFFORT`, the config; else Codex's own default. Accepted and ignored on every
   other lane. `get` shows the stored value (`effort:` line, `effort` in `--json`).
 - On the codex lane, `--files` entries ending in `.png`/`.jpg`/`.jpeg`/`.webp` go as
   `--image=` attachments, on dispatch and on resume (`continue --files`); other files stay

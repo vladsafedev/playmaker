@@ -279,7 +279,10 @@ reserve; fewer than required stops the script.
 
 Roster format is `<kind> <lane> <model> <lens> [<effort>]` — the optional fifth column is the
 seat's per-dispatch reasoning effort, passed as `playmaker dispatch --effort <value>` (board
-seats, reserve substitutes, the precheck and decision seats alike); `-` or absent means none:
+seats, reserve substitutes, the precheck and decision seats alike); `-` or absent means none.
+codex takes `low`…`ultra`, claude / claude-api `low`…`max` (anything else stops the script naming
+the roster line); on any other lane the effort is dropped with a note. Two seats with the same lane
+and lens in one round get distinct prompt and verdict files (the later one suffixed):
 
     high codex gpt-6-astra risk ultra
 

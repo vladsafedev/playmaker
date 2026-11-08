@@ -52,9 +52,9 @@ line from `agy models` / `opencode models` rather than typing it.
   **Omitting `--model` is the safe default here** — it uses whatever the account actually has.
 - Reasoning effort: `--effort low|medium|high|xhigh|max|ultra`, passed to `codex exec` and
   `codex exec resume` as `-c model_reasoning_effort="<value>"` and checked against the model's
-  `supported_reasoning_levels` in `$CODEX_HOME/models_cache.json` when present. Precedence: the
-  flag, `PLAYMAKER_CODEX_EFFORT`, the parent session's effort on `continue`, `[agents.codex]
-  reasoning_effort`; unset everywhere, Codex's own `~/.codex/config.toml` applies.
+  `supported_reasoning_levels` in `$CODEX_HOME/models_cache.json` when present. Precedence on
+  `dispatch`: the flag, `PLAYMAKER_CODEX_EFFORT`, `[agents.codex] reasoning_effort`; on `continue`
+  (queued or not): the flag, the parent session's effort, the env var, the config; unset everywhere, Codex's own `~/.codex/config.toml` applies.
 - `--files` ending in `.png`/`.jpg`/`.jpeg`/`.webp` go as `--image=` attachments, on dispatch
   and on resume; everything else stays an `@path` ref in the prompt.
 

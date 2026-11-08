@@ -419,9 +419,10 @@ Code's own default applies.
 low|medium|high|xhigh|max|ultra` — passed to `codex exec` and `codex exec
 resume` as `-c model_reasoning_effort="<value>"`. The value is checked against
 the model's `supported_reasoning_levels` in `$CODEX_HOME/models_cache.json`
-when that file describes the model; precedence is `--effort`, then
-`PLAYMAKER_CODEX_EFFORT`, then the parent session's effort on `continue`, then
-`reasoning_effort = "…"` under `[agents.codex]`. Unset everywhere, Codex's own
+when that file describes the model; precedence on `dispatch` is `--effort`,
+then `PLAYMAKER_CODEX_EFFORT`, then `reasoning_effort = "…"` under
+`[agents.codex]`; on `continue` (queued or not) the parent session's effort
+comes right after `--effort`, ahead of the env var. Unset everywhere, Codex's own
 `~/.codex/config.toml` applies. The effective effort is stored on the session
 and shown by `playmaker get` (an `effort:` line; `effort` in `--json`).
 
