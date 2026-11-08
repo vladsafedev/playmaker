@@ -623,11 +623,26 @@ def test_comment_before_lens_cannot_become_a_seat(effort_repo, mode: str) -> Non
 @pytest.mark.parametrize("risk", ["routine", "normal", "high", "seams", "decision"])
 def test_copy_of_live_four_column_roster(effort_repo, risk: str) -> None:
     repo, base, env, log = effort_repo
-    live = Path.home() / ".playmaker" / "reviewers.conf"
-    if not live.is_file():
-        pytest.skip("no live reviewers.conf on this machine")
-    # Only the temporary copy is passed to the scripts; HOME and PATH stay isolated.
-    conf = write_roster(repo, live.read_text(encoding="utf-8"))
+    conf = write_roster(
+        repo,
+        "# Synthetic legacy four-column roster.\n"
+        "routine codex gpt-routine risk # trailing comment\n"
+        "routine agy - correctness\n"
+        "normal claude haiku review\n"
+        "normal kimi - contracts\n"
+        "normal muse muse-normal product\n"
+        "high codex gpt-high risk\n"
+        "high agy - correctness\n"
+        "high kimi kimi-high contracts\n"
+        "high manus standard product # trailing comment\n"
+        "seams opencode - integration\n"
+        "seams gemini gemini-seams interfaces\n"
+        "# Decision seats keep Claude available for --opus.\n"
+        "decision codex gpt-decision risk\n"
+        "decision manus - product # trailing comment\n"
+        "decision agy agy-decision correctness\n"
+        "decision claude opus architecture\n",
+    )
     rows = []
     for line in conf.read_text(encoding="utf-8").splitlines():
         fields = []

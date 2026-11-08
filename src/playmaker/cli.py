@@ -1151,6 +1151,7 @@ def continue_(
             gate_cmd=gate_cmd if gate_cmd is not None else root_row.get("gate_cmd"),
             model=effective_model,
             effort=effective_effort,
+            agent=parent["agent"],
             expect_changes=session_expects_changes,
         )
         if json_out:
@@ -1309,6 +1310,7 @@ def queue_add(
         files=_prepare_files(row["agent"], files, Path(row["cwd"])),
         gate_cmd=gate_cmd if gate_cmd is not None else root_row.get("gate_cmd"),
         model=normalized_model if normalized_model is not None else row.get("model"),
+        agent=row["agent"],
         expect_changes=item_expect_changes,
         first=first,
         position=position,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import threading
 from pathlib import Path
 
@@ -424,6 +425,70 @@ def test_delivery_of_old_codex_item_drops_inherited_effort_invalid_for_its_model
     stderr = capsys.readouterr().err
     assert "gpt-5.6-luna has no reasoning effort 'ultra'" in stderr
     assert stderr.strip().count("\n") == 0  # one line
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_delivery_after_fallback_uses_fallback_lane_model_and_effort(
+    db: None, tmp_path: Path, capsys, legacy: bool
+) -> None:
+    root = state.insert_session(
+        agent="kimi", prompt="root", cwd=str(tmp_path), model="kimi-code/k3-256k"
+    )
+    state.update_session(root, status="failed")
+    fallback = state.insert_session(
+        agent="codex", prompt="fallback", cwd=str(tmp_path), parent_id=root, effort="high"
+    )
+    state.update_session(fallback, status="done", agent_session_id="codex-thread")
+    queue.enqueue(
+        root,
+        "follow up",
+        model="kimi-code/k3-256k",
+        effort="ultra",
+        **({} if legacy else {"agent": "kimi"}),
+    )
+
+    child = queue.deliver_next(root, fallback, lambda sid: 1)
+
+    assert child is not None
+    delivered = state.get_session(child)
+    assert delivered["agent"] == "codex"
+    assert delivered["model"] is None
+    assert delivered["effort"] == "high"
+    assert "kimi -> codex" in capsys.readouterr().err
+
+
+def test_same_lane_delivery_keeps_explicit_item_model(db: None, tmp_path: Path) -> None:
+    root = state.insert_session(agent="codex", prompt="root", cwd=str(tmp_path))
+    state.update_session(root, status="done", agent_session_id="codex-thread")
+    queue.enqueue(root, "follow up", model="gpt-5.6-luna", agent="codex")
+
+    child = queue.deliver_next(root, root, lambda sid: 1)
+
+    assert child is not None
+    assert state.get_session(child)["model"] == "gpt-5.6-luna"
+
+
+def test_init_db_migrates_queue_agent_column(monkeypatch, tmp_path: Path) -> None:
+    home = tmp_path / ".playmaker"
+    home.mkdir()
+    monkeypatch.setattr(state, "PLAYMAKER_HOME", home)
+    monkeypatch.setattr(state, "DB_PATH", home / "state.db")
+    legacy = sqlite3.connect(home / "state.db")
+    legacy.execute(
+        """CREATE TABLE queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL, position INTEGER NOT NULL,
+        prompt TEXT NOT NULL, cwd TEXT, files TEXT, gate_cmd TEXT, model TEXT, effort TEXT,
+        expect_changes INTEGER, status TEXT NOT NULL, created_at TEXT NOT NULL,
+        updated_at TEXT, delivered_as TEXT, note TEXT)"""
+    )
+    legacy.commit()
+    legacy.close()
+
+    state.init_db()
+
+    with state.connect() as c:
+        columns = {row["name"] for row in c.execute("PRAGMA table_info(queue)")}
+    assert "agent" in columns
 
 
 def test_queue_add_and_edit_normalize_whitespace_codex_model(db: None, tmp_path: Path) -> None:

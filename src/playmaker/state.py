@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS queue (
     gate_cmd TEXT,
     model TEXT,
     effort TEXT,
+    agent TEXT,
     expect_changes INTEGER,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -134,6 +135,8 @@ def init_db() -> None:
             c.execute("ALTER TABLE queue ADD COLUMN cwd TEXT")
         if "effort" not in queue_cols:
             c.execute("ALTER TABLE queue ADD COLUMN effort TEXT")
+        if "agent" not in queue_cols:
+            c.execute("ALTER TABLE queue ADD COLUMN agent TEXT")
         if "model" not in existing_cols:
             c.execute("ALTER TABLE sessions ADD COLUMN model TEXT")
         if "effort" not in existing_cols:

@@ -13,6 +13,7 @@ from playmaker.agents.codex import CODEX_EFFORT_ENV_VAR, validate_model_effort
 from playmaker.agents.codex import VALID_EFFORTS as CODEX_VALID_EFFORTS
 from playmaker.agents.codex import configured_model as configured_codex_model
 from playmaker.config import agent_setting
+from playmaker.registry import claude_lanes
 
 
 def _renumber(c, thread_id: str) -> None:
@@ -33,6 +34,7 @@ def enqueue(
     gate_cmd: str | None = None,
     model: str | None = None,
     effort: str | None = None,
+    agent: str | None = None,
     expect_changes: bool | None = None,
     first: bool = False,
     position: int | None = None,
@@ -51,8 +53,8 @@ def enqueue(
         )
         cur = c.execute(
             """INSERT INTO queue (thread_id, position, prompt, cwd, files, gate_cmd,
-            model, effort, expect_changes, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)""",
+            model, effort, agent, expect_changes, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)""",
             (
                 thread_id,
                 pos,
@@ -62,6 +64,7 @@ def enqueue(
                 gate_cmd,
                 model,
                 effort,
+                agent,
                 int(expect_changes) if expect_changes is not None else None,
                 state.now_iso(),
             ),
@@ -199,7 +202,36 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
         if item is None:
             return None
         item = dict(item)
-        delivered_effort = item.get("effort")
+        item_agent = item.get("agent")
+        foreign_lane = item_agent is not None and item_agent != parent["agent"]
+        if item_agent is None and item.get("model") != parent.get("model") and item.get("model"):
+            # Legacy queue rows predate their originating lane.  A model on a
+            # different-lane session in this thread identifies the same
+            # fallback shape without changing ordinary same-lane overrides.
+            legacy_source = c.execute(
+                """WITH RECURSIVE thread(id) AS (
+                    SELECT id FROM sessions WHERE id=?
+                    UNION ALL
+                    SELECT sessions.id FROM sessions JOIN thread ON sessions.parent_id=thread.id
+                ) SELECT agent FROM sessions
+                  WHERE id IN (SELECT id FROM thread) AND agent != ? AND model = ?
+                  LIMIT 1""",
+                (thread_id, parent["agent"], item["model"]),
+            ).fetchone()
+            if legacy_source is not None:
+                foreign_lane = True
+                item_agent = legacy_source["agent"]
+
+        delivered_model = parent.get("model") if foreign_lane else item.get("model")
+        delivered_effort = None if foreign_lane else item.get("effort")
+        if foreign_lane:
+            print(
+                "queued delivery dropped model and effort for lane change: "
+                f"{item_agent} -> {parent['agent']}",
+                file=sys.stderr,
+            )
+            if parent["agent"] in claude_lanes():
+                delivered_effort = parent.get("effort")
         if parent["agent"] == "codex" and delivered_effort is None:
             # Same order as continue: parent's recorded effort, then the env,
             # then config. An invalid env value falls through to config rather
@@ -216,7 +248,7 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
                     inherited = normalized
             if inherited is not None:
                 effective_model = (
-                    item.get("model") or parent.get("model") or configured_codex_model()
+                    delivered_model or parent.get("model") or configured_codex_model()
                 )
                 try:
                     validate_model_effort(effective_model, inherited)
@@ -246,7 +278,7 @@ def deliver_next(thread_id: str, parent_id: str, spawn: Callable[[str], int]) ->
                 item["files"],
                 state.now_iso(),
                 parent_id,
-                item["model"],
+                delivered_model,
                 delivered_effort,
                 parent["batch_id"],
                 item["expect_changes"],
