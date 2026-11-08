@@ -272,7 +272,7 @@ playmaker summary <id>                        # last 2 assistant messages
 playmaker thread <id> [--last N] [--all] [--role assistant|user|tool]
                      [--include-tools] [--max-bytes N] [--follow]
 playmaker logs <id> [--follow]                # subprocess stdout for detached runs
-playmaker kill <id>
+playmaker kill <id>                           # also stops the Manus cloud task
 playmaker watch                               # live TUI of sessions
 playmaker events [--follow] [--batch LABEL] [--session ID] [--kind KIND]
                  [--last N] [--since ISO] [--interval SECONDS]  # JSON lines only

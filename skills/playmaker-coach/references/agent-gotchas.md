@@ -66,16 +66,24 @@ line from `agy models` / `opencode models` rather than typing it.
 - `--model` is the Manus agent profile: `lite`, `standard` (default), `max`, `max-medium`,
   `max-high`, `max-extra`, or `max-ultra`. The lane sends the prompt unchanged: neither it nor
   Manus adds a role or persona. `[agents.manus] project_id` only groups tasks in the Manus web app.
-- If output begins `[manus waiting: <type>]`, answer with `playmaker continue <id> --prompt "…"`.
-  The lane never confirms actions on Manus's side. Its final `result` is the output; downloaded
-  attachments live under the session state directory and nothing is written to the repo.
+- Fan-out waits are polled through: a `max` task waiting on its own parallel jobs
+  (`cascadeJobCall`; `[agents.manus] self_wait_types` lists the waits treated that way) runs to its
+  final result and attachments. Only user-facing waits — `messageAskUser`, `cascadeAskUser`,
+  `needConnectMyBrowser`, any `*Action` — return `[manus waiting: <type>]`; answer those with
+  `playmaker continue <id> --prompt "…"`. Any other wait follows `task.detail`: polled while the
+  task is `running`, the stub otherwise. The lane never confirms actions on Manus's side. Its final
+  `result` is the output; downloaded attachments live under the session state directory and nothing
+  is written to the repo.
+- `playmaker kill <id>` stops the Manus task (`/v2/task.stop`) and prints its status — also after
+  the local poller ended — so it is the way to stop spending credits.
 - Configure `[agents.manus] model`, `project_id`, `poll_seconds` (10), and `max_wait_minutes` (30;
   expiry stops the task). Use the macOS Keychain item `playmaker-manus-api` for account `playmaker`,
   or `MANUS_API_KEY`.
 - Cost is Manus credits, not USD, so `cost_usd` is empty. `playmaker quotas` shows monthly credits
   remaining from the allowance plus the add-on balance. Measured 2026-11-03: a short product review
-  took about 75 seconds on lite and standard; lite cost 1 credit. API timestamps are digit strings,
-  credits are top-level fields, and `credit_usage` can be absent.
+  took about 75 seconds on lite and standard; lite cost 1 credit. A `max` fan-out measured 2026-11-08
+  took ~20 minutes and 230 credits, so a long `max` run needs a higher `max_wait_minutes` in config.
+  API timestamps are digit strings, credits are top-level fields, and `credit_usage` can be absent.
 
 ## perplexity
 
@@ -84,6 +92,10 @@ line from `agy models` / `opencode models` rather than typing it.
 - `[agents.perplexity] instructions_file` is sent verbatim; only `${current_date}` is replaced with today's UTC date. Unset uses Perplexity's preset prompt, which says never refuse and always commit to an answer.
 - Runs are backgrounded and polled (`poll_seconds` defaults to 3); `max_wait_minutes` defaults to 20 and cancels on expiry. New accounts can receive 429 at about one request/second; it is retried.
 - Keep the final provenance line (`— perplexity <preset> · <model> · <date> · <R> results, <C> cited`) with the inline `[web:N]` citations and `Sources:` block. Use `playmaker continue` to follow up in the same conversation.
+- Null list fields in the response — `search_results` items with `"results": null` and the like —
+  are tolerated, and the raw response is always in `~/.playmaker/perplexity/<id>.jsonl`: a
+  formatting error appends a note, it never loses the paid answer.
+- Create-time quota and auth refusals raise, so `--fallback` reroutes them to the next lane.
 
 ## opencode
 

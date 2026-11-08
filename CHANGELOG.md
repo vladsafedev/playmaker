@@ -43,6 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `playmaker-manus-api`, or `MANUS_API_KEY`.
 - **`playmaker quotas` shows Manus credits** — the monthly allowance left and
   the add-on balance.
+- **A `perplexity` lane on the Perplexity Agent API.** `playmaker dispatch
+  perplexity --read-only` sends one research prompt over HTTP (`--files` is
+  refused; the text goes in the prompt). `--model` is the effort — `fast`,
+  `low` (default), `medium`, `high`, `xhigh`, `ultra-preview`, each optionally
+  pinned as `<name>@<version>` — and `[agents.perplexity] instructions_file`
+  is sent verbatim with `${current_date}` replaced by today's UTC date. Every
+  run is created in the background and polled (`poll_seconds`, default 3); when
+  `max_wait_minutes` (default 20) expires, the run is cancelled and the session
+  ends with exit code 1 and the cancellation as its output. `playmaker continue` follows up in the same conversation, and the
+  answer keeps its `[web:N]` citations with a `Sources:` block. Key: the
+  Keychain item `playmaker-perplexity-api`, or `PERPLEXITY_API_KEY`.
+- **`playmaker quotas` shows a `Perplexity` block** — a local sum of the lane's
+  `cost_usd` this cycle against `[agents.perplexity] monthly_cap_usd` (the
+  Agent API exposes no balance), and `[agents.perplexity] stop_at_usd` makes
+  `dispatch` and `continue` refuse (exit 3, `--force` overrides) once the
+  spend reaches it.
 - **Decision reviews paste a per-lens role file into the seat's prompt** —
   `./.playmaker/roles/<lens>.md`, else `~/.playmaker/roles/<lens>.md` — so a role
   is visible in the saved prompt, never hidden on the provider side.
@@ -51,6 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a run started from a wip commit runs the precheck against it, over the spec's
   SCOPE plus `--paths`, while reviewers still get the delta. `--package-base REF`
   sets it by hand.
+
+### Changed
+
+- **`playmaker kill` on a `manus` session stops the cloud task.** Kill calls
+  `/v2/task.stop` on the session's Manus task and prints the status it lands
+  on, so a killed run stops spending credits. A session whose local poller
+  already finished is covered too: killing a `done` or `failed` session still
+  stops its task and reports the status.
 
 ### Fixed
 
@@ -61,6 +85,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it had before the reset.
 - **pm mod 0.1.9: Manus shows by name.** The pane titled the new lane with its
   raw key `manus` in grey; it now reads «Manus» in its own colour.
+- **pm mod 0.1.10: Perplexity shows by name**, the same way.
+- **perplexity: null list fields no longer crash a completed run, and a paid
+  answer is never lost.** `search_results` items with `"results": null` (and
+  any other null list field) read as empty instead of raising `'NoneType'
+  object is not iterable`; the raw response is written to the session file
+  before the output is formatted, so a formatting error appends a
+  `[perplexity: sources not formatted: …]` note rather than losing the answer.
+  Quota and auth refusals of the create request now raise instead of ending as
+  a failed run, so `--fallback` reroutes them; the 401/403 message names the
+  HTTP code.
+- **manus: a `max` fan-out runs to its result.** A `max` task that waits for
+  its own parallel jobs (`waiting_for_event_type: cascadeJobCall`) is polled
+  through to its final result and attachments instead of ending with a
+  `[manus waiting: cascadeJobCall]` stub. `[agents.manus] self_wait_types`
+  lists the waits treated that way; waits that need the user (`messageAskUser`,
+  `cascadeAskUser`, `needConnectMyBrowser`, any `*Action`) still return the
+  stub, and any other wait follows `task.detail` — polled while the task is
+  `running`, the stub otherwise.
 
 ## [0.16.0] - 2026-10-30
 

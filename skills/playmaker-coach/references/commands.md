@@ -23,7 +23,7 @@ playmaker summary <id>                          # last 2 assistant messages
 playmaker thread <id> [--last N] [--all] [--role assistant|user|tool]
                      [--include-tools] [--max-bytes N] [--follow]
 playmaker logs <id> [--follow]                  # subprocess stdout for detached runs
-playmaker kill <id>
+playmaker kill <id>                             # also stops the cloud task on manus
 playmaker watch                                 # live TUI
 playmaker skill install [--dir PATH] [--force]
 ```
