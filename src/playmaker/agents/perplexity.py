@@ -71,13 +71,18 @@ def _timestamp(value: object) -> datetime | None:
         return None
 
 
+def _as_list(value: object) -> list[Any]:
+    """Coerce a list-valued API field to a list; null or non-list reads as empty."""
+    return value if isinstance(value, list) else []
+
+
 def _message_text(response: dict[str, Any]) -> str:
-    for item in reversed(response.get("output", [])):
+    for item in reversed(_as_list(response.get("output"))):
         if not isinstance(item, dict) or item.get("type") != "message":
             continue
         texts = [
             part.get("text", "")
-            for part in item.get("content", [])
+            for part in _as_list(item.get("content"))
             if isinstance(part, dict)
             and part.get("type") == "output_text"
             and isinstance(part.get("text"), str)
@@ -180,11 +185,13 @@ class PerplexityHandler:
         body: dict[str, Any] = {"input": prompt, "effort": effort, "background": True}
         if instructions is not None:
             body["instructions"] = instructions
-        response_id = ""
         try:
             created = self._request("POST", "", key, body, deadline, retry_create=True)
             response_id = self._response_id(created)
-            self._notify(on_session_started, response_id)
+        except (RuntimeError, TimeoutError) as exc:
+            raise type(exc)(str(exc).replace(key, "[redacted]")) from None
+        self._notify(on_session_started, response_id)
+        try:
             return self._poll(
                 response_id,
                 response_id,
@@ -233,7 +240,10 @@ class PerplexityHandler:
         try:
             created = self._request("POST", "", key, body, deadline, retry_create=True)
             response_id = self._response_id(created)
-            self._notify(on_session_started, agent_session_id)
+        except (RuntimeError, TimeoutError) as exc:
+            raise type(exc)(str(exc).replace(key, "[redacted]")) from None
+        self._notify(on_session_started, agent_session_id)
+        try:
             return self._poll(
                 response_id,
                 agent_session_id,
@@ -349,7 +359,7 @@ class PerplexityHandler:
             "input": prompt,
         }
         with path.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(meta, ensure_ascii=False) + "\n")
+            stream.write(json.dumps(meta) + "\n")
         return path
 
     def _cancel(self, response_id: str, key: str) -> None:
@@ -376,9 +386,36 @@ class PerplexityHandler:
         started: float,
     ) -> DispatchResult:
         status = response.get("status")
-        text = _message_text(response)
+        cost = self._cost(response)
+        actual_effort = response.get("preset") or response.get("effort") or requested_effort
+        meta = {
+            "type": "playmaker_meta",
+            "response_id": response.get("id"),
+            "effort": actual_effort,
+            "model": response.get("model"),
+            "cost_usd": cost,
+            "instructions_file": instructions_file,
+            "input": prompt,
+        }
+        path = perplexity_data_home() / f"{first_id}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(response) + "\n")
+            stream.write(json.dumps(meta) + "\n")
+        try:
+            text = _message_text(response)
+        except Exception:
+            text = ""
         if status == "completed":
-            output, exit_code = self._completed_output(response, text), 0
+            try:
+                output, exit_code = self._completed_output(response, text), 0
+            except Exception as exc:
+                note = (
+                    "[perplexity: sources not formatted: "
+                    f"{type(exc).__name__}: {exc}]"
+                )
+                output = (text + "\n" if text else "") + note
+                exit_code = 0 if text else 1
         elif status == "cancelled":
             output, exit_code = "perplexity: cancelled", 1
         elif status == "incomplete":
@@ -395,22 +432,6 @@ class PerplexityHandler:
                 f"{error_type or ''} {raw}"
             ) else raw
             exit_code = 1
-        cost = self._cost(response)
-        actual_effort = response.get("preset") or response.get("effort") or requested_effort
-        meta = {
-            "type": "playmaker_meta",
-            "response_id": response.get("id"),
-            "effort": actual_effort,
-            "model": response.get("model"),
-            "cost_usd": cost,
-            "instructions_file": instructions_file,
-            "input": prompt,
-        }
-        path = perplexity_data_home() / f"{first_id}.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(response, ensure_ascii=False) + "\n")
-            stream.write(json.dumps(meta, ensure_ascii=False) + "\n")
         return DispatchResult(
             agent_session_id=first_id,
             cwd=str(cwd),
@@ -435,10 +456,10 @@ class PerplexityHandler:
     def _completed_output(response: dict[str, Any], text: str) -> str:
         results: dict[int, tuple[str, str]] = {}
         result_count = 0
-        for item in response.get("output", []):
+        for item in _as_list(response.get("output")):
             if not isinstance(item, dict) or item.get("type") != "search_results":
                 continue
-            for result in item.get("results", []):
+            for result in _as_list(item.get("results")):
                 if not isinstance(result, dict):
                     continue
                 result_count += 1
@@ -514,7 +535,9 @@ class PerplexityHandler:
                 )
                 error_type = str(error.get("type", "") if isinstance(error, dict) else "")
                 if exc.code in {401, 403}:
-                    raise RuntimeError("perplexity: API key was rejected") from None
+                    raise RuntimeError(
+                        f"perplexity: API key was rejected (HTTP {exc.code})"
+                    ) from None
                 if exc.code == 402 or self._quota_error(error_type + " " + message):
                     raise RuntimeError(f"perplexity: quota unavailable: {message}") from None
                 retry = exc.code == 429 and (retry_create or method == "GET" or retry_cancel)

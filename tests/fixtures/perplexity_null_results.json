@@ -1,0 +1,156 @@
+{
+ "background": true,
+ "completed_at": 1794133643,
+ "created_at": 1794133643,
+ "effort": "medium@2026-10-22.1",
+ "error": null,
+ "frequency_penalty": 0,
+ "id": "resp_bda46bfd-5103-4403-ba48-21a16d4ef24d",
+ "incomplete_details": null,
+ "instructions": "fixture instructions",
+ "max_output_tokens": null,
+ "max_tool_calls": null,
+ "metadata": {},
+ "model": "openai/gpt-6-luna",
+ "object": "response",
+ "output": [
+  {
+   "queries": null,
+   "results": null,
+   "type": "search_results"
+  },
+  {
+   "queries": null,
+   "results": null,
+   "type": "search_results"
+  },
+  {
+   "queries": [
+    "fixture query"
+   ],
+   "results": [
+    {
+     "id": 1,
+     "url": "https://example.org/source-1",
+     "title": "Fixture source 1",
+     "date": "2026-08-02",
+     "last_updated": "2026-11-01",
+     "snippet": "fixture snippet",
+     "source": "web"
+    },
+    {
+     "id": 2,
+     "url": "https://example.org/source-2",
+     "title": "Fixture source 2",
+     "date": "2009-09-02",
+     "last_updated": "2026-11-08",
+     "snippet": "fixture snippet",
+     "source": "web"
+    },
+    {
+     "id": 3,
+     "url": "https://example.org/source-3",
+     "title": "Fixture source 3",
+     "date": "2010-09-20",
+     "last_updated": "2026-11-02",
+     "snippet": "fixture snippet",
+     "source": "web"
+    }
+   ],
+   "type": "search_results"
+  },
+  {
+   "content": [
+    {
+     "annotations": [],
+     "text": "Fixture answer citing a source [web:1] and another [web:2].",
+     "type": "output_text"
+    }
+   ],
+   "id": "msg_2cb962db-a8e2-4024-8721-1e0f8c12c7e6",
+   "role": "assistant",
+   "status": "completed",
+   "type": "message"
+  }
+ ],
+ "parallel_tool_calls": true,
+ "presence_penalty": 0,
+ "preset": "medium@2026-10-22.1",
+ "previous_response_id": null,
+ "prompt_cache_key": null,
+ "reasoning": null,
+ "safety_identifier": null,
+ "service_tier": "default",
+ "status": "completed",
+ "store": true,
+ "temperature": 1,
+ "text": {
+  "format": {
+   "type": "text"
+  }
+ },
+ "tool_choice": "auto",
+ "tools": [
+  {
+   "type": "web_search"
+  },
+  {
+   "type": "fetch_url"
+  }
+ ],
+ "top_logprobs": 0,
+ "top_p": 1,
+ "truncation": "",
+ "usage": {
+  "cost": {
+   "cache_creation_cost": 0.00391,
+   "cache_read_cost": 0.00051,
+   "currency": "USD",
+   "input_cost": 0,
+   "output_cost": 0.00143,
+   "tool_calls_cost": 0.04283,
+   "tool_calls_cost_details": {
+    "fetch_url": 0.03983,
+    "search_web": 0.003
+   },
+   "total_cost": 0.04868
+  },
+  "input_tokens": 82693,
+  "input_tokens_details": {
+   "cache_creation_input_tokens": 31284,
+   "cache_read_input_tokens": 51388,
+   "cached_tokens": 51388
+  },
+  "output_tokens": 2851,
+  "output_tokens_details": {
+   "reasoning_tokens": 605
+  },
+  "tool_calls_details": {
+   "fetch_url": {
+    "cost_usd": 0.03983,
+    "invocation": 6,
+    "token_usage": [
+     {
+      "input_tokens": 224161,
+      "input_tokens_details": {
+       "cache_creation_input_tokens": 224146,
+       "cached_tokens": 0
+      },
+      "model": "openai/gpt-6-luna",
+      "output_tokens": 17620,
+      "output_tokens_details": {
+       "reasoning_tokens": 3644
+      }
+     }
+    ]
+   },
+   "search_web": {
+    "cost_usd": 0.003,
+    "invocation": 3
+   }
+  },
+  "total_tokens": 85544
+ },
+ "user": null,
+ "input": "fixture prompt"
+}

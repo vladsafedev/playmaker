@@ -9,6 +9,7 @@ from urllib.error import HTTPError
 
 import pytest
 
+from playmaker import events
 from playmaker.agents import perplexity
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -323,9 +324,9 @@ def test_create_429_retry_and_api_key_redaction(
         BytesIO(json.dumps({"error": {"message": "secret-key is invalid"}}).encode()),
     )
     monkeypatch.setattr(perplexity.urllib.request, "urlopen", Mock(side_effect=leaked))
-    redacted = perplexity.PerplexityHandler().dispatch("redact", tmp_path)
-    assert "secret-key" not in redacted.initial_output
-    assert "secret-key" not in repr(redacted)
+    with pytest.raises(RuntimeError) as excinfo:
+        perplexity.PerplexityHandler().dispatch("redact", tmp_path)
+    assert "secret-key" not in str(excinfo.value)
     assert "secret-key" not in caplog.text
 
 
@@ -376,3 +377,186 @@ def test_parse_session_file(configured, monkeypatch: pytest.MonkeyPatch, tmp_pat
         ("user", "question"),
         ("assistant", perplexity._message_text(fixture("bg_final"))),
     ]
+
+
+NULL_ANSWER = "Fixture answer citing a source [web:1] and another [web:2]."
+
+
+def test_null_results_fixture_finishes_with_sources(
+    configured, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    create = fixture("bg_create")
+    final = fixture("null_results")
+    urlopen = Mock(side_effect=[Response(create), Response(final)])
+    monkeypatch.setattr(perplexity.urllib.request, "urlopen", urlopen)
+
+    result = perplexity.PerplexityHandler().dispatch("fixture prompt", tmp_path)
+
+    assert result.exit_code == 0
+    assert NULL_ANSWER in result.initial_output
+    assert "[web:1] Fixture source 1 — https://example.org/source-1" in result.initial_output
+    assert "[web:2] Fixture source 2 — https://example.org/source-2" in result.initial_output
+    assert result.initial_output.endswith("3 results, 2 cited")
+
+
+def test_null_results_fixture_session_file_and_turns(
+    configured, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    create = fixture("bg_create")
+    final = fixture("null_results")
+    urlopen = Mock(side_effect=[Response(create), Response(final)])
+    monkeypatch.setattr(perplexity.urllib.request, "urlopen", urlopen)
+
+    result = perplexity.PerplexityHandler().dispatch("fixture prompt", tmp_path)
+
+    lines = result.session_file.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    raw, meta = (json.loads(line) for line in lines)
+    assert raw["status"] == "completed"
+    assert meta["type"] == "playmaker_meta"
+    assert result.cost_usd == pytest.approx(0.04868)
+    assert result.agent_session_id == create["id"]
+    turns = perplexity.parse_session_file(result.session_file)
+    assert [(turn.role, turn.content) for turn in turns] == [
+        ("user", "fixture prompt"),
+        ("assistant", NULL_ANSWER),
+    ]
+
+
+@pytest.mark.parametrize("field", ["output", "content"])
+def test_null_output_and_content_finish(
+    configured, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, field: str
+) -> None:
+    create = fixture("bg_create")
+    terminal = dict(fixture("bg_final"))
+    if field == "output":
+        terminal["output"] = None
+    else:
+        terminal["output"] = [{"type": "message", "content": None}]
+    urlopen = Mock(side_effect=[Response(create), Response(terminal)])
+    monkeypatch.setattr(perplexity.urllib.request, "urlopen", urlopen)
+
+    result = perplexity.PerplexityHandler().dispatch("nulls", tmp_path)
+
+    assert result.exit_code == 0
+    assert "results, 0 cited" in result.initial_output
+
+
+def test_formatting_failure_still_persists_raw(
+    configured, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    create = fixture("bg_create")
+    final = fixture("bg_final")
+    urlopen = Mock(side_effect=[Response(create), Response(final)])
+    monkeypatch.setattr(perplexity.urllib.request, "urlopen", urlopen)
+
+    def boom(response, text):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(
+        perplexity.PerplexityHandler, "_completed_output", staticmethod(boom)
+    )
+
+    result = perplexity.PerplexityHandler().dispatch("format", tmp_path)
+
+    assert result.exit_code == 0
+    assert result.initial_output.startswith(perplexity._message_text(final))
+    assert "[perplexity: sources not formatted: ValueError: boom]" in result.initial_output
+    lines = result.session_file.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0])["status"] == "completed"
+    assert result.session_file is not None
+    assert result.cost_usd is not None
+    assert result.agent_session_id == create["id"]
+
+
+def test_lone_surrogate_in_answer_is_persisted(
+    configured, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An emoji cut mid-pair arrives as an escaped lone surrogate; the raw line is still written.
+    create = fixture("bg_create")
+    final = json.loads(json.dumps(fixture("bg_final")))
+    message = next(item for item in final["output"] if item.get("type") == "message")
+    part = next(p for p in message["content"] if p.get("type") == "output_text")
+    part["text"] += " \ud83d"
+    urlopen = Mock(side_effect=[Response(create), Response(final)])
+    monkeypatch.setattr(perplexity.urllib.request, "urlopen", urlopen)
+
+    result = perplexity.PerplexityHandler().dispatch("surrogate", tmp_path)
+
+    assert result.exit_code == 0
+    lines = result.session_file.read_text(encoding="utf-8").splitlines()
+    assert json.loads(lines[0])["status"] == "completed"
+    assert perplexity.parse_session_file(result.session_file)[-1].content.endswith("\ud83d")
+
+
+def _http_error(code: int, message: str) -> HTTPError:
+    return HTTPError(
+        perplexity.BASE_URL,
+        code,
+        "error",
+        {},
+        BytesIO(json.dumps({"error": {"message": message, "type": "x"}}).encode()),
+    )
+
+
+@pytest.mark.parametrize(
+    ("code", "message", "reason"),
+    [
+        (402, "SENTINEL credit balance is too low", "quota"),
+        (401, "invalid key", "auth"),
+    ],
+)
+@pytest.mark.parametrize("method", ["dispatch", "resume"])
+def test_create_refusals_propagate_classified(
+    configured,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    code: int,
+    message: str,
+    reason: str,
+    method: str,
+) -> None:
+    key = f"sentinel-key-{code}-{method}"
+    monkeypatch.setenv("PERPLEXITY_API_KEY", key)
+    urlopen = Mock(
+        side_effect=[Response(fixture("bg_create")), Response(fixture("bg_final"))]
+    )
+    monkeypatch.setattr(perplexity.urllib.request, "urlopen", urlopen)
+    handler = perplexity.PerplexityHandler()
+    session_id = ""
+    if method == "resume":
+        session_id = handler.dispatch("first", tmp_path).agent_session_id
+    message = message.replace("SENTINEL", key)
+    monkeypatch.setattr(
+        perplexity.urllib.request, "urlopen", Mock(side_effect=_http_error(code, message))
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        if method == "dispatch":
+            handler.dispatch("refused", tmp_path)
+        else:
+            handler.resume("refused", tmp_path, session_id)
+
+    assert key not in str(excinfo.value)
+    assert events.classify_failure(str(excinfo.value)) == reason
+    if code == 402:
+        assert "quota" in str(excinfo.value).lower()
+
+
+def test_poll_failure_after_create_returns_error_result(
+    configured, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    urlopen = Mock(
+        side_effect=[
+            Response(fixture("bg_create")),
+            _http_error(400, "bad poll"),
+            Response(fixture("cancel_post")),
+        ]
+    )
+    monkeypatch.setattr(perplexity.urllib.request, "urlopen", urlopen)
+
+    result = perplexity.PerplexityHandler().dispatch("poll fails", tmp_path)
+
+    assert result.exit_code == 1
+    assert "bad poll" in result.initial_output
