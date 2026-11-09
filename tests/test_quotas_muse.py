@@ -42,8 +42,12 @@ class _Completed:
 
 
 def _keychain(monkeypatch, secret: dict | None, *, fail_read=None):
-    """Fake `security`: existence check, then the `-w` read. Returns the calls."""
+    """Fake `security`: existence check, then the `-w` read. Returns the calls.
+
+    Keychain reads are opt-in, so the fake also sets PLAYMAKER_MUSE_KEYCHAIN.
+    """
     monkeypatch.setattr(quotas.sys, "platform", "darwin")
+    monkeypatch.setenv("PLAYMAKER_MUSE_KEYCHAIN", "1")
     calls: list = []
 
     def fake_run(cmd, **kwargs):
@@ -146,6 +150,7 @@ def test_a_failed_keychain_read_leaks_no_process_output(
     leaked = "dca:LEAK-READ-7b3f9d"
     _auth_file(monkeypatch, tmp_path, None)
     monkeypatch.setattr(quotas.sys, "platform", "darwin")
+    monkeypatch.setenv("PLAYMAKER_MUSE_KEYCHAIN", "1")
 
     def fake_run(cmd, **kwargs):
         if "-w" not in cmd:
@@ -165,6 +170,7 @@ def test_a_hung_existence_check_is_an_error_not_not_configured(
 ) -> None:
     _auth_file(monkeypatch, tmp_path, None)
     monkeypatch.setattr(quotas.sys, "platform", "darwin")
+    monkeypatch.setenv("PLAYMAKER_MUSE_KEYCHAIN", "1")
 
     def fake_run(cmd, **kwargs):
         if "-w" not in cmd:
@@ -185,6 +191,7 @@ def test_an_unrunnable_security_is_an_error_but_a_missing_one_is_not(
 ) -> None:
     _auth_file(monkeypatch, tmp_path, None)
     monkeypatch.setattr(quotas.sys, "platform", "darwin")
+    monkeypatch.setenv("PLAYMAKER_MUSE_KEYCHAIN", "1")
 
     def denied(cmd, **kwargs):
         raise PermissionError(13, "Permission denied")
@@ -463,3 +470,38 @@ def test_secrets_stay_out_of_results_and_messages(monkeypatch, tmp_path) -> None
     assert token not in combined
     assert api_key not in combined
     assert payment not in combined
+
+
+def test_background_probes_never_read_the_keychain_by_default(monkeypatch, tmp_path) -> None:
+    """2026-11-09: every probe raised a login-keychain password dialog; reads are opt-in."""
+    _auth_file(monkeypatch, tmp_path, None)
+    monkeypatch.setattr(quotas.sys, "platform", "darwin")
+    monkeypatch.delenv("PLAYMAKER_MUSE_KEYCHAIN", raising=False)
+
+    def no_security(cmd, **kwargs):
+        raise AssertionError("`security` must not run without the opt-in")
+
+    monkeypatch.setattr(quotas.subprocess, "run", no_security)
+
+    result = quotas.muse_probe()
+
+    assert result["status"] == "unsupported"
+    assert "PLAYMAKER_MUSE_KEYCHAIN" in result["reason"]
+
+
+def test_an_inline_device_code_token_still_works_without_the_opt_in(
+    monkeypatch, tmp_path
+) -> None:
+    _auth_file(monkeypatch, tmp_path, _inline("dca:inline-token"))
+    monkeypatch.setattr(quotas.sys, "platform", "darwin")
+    monkeypatch.delenv("PLAYMAKER_MUSE_KEYCHAIN", raising=False)
+
+    def no_security(cmd, **kwargs):
+        raise AssertionError("`security` must not run without the opt-in")
+
+    monkeypatch.setattr(quotas.subprocess, "run", no_security)
+    seen = _respond(monkeypatch, {"is_subs_active": True, "require_payment": False})
+
+    quotas.muse_probe()
+
+    assert seen["headers"]["Authorization"] == "Bearer dca:inline-token"

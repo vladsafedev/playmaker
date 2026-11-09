@@ -1764,12 +1764,30 @@ def _muse_keychain_token() -> str | None:
     return token
 
 
+_MUSE_KEYCHAIN_ENV = "PLAYMAKER_MUSE_KEYCHAIN"
+_MUSE_KEYCHAIN_SKIPPED_REASON = (
+    "Muse Code token is in the macOS Keychain; quota probes skip it so they never raise "
+    "a password dialog (set PLAYMAKER_MUSE_KEYCHAIN=1 for a one-off read)"
+)
+
+
+def _muse_keychain_allowed() -> bool:
+    """Keychain reads are opt-in: the Muse CLI rewrites its item on token refresh, which
+    drops `security` from the item's access list, and every background probe then raised
+    a login-keychain password dialog (2026-11-09, one per session every 5 minutes)."""
+    return os.environ.get(_MUSE_KEYCHAIN_ENV, "").strip().lower() in {"1", "true", "yes"}
+
+
 def _muse_load_token() -> str | None:
-    """The Muse device-code token, or None when no login exists anywhere."""
+    """The Muse device-code token, or None when no readable login exists.
+
+    auth.json first; the macOS Keychain only when PLAYMAKER_MUSE_KEYCHAIN opts in.
+    """
     inline = _muse_inline_token()
     if inline and inline.startswith("dca:"):
         return inline
-    token = _muse_keychain_token() or inline
+    keychain = _muse_keychain_token() if _muse_keychain_allowed() else None
+    token = keychain or inline
     if token is None:
         return None
     if not token.startswith("dca:"):
@@ -1848,6 +1866,8 @@ def muse_probe() -> dict:
     except RuntimeError as exc:
         return {"status": "error", "error": str(exc)}
     if token is None:
+        if sys.platform == "darwin" and not _muse_keychain_allowed():
+            return {"status": "unsupported", "reason": _MUSE_KEYCHAIN_SKIPPED_REASON}
         return {
             "status": "unsupported",
             "reason": "no Muse Code credential — run `muse login`",
