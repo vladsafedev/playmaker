@@ -40,6 +40,7 @@ import {
   parseRows,
   promptHead,
   quotaLine,
+  resetLabel,
   stampTime,
   shortId,
   splitArgs,
@@ -474,8 +475,11 @@ const drawBar = ($: Engine, e: PaneInput, pct: number | null, color: string) => 
 
 const pctLabel = (pct: number | null): string => (pct === null ? '—' : `${Math.round(pct)}%`)
 
-// Two columns that each flow on their own, the next lane going to the
-// shorter one, so a lane with one window leaves no hole beside a tall one.
+// Two columns with a fixed side per known lane, so the subscriptions stack on
+// the left and the rest on the right; an unknown lane goes to the shorter one.
+const LEFT_LANES = new Set(['claude', 'zai', 'opencode', 'kimi', 'muse'])
+const RIGHT_LANES = new Set(['codex', 'agy', 'gemini', 'manus', 'perplexity', 'ollama'])
+
 const splitColumns = (lanes: Quota[]): [Quota[], Quota[]] => {
   const left: Quota[] = []
   const right: Quota[] = []
@@ -483,7 +487,8 @@ const splitColumns = (lanes: Quota[]): [Quota[], Quota[]] => {
   let rightHeight = 0
   for (const l of lanes) {
     const height = 2 + Math.max(1, l.windows.length)
-    if (leftHeight <= rightHeight) {
+    const isLeft = LEFT_LANES.has(l.lane) || (!RIGHT_LANES.has(l.lane) && leftHeight <= rightHeight)
+    if (isLeft) {
       left.push(l)
       leftHeight += height
     } else {
@@ -539,7 +544,7 @@ const drawQuotas = async ($: Engine, e: PaneInput) => {
                 </Box>
                 <Box width={isCells ? 6 : 5} justifyContent="flex-end">
                   <Text dimColor size="caption" tabular>
-                    {w.reset ?? ''}
+                    {resetLabel(w, now)}
                   </Text>
                 </Box>
               </Box>

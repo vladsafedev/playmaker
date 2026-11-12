@@ -2009,6 +2009,51 @@ def _manus_http_error(exc: Exception) -> dict:
     return {"status": "error", "error": "Manus API request failed"}
 
 
+def _manus_peak_path() -> Path:
+    return state.PLAYMAKER_HOME / "manus-credits.json"
+
+
+def _compact_credits(value: int) -> str:
+    """`17.2k`, `980`, `1.4M`: a credit count that fits the reset column."""
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}k"
+    return str(value)
+
+
+def _manus_balance_window(total: int | None) -> dict | None:
+    """A Credits row: the balance against the highest one seen since the last top-up.
+
+    Add-on credits never reset and have no cap, so the bar measures what is left
+    of the last purchase: playmaker keeps the peak balance in manus-credits.json
+    and a balance above it (a top-up) becomes the new 100 %.
+    """
+    if total is None or total < 0:
+        return None
+    path = _manus_peak_path()
+    try:
+        peak = int(json.loads(path.read_text(encoding="utf-8"))["peak"])
+    except (OSError, ValueError, KeyError, TypeError):
+        peak = 0
+    if total > peak:
+        peak = total
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"peak": peak}), encoding="utf-8")
+        except OSError:
+            pass
+    pct_left = round(total / peak * 100) if peak > 0 else 0
+    return {
+        "name": "Credits",
+        "pct_left": pct_left,
+        "reset_at_iso": None,
+        "reset_relative": _compact_credits(total),
+        "forecast": None,
+        "reserve_pct": None,
+    }
+
+
 def manus_probe() -> dict:
     """Manus API v2 monthly subscription and add-on credit balance."""
     key = _manus_load_key()
@@ -2066,6 +2111,10 @@ def manus_probe() -> dict:
                 "reserve_pct": None,
             }
         )
+
+    balance = _manus_balance_window(total)
+    if balance is not None:
+        windows.append(balance)
 
     def credits(value: int | None) -> str:
         return f"{value or 0:,}".replace(",", " ")

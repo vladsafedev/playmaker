@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import playmaker.quotas as quotas
@@ -32,6 +34,14 @@ def _respond(monkeypatch, payload: dict | Exception) -> dict:
 
     monkeypatch.setattr(quotas, "_http_json", fake)
     return seen
+
+
+@pytest.fixture(autouse=True)
+def _peak_file(monkeypatch, tmp_path):
+    """The Credits peak lives in a scratch file, never in ~/.playmaker."""
+    path = tmp_path / "manus-credits.json"
+    monkeypatch.setattr(quotas, "_manus_peak_path", lambda: path)
+    return path
 
 
 def test_manus_is_registered() -> None:
@@ -146,7 +156,7 @@ def test_zero_or_missing_monthly_cap_omits_window(monkeypatch) -> None:
     payload["pro_monthly_credits"] = 0
     _respond(monkeypatch, payload)
 
-    assert quotas.manus_probe()["windows"] == []
+    assert [w["name"] for w in quotas.manus_probe()["windows"]] == ["Credits"]
 
 
 def test_payload_without_documented_credit_fields_is_an_error(monkeypatch) -> None:
@@ -201,3 +211,22 @@ def test_renderer_shows_manus_title(monkeypatch) -> None:
 
     assert "Manus" in rendered[0]
     assert "bright_magenta" in rendered[0]
+
+
+def test_credits_bar_measures_the_balance_against_the_last_top_up(monkeypatch, _peak_file) -> None:
+    monkeypatch.setenv("MANUS_API_KEY", "manus-secret")
+    payload = copy.deepcopy(FIXTURE)
+
+    def credits_row(total: int) -> dict:
+        payload["total_credits"] = total
+        _respond(monkeypatch, payload)
+        rows = {w["name"]: w for w in quotas.manus_probe()["windows"]}
+        return rows["Credits"]
+
+    first = credits_row(20000)
+    assert (first["pct_left"], first["reset_relative"]) == (100, "20.0k")
+    spent = credits_row(15000)
+    assert (spent["pct_left"], spent["reset_relative"]) == (75, "15.0k")
+    topped_up = credits_row(30000)
+    assert topped_up["pct_left"] == 100
+    assert json.loads(_peak_file.read_text())["peak"] == 30000

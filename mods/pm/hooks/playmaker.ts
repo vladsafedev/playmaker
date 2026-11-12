@@ -250,10 +250,11 @@ export const orderedLanes = (q: Quotas): Quota[] =>
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
   })
 
-const windowTag = (w: QuotaWindow): string => {
+const windowTag = (w: QuotaWindow, lane: string): string => {
   if (/fable/i.test(w.name)) return '·Fable'
   if (/week|7-day/i.test(w.name)) return '·wk'
-  if (/credit/i.test(w.name)) return '·$'
+  // Manus counts credits, not dollars.
+  if (/credit/i.test(w.name)) return lane === 'manus' ? '·cr' : '·$'
 
   return ''
 }
@@ -269,7 +270,7 @@ export const quotaLine = (q: Quotas, nowMs: number): string =>
       const asOf = l.staleAt === null ? '' : `(as of ${stampTime(l.staleAt, nowMs) || '?'})`
       if (w === null || w.pct === null) return `${l.lane} ${l.status === 'ok' ? 'ok' : '?'}${asOf}`
 
-      return `${l.lane} ${Math.round(w.pct)}${windowTag(w)}${asOf}`
+      return `${l.lane} ${Math.round(w.pct)}${windowTag(w, l.lane)}${asOf}`
     })
     .join(' · ')
 
@@ -302,6 +303,15 @@ export const clockTime = (iso: string | null): string => {
   const mm = String(d.getMinutes()).padStart(2, '0')
 
   return `${hh}:${mm}`
+}
+
+// Past two days the hours stop mattering: `18d 13h` reads as `19d`.
+export const resetLabel = (w: QuotaWindow, nowMs: number): string => {
+  const at = parseIso(w.resetAt)
+  if (at === null) return w.reset ?? ''
+  const days = (at - nowMs) / 86_400_000
+
+  return days >= 2 ? `${Math.round(days)}d` : (w.reset ?? '')
 }
 
 // `18:24` today, `29.10 18:24` on any other day: a time that may be days old.

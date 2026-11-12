@@ -89,7 +89,12 @@ const EVENT_BATCH = JSON.stringify({
 const QUOTAS = JSON.stringify({
   fetched_at: '2026-10-28T13:35:00+00:00',
   providers: {
-    codex: { status: 'ok', windows: [{ name: 'Session', pct_left: 97, reset_relative: '6d 7h' }] },
+    codex: {
+      status: 'ok',
+      windows: [
+        { name: 'Session', pct_left: 97, reset_relative: '6d 7h', reset_at_iso: '2026-11-03T20:40:00+00:00' },
+      ],
+    },
     claude: {
       status: 'ok',
       windows: [
@@ -252,7 +257,9 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     expect(await quotas.find({ type: 'Text', text: /^reset$/ })).toBeDefined()
     expect(await quotas.find({ type: 'Text', text: /^error$/ })).toBe(undefined)
     expect(await quotas.find({ type: 'Text', text: /^65%$/ })).toBeDefined()
-    expect(await quotas.find({ type: 'Text', text: /6d 7h/ })).toBeDefined()
+    // Past two days only the days count: 6d 7h reads as 6d.
+    expect(await quotas.find({ type: 'Text', text: /^6d$/ })).toBeDefined()
+    expect(await quotas.find({ type: 'Text', text: /6d 7h/ })).toBe(undefined)
     // Argon's own weekly reads as Argon, not as a cut-off Gemini weekly.
     expect(await quotas.find({ type: 'Text', text: /^Argon weekly$/ })).toBeDefined()
     // A lane with a note and no windows shows the note: Manus's credits.

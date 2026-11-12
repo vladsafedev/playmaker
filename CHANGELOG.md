@@ -89,6 +89,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **pm mod 0.1.11: Manus shows its credits.** A lane with no windows shows
   the note playmaker gives it (`17 237 credits (0 monthly + 17 237 add-on)`)
   instead of «no windows reported».
+- **Manus gets a Credits bar.** Add-on credits never reset and have no cap, so
+  the bar is the balance against the highest one seen since the last top-up
+  (kept in `~/.playmaker/manus-credits.json`; a higher balance becomes the new
+  100 %), with the credit count (`17.2k`) where other lanes show their reset.
+- **pm mod 0.1.12: resets past two days read in whole days** (`18d 13h` →
+  `19d`), and the quota line tags Manus credits `·cr`, not `·$`.
+- **pm mod 0.1.13: every known lane keeps its column** — Claude, z.ai, Kimi
+  and Muse on the left; Codex, Antigravity, Manus and Perplexity on the right.
 - **Muse quotas without a Keychain dialog.** `[agents.muse] credential_backend
   = "file"` sets `TBH_CREDENTIAL_BACKEND` for every Muse worker, so Muse keeps
   its login in `~/.config/muse/auth.json` (mode 600) and the quota probe reads
