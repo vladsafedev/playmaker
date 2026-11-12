@@ -147,7 +147,7 @@ def keychain(monkeypatch):
 
     def _install(secret: str | None) -> list[list[str]]:
         calls: list[list[str]] = []
-        monkeypatch.setattr(claude_mod.sys, "platform", "darwin")
+        monkeypatch.setattr(claude_mod, "sys", SimpleNamespace(platform="darwin"))
         monkeypatch.setattr(claude_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
 
         def fake_run(cmd, **kwargs):
@@ -411,7 +411,7 @@ def test_a_missing_key_refuses_before_any_process_starts(
     configured, monkeypatch, tmp_path
 ) -> None:
     configured({})
-    monkeypatch.setattr(claude_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(claude_mod, "sys", SimpleNamespace(platform="darwin"))
     monkeypatch.setattr(claude_mod, "_keychain_api_key", lambda: None)
     fake = _FakePopen(_success_lines())
     monkeypatch.setattr("playmaker.agents.claude.subprocess.Popen", fake)
@@ -573,7 +573,7 @@ def test_an_empty_keychain_names_the_add_command_and_the_file_alternative(
 
 def test_the_keychain_is_never_consulted_off_macos(configured, monkeypatch) -> None:
     configured({})
-    monkeypatch.setattr(claude_mod.sys, "platform", "linux")
+    monkeypatch.setattr(claude_mod, "sys", SimpleNamespace(platform="linux"))
 
     def forbidden(*args, **kwargs):
         raise AssertionError("security must not run on linux")
@@ -630,7 +630,7 @@ def test_dispatch_without_a_key_exits_2_before_any_session_row(
     sdk_ready, configured, monkeypatch, tmp_path
 ) -> None:
     configured({})
-    monkeypatch.setattr(claude_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(claude_mod, "sys", SimpleNamespace(platform="darwin"))
     monkeypatch.setattr(claude_mod, "_keychain_api_key", lambda: None)
 
     result = runner.invoke(
