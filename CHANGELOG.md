@@ -86,6 +86,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **pm mod 0.1.9: Manus shows by name.** The pane titled the new lane with its
   raw key `manus` in grey; it now reads «Manus» in its own colour.
 - **pm mod 0.1.10: Perplexity shows by name**, the same way.
+- **pm mod 0.1.11: Manus shows its credits.** A lane with no windows shows
+  the note playmaker gives it (`17 237 credits (0 monthly + 17 237 add-on)`)
+  instead of «no windows reported».
+- **Muse quotas without a Keychain dialog.** `[agents.muse] credential_backend
+  = "file"` sets `TBH_CREDENTIAL_BACKEND` for every Muse worker, so Muse keeps
+  its login in `~/.config/muse/auth.json` (mode 600) and the quota probe reads
+  it there. Muse rewrites its Keychain item on every token refresh, and every
+  other reader (CodexBar, `security`) then raised a password dialog. Log in once
+  with `TBH_CREDENTIAL_BACKEND=file muse login` and export the variable in your
+  shell; a slot that still references the Keychain refuses the file write
+  (FM-008), so move the old `auth.json` aside first.
 - **perplexity: null list fields no longer crash a completed run, and a paid
   answer is never lost.** `search_results` items with `"results": null` (and
   any other null list field) read as empty instead of raising `'NoneType'

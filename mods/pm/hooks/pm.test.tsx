@@ -119,6 +119,7 @@ const QUOTAS = JSON.stringify({
       ],
     },
     muse: { status: 'ok', windows: [] },
+    manus: { status: 'ok', windows: [], note: '17 237 credits (0 monthly + 17 237 add-on)' },
     ollama: { status: 'unsupported', windows: [] },
   },
 })
@@ -254,6 +255,8 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     expect(await quotas.find({ type: 'Text', text: /6d 7h/ })).toBeDefined()
     // Argon's own weekly reads as Argon, not as a cut-off Gemini weekly.
     expect(await quotas.find({ type: 'Text', text: /^Argon weekly$/ })).toBeDefined()
+    // A lane with a note and no windows shows the note: Manus's credits.
+    expect(await quotas.find({ type: 'Text', text: /^17 237 credits/ })).toBeDefined()
     await quotas.unmount()
   }
 

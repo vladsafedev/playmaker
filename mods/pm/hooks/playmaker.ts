@@ -150,7 +150,14 @@ export const parseQuotas = (json: string): Quotas | null => {
       windows = readWindows(k.windows)
       if (windows.length > 0) staleAt = asString(k.at) ?? ''
     }
-    lanes.push({ lane, status: asString(p.status) ?? 'unknown', tier: asString(p.tier), windows, staleAt })
+    lanes.push({
+      lane,
+      status: asString(p.status) ?? 'unknown',
+      tier: asString(p.tier),
+      windows,
+      staleAt,
+      note: asString(p.note),
+    })
   }
 
   return { fetchedAt: asString(top.fetched_at) ?? '', lanes }

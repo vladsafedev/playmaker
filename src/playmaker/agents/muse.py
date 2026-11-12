@@ -219,6 +219,22 @@ def parse_session_file(path: Path) -> list[Turn]:
     return turns
 
 
+# Muse reads where its login lives from this variable; `file` keeps the token in
+# ~/.config/muse/auth.json instead of the macOS Keychain, whose item Muse rewrites on
+# every refresh and so locks every other reader out behind a password dialog.
+CREDENTIAL_BACKEND_ENV = "TBH_CREDENTIAL_BACKEND"
+
+
+def spawn_env() -> dict[str, str] | None:
+    """The worker's environment: inherited, plus `[agents.muse] credential_backend`."""
+    backend = agent_setting("muse", "credential_backend")
+    if not backend:
+        return None
+    env = dict(os.environ)
+    env[CREDENTIAL_BACKEND_ENV] = str(backend)
+    return env
+
+
 class MuseHandler:
     name = "muse"
 
@@ -267,7 +283,13 @@ class MuseHandler:
         cmd += permission_args() + ["--", self._build_prompt(prompt, files)]
         t0 = time.monotonic()
         proc = subprocess.Popen(
-            cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
+            cmd,
+            cwd=str(cwd),
+            env=spawn_env(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
         )
         stderr_parts: list[str] = []
         stderr = proc.stderr

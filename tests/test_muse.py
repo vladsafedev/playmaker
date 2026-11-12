@@ -86,6 +86,7 @@ def test_dispatch_command_callback_and_terminal_output(monkeypatch, tmp_path, co
         "-do it\n\nREADME.txt",
     ]
     assert fake.kwargs["cwd"] == str(tmp_path)
+    assert fake.kwargs["env"] is None
     assert seen == [SESSION]
     assert result.initial_output == "alpha"
 
@@ -180,3 +181,16 @@ def test_parse_session_file() -> None:
     assert len(turns[1].tool_results) == 2
     assert turns[1].content == "alpha"
     assert turns[3].content == "hello.txt"
+
+
+def test_a_credential_backend_reaches_the_worker_env(monkeypatch, tmp_path, configured) -> None:
+    """2026-11-12: `file` keeps Muse's login out of the Keychain, so no reader prompts."""
+    configured({"agents": {"muse": {"credential_backend": "file"}}})
+    fake = _FakePopen(_fixture("muse_exec.jsonl"))
+    _install(monkeypatch, fake)
+    monkeypatch.setenv("KEEP_ME", "1")
+
+    MuseHandler().dispatch("x", tmp_path)
+
+    assert fake.kwargs["env"]["TBH_CREDENTIAL_BACKEND"] == "file"
+    assert fake.kwargs["env"]["KEEP_ME"] == "1"

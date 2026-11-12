@@ -33,6 +33,8 @@ export type Quota = {
   // When the probe failed and the windows are the last good ones playmaker
   // kept: when those were measured. Null for fresh windows.
   staleAt: string | null
+  // What playmaker says when a lane has no windows, e.g. Manus's credit count.
+  note: string | null
 }
 
 export type Quotas = { fetchedAt: string; lanes: Quota[] }

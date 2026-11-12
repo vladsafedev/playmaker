@@ -522,7 +522,7 @@ const drawQuotas = async ($: Engine, e: PaneInput) => {
         </Box>
         {l.windows.length === 0 && (
           <Text dimColor size="caption">
-            {l.status === 'ok' ? 'no windows reported' : l.status}
+            {l.note ?? (l.status === 'ok' ? 'no windows reported' : l.status)}
           </Text>
         )}
         {l.windows.map(w => (
