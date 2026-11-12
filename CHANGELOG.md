@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-12
+
 ### Added
 
+- **`playmaker costs` — what a project cost to develop.** `playmaker costs
+  --project <name|path> [--since] [--until] [--json]` sums the metered lanes
+  (`claude-api` and `perplexity` spend, Manus credits when a plan prices them),
+  the subscriptions in `~/.playmaker/costs/subscriptions.toml` prorated per
+  month and split by the project's share of each lane's usage, and Claude Code's
+  own tokens per model from its transcripts (their API-equivalent price for
+  information, and the project's share of the Max plan), per lane and per day.
+  `costs plans` lists the plans, `costs snapshot` keeps quota snapshots, and
+  `costs install-agent` runs that hourly through launchd.
 - **Native reasoning effort on the `codex` lane.** `playmaker dispatch|continue
   … --effort <low|medium|high|xhigh|max|ultra>` is passed to `codex exec` and
   `codex exec resume` as `-c model_reasoning_effort="<value>"`, checked against
@@ -78,6 +89,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A queued follow-up delivered on a fallback lane uses that lane's model
+  and effort.** A `continue --after` on a thread that fell back to another lane
+  after a quota refusal was resumed with the original lane's model (codex was
+  handed `kimi-code/k3-256k`). Queue items now record the lane they were
+  resolved for, and delivery on another lane drops the item's model and effort.
+- **Quota probes never raise a Keychain dialog for Muse.** Reading Muse's
+  Keychain item from a background probe is opt-in
+  (`PLAYMAKER_MUSE_KEYCHAIN=1`); the file login below is the way to keep Muse
+  in the quotas.
 - **pm mod 0.1.8: quotas kept from a failed probe no longer pass for current.**
   The «as of» stamp carries the date when the snapshot is from another day
   (`as of 29.10 18:24`), and a kept window whose reset has passed shows `reset`
