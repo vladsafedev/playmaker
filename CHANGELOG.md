@@ -97,6 +97,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `19d`), and the quota line tags Manus credits `·cr`, not `·$`.
 - **pm mod 0.1.13: every known lane keeps its column** — Claude, z.ai, Kimi
   and Muse on the left; Codex, Antigravity, Manus and Perplexity on the right.
+- **pm mod 0.1.18: shorter labels in the quotas pane.** Claude's Console
+  credits read «API credits», «Weekly · Fable» reads «Fable», and
+  Antigravity's Claude/GPT group shows the Claude and OpenAI marks (Simple
+  Icons, CC0, monochrome, following the colour scheme) with `5h` or `weekly`;
+  the terminal keeps the plain label.
 - **Muse quotas without a Keychain dialog.** `[agents.muse] credential_backend
   = "file"` sets `TBH_CREDENTIAL_BACKEND` for every Muse worker, so Muse keeps
   its login in `~/.config/muse/auth.json` (mode 600) and the quota probe reads

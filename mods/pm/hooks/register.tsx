@@ -28,6 +28,7 @@ import {
   laneOf,
   laneOfRow,
   linkChains,
+  markSvg,
   loneBrief,
   mergeChildren,
   mergeClaims,
@@ -50,7 +51,7 @@ import {
   svgBar,
   tailLines,
   tiersSection,
-  windowLabel,
+  windowParts,
   withRoots,
 } from './playmaker'
 import type { Event } from './playmaker'
@@ -473,6 +474,36 @@ const drawBar = ($: Engine, e: PaneInput, pct: number | null, color: string) => 
   return <Svg source={svgBar(pct, color)} alt={`${width}% left`} height={6} />
 }
 
+// A window's name: brand marks then the rest of the label where the surface
+// draws images, the plain label in the terminal.
+const drawLabel = ($: Engine, e: PaneInput, name: string) => {
+  const { Box, Text } = $.ui.resolve(e)
+  const parts = windowParts(name)
+  if (e.surface === 'terminal' || parts.marks.length === 0) {
+    return (
+      <Text size="caption" wrap="truncate-end">
+        {parts.text}
+      </Text>
+    )
+  }
+  const { Svg } = $.ui.resolve(e)
+
+  return (
+    <Box flexDirection="row" alignItems="center" gap={1}>
+      <Box flexDirection="row" alignItems="center">
+        {parts.marks.flatMap((m, i) => [
+          // Thin spaces: the smallest gap a surface keeps around the slash.
+          ...(i === 0 ? [] : [<Text size="caption">{'\u2009/\u2009'}</Text>]),
+          <Svg source={markSvg(m)} alt={m} width={13} height={13} />,
+        ])}
+      </Box>
+      <Text size="caption" wrap="truncate-end">
+        {parts.rest}
+      </Text>
+    </Box>
+  )
+}
+
 const pctLabel = (pct: number | null): string => (pct === null ? '—' : `${Math.round(pct)}%`)
 
 // Two columns with a fixed side per known lane, so the subscriptions stack on
@@ -533,9 +564,7 @@ const drawQuotas = async ($: Engine, e: PaneInput) => {
         {l.windows.map(w => (
           <Box flexDirection="column" marginTop="xs">
             <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
-              <Text size="caption" wrap="truncate-end">
-                {windowLabel(w.name)}
-              </Text>
+              {drawLabel($, e, w.name)}
               <Box flexDirection="row" flexShrink={0} gap={1}>
                 <Box width={isCells ? 4 : 3} justifyContent="flex-end">
                   <Text size="caption" tabular>

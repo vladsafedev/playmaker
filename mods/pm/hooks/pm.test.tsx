@@ -120,6 +120,7 @@ const QUOTAS = JSON.stringify({
       status: 'ok',
       windows: [
         { name: 'Gemini weekly', pct_left: 96, reset_relative: '6d 3h' },
+        { name: 'Claude/GPT 5h', pct_left: 100, reset_relative: '4h 53m' },
         { name: 'Gemini 4 Argon weekly', pct_left: 0, reset_relative: '6d 18h' },
       ],
     },
@@ -245,9 +246,9 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     // The quotas block at the top reads as CodexBar does: lane name, window, reset.
     const quotas = await $.ui.mount({ ...PANE, surface })
     expect(await quotas.find({ type: 'Text', text: /Codex/ })).toBeDefined()
-    expect(await quotas.find({ type: 'Text', text: /^Weekly · Fable$/ })).toBeDefined()
+    expect(await quotas.find({ type: 'Text', text: /^Fable$/ })).toBeDefined()
     // Console credits sit inside the Claude block, not as a lane of their own.
-    expect(await quotas.find({ type: 'Text', text: /^Credits$/ })).toBeDefined()
+    expect(await quotas.find({ type: 'Text', text: /^API credits$/ })).toBeDefined()
     expect(await quotas.find({ type: 'Text', text: /Claude Platform/ })).toBe(undefined)
     // A lane whose probe failed shows its kept numbers and says how old they are.
     expect(await quotas.find({ type: 'Text', text: /^85%$/ })).toBeDefined()
@@ -262,6 +263,17 @@ test('the pane lists the workers and a finished batch wakes the coach', async ($
     expect(await quotas.find({ type: 'Text', text: /6d 7h/ })).toBe(undefined)
     // Argon's own weekly reads as Argon, not as a cut-off Gemini weekly.
     expect(await quotas.find({ type: 'Text', text: /^Argon weekly$/ })).toBeDefined()
+    // Antigravity's groups read as brand marks plus the rest of the label.
+    // The terminal has no images and keeps the plain label.
+    if (surface === 'terminal') {
+      expect(await quotas.find({ type: 'Text', text: /^Claude\/GPT 5h$/ })).toBeDefined()
+    } else {
+      expect(await quotas.find({ type: 'Text', text: /^Claude\/GPT/ })).toBe(undefined)
+      expect(await quotas.find({ type: 'Text', text: /^5h$/ })).toBeDefined()
+      expect(await quotas.find({ type: 'Text', text: /^\u2009\/\u2009$/ })).toBeDefined()
+      // Gemini keeps its name as text.
+      expect(await quotas.find({ type: 'Text', text: /^Gemini weekly$/ })).toBeDefined()
+    }
     // A lane with a note and no windows shows the note: Manus's credits.
     expect(await quotas.find({ type: 'Text', text: /^17 237 credits/ })).toBeDefined()
     await quotas.unmount()
